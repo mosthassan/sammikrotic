@@ -43,7 +43,7 @@ import kotlinx.coroutines.launch
         PartnerTransactionEntity::class,
         InventoryItemEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

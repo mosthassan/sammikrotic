@@ -28,8 +28,13 @@ class FirebaseDbService {
 
     private val tag = "FirebaseDbService"
 
-    private val firestore: FirebaseFirestore by lazy {
-        FirebaseFirestore.getInstance()
+    private val firestore: FirebaseFirestore? by lazy {
+        try {
+            FirebaseFirestore.getInstance()
+        } catch (e: Throwable) {
+            Log.e(tag, "FirebaseFirestore unavailable: ${e.message}", e)
+            null
+        }
     }
 
     /**
@@ -43,45 +48,49 @@ class FirebaseDbService {
             .replace("+", "_plus_")
     }
 
-    private fun getDevicesRef(userEmail: String?): CollectionReference {
+    private fun getDevicesRef(userEmail: String?): CollectionReference? {
+        val fs = firestore ?: return null
         return if (!userEmail.isNullOrBlank()) {
             val userKey = sanitizeEmail(userEmail)
-            firestore.collection("users").document(userKey).collection("devices")
+            fs.collection("users").document(userKey).collection("devices")
         } else {
-            firestore.collection("devices")
+            fs.collection("devices")
         }
     }
 
-    private fun getRetailersRef(userEmail: String?): CollectionReference {
+    private fun getRetailersRef(userEmail: String?): CollectionReference? {
+        val fs = firestore ?: return null
         return if (!userEmail.isNullOrBlank()) {
             val userKey = sanitizeEmail(userEmail)
-            firestore.collection("users").document(userKey).collection("retailers")
+            fs.collection("users").document(userKey).collection("retailers")
         } else {
-            firestore.collection("retailers")
+            fs.collection("retailers")
         }
     }
 
-    private fun getVouchersRef(userEmail: String?): CollectionReference {
+    private fun getVouchersRef(userEmail: String?): CollectionReference? {
+        val fs = firestore ?: return null
         return if (!userEmail.isNullOrBlank()) {
             val userKey = sanitizeEmail(userEmail)
-            firestore.collection("users").document(userKey).collection("vouchers")
+            fs.collection("users").document(userKey).collection("vouchers")
         } else {
-            firestore.collection("vouchers")
+            fs.collection("vouchers")
         }
     }
 
-    private fun getNetworkIdentityDocRef(userEmail: String?): DocumentReference {
+    private fun getNetworkIdentityDocRef(userEmail: String?): DocumentReference? {
+        val fs = firestore ?: return null
         return if (!userEmail.isNullOrBlank()) {
             val userKey = sanitizeEmail(userEmail)
-            firestore.collection("users").document(userKey).collection("settings").document("network_identity")
+            fs.collection("users").document(userKey).collection("settings").document("network_identity")
         } else {
-            firestore.collection("settings").document("network_identity")
+            fs.collection("settings").document("network_identity")
         }
     }
 
     suspend fun pushNetworkIdentity(identity: NetworkIdentityEntity, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getNetworkIdentityDocRef(userEmail)
+            val docRef = getNetworkIdentityDocRef(userEmail) ?: return@withContext false
             val data = mapOf(
                 "networkName" to identity.networkName,
                 "ownerName" to identity.ownerName,
@@ -117,6 +126,10 @@ class FirebaseDbService {
         userEmail: String? = null,
         networkIdentity: NetworkIdentityEntity? = null
     ): CloudSyncResult = withContext(Dispatchers.IO) {
+        val fs = firestore ?: return@withContext CloudSyncResult(
+            success = false,
+            message = "خدمة Firebase غير مهيأة بعد"
+        )
         try {
             var syncedDevices = 0
             var syncedRetailers = 0
@@ -134,7 +147,7 @@ class FirebaseDbService {
             // Upload user profile meta if email exists
             if (!userEmail.isNullOrBlank()) {
                 val userKey = sanitizeEmail(userEmail)
-                val userDocRef = firestore.collection("users").document(userKey)
+                val userDocRef = fs.collection("users").document(userKey)
                 setDocAsync(
                     userDocRef,
                     mapOf(
@@ -148,75 +161,81 @@ class FirebaseDbService {
             }
 
             // Upload devices
-            for (device in devices) {
-                val docRef = devRef.document(device.id.toString())
-                val data = mapOf(
-                    "id" to device.id,
-                    "name" to device.name,
-                    "ipAddress" to device.ipAddress,
-                    "macAddress" to device.macAddress,
-                    "deviceType" to device.deviceType,
-                    "locationArea" to device.locationArea,
-                    "portOrInterface" to device.portOrInterface,
-                    "frequencyOrSsid" to device.frequencyOrSsid,
-                    "model" to device.model,
-                    "username" to device.username,
-                    "status" to device.status,
-                    "signalDbm" to device.signalDbm,
-                    "uptimeHours" to device.uptimeHours,
-                    "notes" to device.notes,
-                    "latitude" to device.latitude,
-                    "longitude" to device.longitude,
-                    "coverageRadiusMeters" to device.coverageRadiusMeters,
-                    "parentDeviceId" to (device.parentDeviceId ?: 0L),
-                    "createdAt" to device.createdAt,
-                    "ownerEmail" to (userEmail ?: "public")
-                )
-                setDocAsync(docRef, data)
-                syncedDevices++
+            if (devRef != null) {
+                for (device in devices) {
+                    val docRef = devRef.document(device.id.toString())
+                    val data = mapOf(
+                        "id" to device.id,
+                        "name" to device.name,
+                        "ipAddress" to device.ipAddress,
+                        "macAddress" to device.macAddress,
+                        "deviceType" to device.deviceType,
+                        "locationArea" to device.locationArea,
+                        "portOrInterface" to device.portOrInterface,
+                        "frequencyOrSsid" to device.frequencyOrSsid,
+                        "model" to device.model,
+                        "username" to device.username,
+                        "status" to device.status,
+                        "signalDbm" to device.signalDbm,
+                        "uptimeHours" to device.uptimeHours,
+                        "notes" to device.notes,
+                        "latitude" to device.latitude,
+                        "longitude" to device.longitude,
+                        "coverageRadiusMeters" to device.coverageRadiusMeters,
+                        "parentDeviceId" to (device.parentDeviceId ?: 0L),
+                        "createdAt" to device.createdAt,
+                        "ownerEmail" to (userEmail ?: "public")
+                    )
+                    setDocAsync(docRef, data)
+                    syncedDevices++
+                }
             }
 
             // Upload retailers
-            for (retailer in retailers) {
-                val docRef = retRef.document(retailer.id.toString())
-                val data = mapOf(
-                    "id" to retailer.id,
-                    "name" to retailer.name,
-                    "ownerName" to retailer.ownerName,
-                    "phone" to retailer.phone,
-                    "location" to retailer.location,
-                    "balanceOwed" to retailer.balanceOwed,
-                    "totalPaid" to retailer.totalPaid,
-                    "activeCardsCount" to retailer.activeCardsCount,
-                    "commissionPercent" to retailer.commissionPercent,
-                    "notes" to retailer.notes,
-                    "createdAt" to retailer.createdAt,
-                    "ownerEmail" to (userEmail ?: "public")
-                )
-                setDocAsync(docRef, data)
-                syncedRetailers++
+            if (retRef != null) {
+                for (retailer in retailers) {
+                    val docRef = retRef.document(retailer.id.toString())
+                    val data = mapOf(
+                        "id" to retailer.id,
+                        "name" to retailer.name,
+                        "ownerName" to retailer.ownerName,
+                        "phone" to retailer.phone,
+                        "location" to retailer.location,
+                        "balanceOwed" to retailer.balanceOwed,
+                        "totalPaid" to retailer.totalPaid,
+                        "activeCardsCount" to retailer.activeCardsCount,
+                        "commissionPercent" to retailer.commissionPercent,
+                        "notes" to retailer.notes,
+                        "createdAt" to retailer.createdAt,
+                        "ownerEmail" to (userEmail ?: "public")
+                    )
+                    setDocAsync(docRef, data)
+                    syncedRetailers++
+                }
             }
 
             // Upload vouchers
-            for (voucher in vouchers) {
-                val docRef = vouchRef.document(voucher.voucherNumber)
-                val data = mapOf(
-                    "id" to voucher.id,
-                    "voucherNumber" to voucher.voucherNumber,
-                    "voucherType" to voucher.voucherType,
-                    "amount" to voucher.amount,
-                    "partyName" to voucher.partyName,
-                    "retailerId" to (voucher.retailerId ?: 0L),
-                    "category" to voucher.category,
-                    "paymentMethod" to voucher.paymentMethod,
-                    "description" to voucher.description,
-                    "dateMillis" to voucher.dateMillis,
-                    "issuerName" to voucher.issuerName,
-                    "notes" to voucher.notes,
-                    "ownerEmail" to (userEmail ?: "public")
-                )
-                setDocAsync(docRef, data)
-                syncedVouchers++
+            if (vouchRef != null) {
+                for (voucher in vouchers) {
+                    val docRef = vouchRef.document(voucher.voucherNumber)
+                    val data = mapOf(
+                        "id" to voucher.id,
+                        "voucherNumber" to voucher.voucherNumber,
+                        "voucherType" to voucher.voucherType,
+                        "amount" to voucher.amount,
+                        "partyName" to voucher.partyName,
+                        "retailerId" to (voucher.retailerId ?: 0L),
+                        "category" to voucher.category,
+                        "paymentMethod" to voucher.paymentMethod,
+                        "description" to voucher.description,
+                        "dateMillis" to voucher.dateMillis,
+                        "issuerName" to voucher.issuerName,
+                        "notes" to voucher.notes,
+                        "ownerEmail" to (userEmail ?: "public")
+                    )
+                    setDocAsync(docRef, data)
+                    syncedVouchers++
+                }
             }
 
             val partitionLabel = if (!userEmail.isNullOrBlank()) "حساب $userEmail" else "المستودع العام"
@@ -240,7 +259,7 @@ class FirebaseDbService {
 
     suspend fun pushDevice(device: NetworkDeviceEntity, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getDevicesRef(userEmail).document(device.id.toString())
+            val docRef = getDevicesRef(userEmail)?.document(device.id.toString()) ?: return@withContext false
             val data = mapOf(
                 "id" to device.id,
                 "name" to device.name,
@@ -273,7 +292,7 @@ class FirebaseDbService {
 
     suspend fun deleteDevice(deviceId: Long, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getDevicesRef(userEmail).document(deviceId.toString())
+            val docRef = getDevicesRef(userEmail)?.document(deviceId.toString()) ?: return@withContext false
             deleteDocAsync(docRef)
             true
         } catch (e: Exception) {
@@ -284,7 +303,7 @@ class FirebaseDbService {
 
     suspend fun pushRetailer(retailer: RetailerEntity, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getRetailersRef(userEmail).document(retailer.id.toString())
+            val docRef = getRetailersRef(userEmail)?.document(retailer.id.toString()) ?: return@withContext false
             val data = mapOf(
                 "id" to retailer.id,
                 "name" to retailer.name,
@@ -309,7 +328,7 @@ class FirebaseDbService {
 
     suspend fun deleteRetailer(retailerId: Long, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getRetailersRef(userEmail).document(retailerId.toString())
+            val docRef = getRetailersRef(userEmail)?.document(retailerId.toString()) ?: return@withContext false
             deleteDocAsync(docRef)
             true
         } catch (e: Exception) {
@@ -320,7 +339,7 @@ class FirebaseDbService {
 
     suspend fun pushVoucher(voucher: FinancialVoucherEntity, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getVouchersRef(userEmail).document(voucher.voucherNumber)
+            val docRef = getVouchersRef(userEmail)?.document(voucher.voucherNumber) ?: return@withContext false
             val data = mapOf(
                 "id" to voucher.id,
                 "voucherNumber" to voucher.voucherNumber,
@@ -346,7 +365,7 @@ class FirebaseDbService {
 
     suspend fun deleteVoucher(voucherNumber: String, userEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val docRef = getVouchersRef(userEmail).document(voucherNumber)
+            val docRef = getVouchersRef(userEmail)?.document(voucherNumber) ?: return@withContext false
             deleteDocAsync(docRef)
             true
         } catch (e: Exception) {
@@ -359,14 +378,15 @@ class FirebaseDbService {
     // Authorized Users & Distributors Cloud Sync
     // ==========================================
 
-    private fun getAuthorizedUsersRef(): CollectionReference {
-        return firestore.collection("authorized_users")
+    private fun getAuthorizedUsersRef(): CollectionReference? {
+        return firestore?.collection("authorized_users")
     }
 
     suspend fun pushAuthorizedUser(user: UserEntity, adminEmail: String? = null): Boolean = withContext(Dispatchers.IO) {
         try {
+            val ref = getAuthorizedUsersRef() ?: return@withContext false
             val emailKey = if (user.email.isNotBlank()) sanitizeEmail(user.email) else "user_${user.id}"
-            val docRef = getAuthorizedUsersRef().document(emailKey)
+            val docRef = ref.document(emailKey)
             val data = mapOf(
                 "id" to user.id,
                 "username" to user.username,
@@ -392,8 +412,9 @@ class FirebaseDbService {
     suspend fun deleteAuthorizedUser(userEmail: String): Boolean = withContext(Dispatchers.IO) {
         try {
             if (userEmail.isBlank()) return@withContext false
+            val ref = getAuthorizedUsersRef() ?: return@withContext false
             val emailKey = sanitizeEmail(userEmail)
-            val docRef = getAuthorizedUsersRef().document(emailKey)
+            val docRef = ref.document(emailKey)
             deleteDocAsync(docRef)
             true
         } catch (e: Exception) {
@@ -404,10 +425,11 @@ class FirebaseDbService {
 
     suspend fun fetchAuthorizedUserByEmail(email: String): UserEntity? = withContext(Dispatchers.IO) {
         if (email.isBlank()) return@withContext null
+        val ref = getAuthorizedUsersRef() ?: return@withContext null
         try {
             val emailKey = sanitizeEmail(email)
             val snap = suspendCancellableCoroutine<com.google.firebase.firestore.DocumentSnapshot?> { cont ->
-                getAuthorizedUsersRef().document(emailKey).get()
+                ref.document(emailKey).get()
                     .addOnSuccessListener { snapshot ->
                         if (cont.isActive) cont.resume(snapshot)
                     }

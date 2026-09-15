@@ -14,7 +14,8 @@ import kotlin.random.Random
 
 object InitialDataSeeder {
     suspend fun seedDatabase(db: AppDatabase) {
-        // 0. Seed Network Identity & IP Configuration
+        try {
+            // 0. Seed Network Identity & IP Configuration
         val defaultIdentity = NetworkIdentityEntity(
             id = 1L,
             networkName = "شبكة سام ميكروتك الذكية",
@@ -497,6 +498,9 @@ object InitialDataSeeder {
             )
         )
         partnerTxs.forEach { db.partnerDao().insertPartnerTransaction(it) }
+        } catch (e: Throwable) {
+            android.util.Log.e("InitialDataSeeder", "Error while seeding initial data: ${e.message}", e)
+        }
     }
 }
 

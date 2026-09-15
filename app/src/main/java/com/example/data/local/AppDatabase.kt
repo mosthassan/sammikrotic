@@ -80,9 +80,26 @@ abstract class AppDatabase : RoomDatabase() {
         ) : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
-                INSTANCE?.let { database ->
-                    scope.launch(Dispatchers.IO) {
-                        InitialDataSeeder.seedDatabase(database)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        INSTANCE?.let { database ->
+                            InitialDataSeeder.seedDatabase(database)
+                        }
+                    } catch (e: Throwable) {
+                        android.util.Log.e("AppDatabase", "Error seeding database on create: ${e.message}", e)
+                    }
+                }
+            }
+
+            override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+                super.onDestructiveMigration(db)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        INSTANCE?.let { database ->
+                            InitialDataSeeder.seedDatabase(database)
+                        }
+                    } catch (e: Throwable) {
+                        android.util.Log.e("AppDatabase", "Error seeding database on migration: ${e.message}", e)
                     }
                 }
             }

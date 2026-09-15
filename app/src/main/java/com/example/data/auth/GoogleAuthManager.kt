@@ -15,6 +15,7 @@ import androidx.credentials.exceptions.GetCredentialProviderConfigurationExcepti
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -38,18 +39,44 @@ data class GoogleAuthResult(
 class GoogleAuthManager(private val context: Context) {
 
     private val tag = "GoogleAuthManager"
-    private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
+    private val auth: FirebaseAuth? by lazy {
+        try {
+            if (FirebaseApp.getApps(context).isEmpty()) {
+                FirebaseApp.initializeApp(context)
+            }
+            FirebaseAuth.getInstance()
+        } catch (e: Throwable) {
+            Log.e(tag, "FirebaseAuth unavailable: ${e.message}", e)
+            null
+        }
+    }
     private val credentialManager: CredentialManager by lazy { CredentialManager.create(context) }
     private val prefs: SharedPreferences =
         context.getSharedPreferences("sam_mikrotic_auth_prefs", Context.MODE_PRIVATE)
 
-    fun getCurrentUser(): FirebaseUser? = auth.currentUser
+    fun getCurrentUser(): FirebaseUser? = try {
+        auth?.currentUser
+    } catch (e: Throwable) {
+        null
+    }
 
-    fun getActiveEmail(): String? = auth.currentUser?.email
+    fun getActiveEmail(): String? = try {
+        auth?.currentUser?.email
+    } catch (e: Throwable) {
+        null
+    }
 
-    fun getActiveUid(): String? = auth.currentUser?.uid
+    fun getActiveUid(): String? = try {
+        auth?.currentUser?.uid
+    } catch (e: Throwable) {
+        null
+    }
 
-    fun isUserLoggedIn(): Boolean = auth.currentUser != null
+    fun isUserLoggedIn(): Boolean = try {
+        auth?.currentUser != null
+    } catch (e: Throwable) {
+        false
+    }
 
     /**
      * Resolves the Web Client ID in the following order:
@@ -133,8 +160,9 @@ class GoogleAuthManager(private val context: Context) {
                 // Authenticate with Firebase Authentication using real Google idToken
                 try {
                     val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
-                    val authResult = auth.signInWithCredential(firebaseCredential).await()
-                    val firebaseUser = authResult.user
+                    val currentAuth = auth
+                    val authResult = currentAuth?.signInWithCredential(firebaseCredential)?.await()
+                    val firebaseUser = authResult?.user
 
                     GoogleAuthResult(
                         success = true,
@@ -211,7 +239,11 @@ class GoogleAuthManager(private val context: Context) {
                         errorMessage = "يرجى كتابة البريد الإلكتروني وكلمة المرور"
                     )
                 }
-                val authResult = auth.signInWithEmailAndPassword(cleanEmail, cleanPass).await()
+                val currentAuth = auth ?: return@withContext GoogleAuthResult(
+                    success = false,
+                    errorMessage = "خدمة Firebase غير مهيأة بعد"
+                )
+                val authResult = currentAuth.signInWithEmailAndPassword(cleanEmail, cleanPass).await()
                 val user = authResult.user
                 GoogleAuthResult(
                     success = true,
@@ -250,7 +282,11 @@ class GoogleAuthManager(private val context: Context) {
                 )
             }
 
-            val authResult = auth.createUserWithEmailAndPassword(cleanEmail, cleanPass).await()
+            val currentAuth = auth ?: return@withContext GoogleAuthResult(
+                success = false,
+                errorMessage = "خدمة Firebase غير مهيأة بعد"
+            )
+            val authResult = currentAuth.createUserWithEmailAndPassword(cleanEmail, cleanPass).await()
             val user = authResult.user
 
             try {
@@ -281,7 +317,7 @@ class GoogleAuthManager(private val context: Context) {
 
     suspend fun sendPasswordReset(email: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            auth.sendPasswordResetEmail(email.trim()).await()
+            auth?.sendPasswordResetEmail(email.trim())?.await()
             true
         } catch (e: Exception) {
             Log.e(tag, "Password reset failed", e)
@@ -291,7 +327,7 @@ class GoogleAuthManager(private val context: Context) {
 
     suspend fun signOut() {
         try {
-            auth.signOut()
+            auth?.signOut()
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
             Log.i(tag, "Signed out successfully from Firebase and Google Credential Manager")
         } catch (e: Exception) {

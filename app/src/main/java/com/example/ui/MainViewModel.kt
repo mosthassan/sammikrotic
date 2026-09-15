@@ -1,0 +1,630 @@
+package com.example.ui
+
+import android.app.Activity
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.ai.GeminiAiService
+import com.example.data.auth.GoogleAuthManager
+import com.example.data.firebase.FirebaseDbService
+import com.example.data.local.AppDatabase
+import com.example.data.local.entity.CardBatchEntity
+import com.example.data.local.entity.CardEntity
+import com.example.data.local.entity.FinancialVoucherEntity
+import com.example.data.local.entity.InventoryItemEntity
+import com.example.data.local.entity.NetworkAssetEntity
+import com.example.data.local.entity.NetworkDeviceEntity
+import com.example.data.local.entity.NetworkIdentityEntity
+import com.example.data.local.entity.PartnerEntity
+import com.example.data.local.entity.PartnerTransactionEntity
+import com.example.data.local.entity.RetailerEntity
+import com.example.data.local.entity.UserEntity
+import com.example.data.repository.NetworkRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+data class IpValidationResult(
+    val hasConflict: Boolean = false,
+    val conflictingDeviceName: String? = null,
+    val conflictingDeviceLocation: String? = null,
+    val isOutsideSubnet: Boolean = false,
+    val approvedSubnet: String = "192.168.88.0/24"
+)
+
+data class GoogleSignInUiState(
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val successMessage: String? = null,
+    val isMissingClientId: Boolean = false,
+    val activeFirebaseEmail: String? = null,
+    val activeFirebaseUid: String? = null,
+    val activeAuthProvider: String? = null
+)
+
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val db = AppDatabase.getDatabase(application, viewModelScope)
+    private val repository = NetworkRepository(db)
+    private val aiService = GeminiAiService()
+    private val firebaseService = FirebaseDbService()
+    val authManager = GoogleAuthManager(application)
+
+    // Google Sign-In state
+    private val _googleSignInState = MutableStateFlow(
+        GoogleSignInUiState(
+            activeFirebaseEmail = authManager.getActiveEmail(),
+            activeFirebaseUid = authManager.getActiveUid(),
+            activeAuthProvider = if (authManager.isUserLoggedIn()) "Firebase" else null
+        )
+    )
+    val googleSignInState: StateFlow<GoogleSignInUiState> = _googleSignInState.asStateFlow()
+
+    // Active User Role
+    val users: StateFlow<List<UserEntity>> = repository.allUsers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val distributors: StateFlow<List<UserEntity>> = repository.allDistributors
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _currentUser = MutableStateFlow<UserEntity?>(null)
+    val currentUser: StateFlow<UserEntity?> = _currentUser.asStateFlow()
+
+    fun selectUser(user: UserEntity) {
+        _currentUser.value = user
+    }
+
+    fun saveDistributor(
+        distributor: UserEntity,
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val normalizedUser = distributor.copy(
+                role = "DISTRIBUTOR",
+                email = distributor.email.trim().lowercase(),
+                username = if (distributor.username.isBlank()) {
+                    distributor.email.substringBefore("@").ifBlank { "dist_${System.currentTimeMillis()}" }
+                } else distributor.username
+            )
+            val id = repository.saveUser(normalizedUser)
+            val updated = if (distributor.id == 0L) normalizedUser.copy(id = id) else normalizedUser
+
+            // Push to cloud authorized_users directory
+            val adminEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushAuthorizedUser(updated, adminEmail)
+            onComplete()
+        }
+    }
+
+    fun deleteDistributor(distributor: UserEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.deleteUser(distributor)
+            if (distributor.email.isNotBlank()) {
+                firebaseService.deleteAuthorizedUser(distributor.email)
+            }
+            onComplete()
+        }
+    }
+
+    fun toggleDistributorActive(distributor: UserEntity) {
+        viewModelScope.launch {
+            val updated = distributor.copy(isActive = !distributor.isActive)
+            repository.saveUser(updated)
+            val adminEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushAuthorizedUser(updated, adminEmail)
+        }
+    }
+
+    // Google One-Tap & Authentication Dialog state
+    /**
+     * Genuine Google Sign-In through Android Credential Manager and Firebase Authentication.
+     */
+    fun signInWithGoogle(activity: Activity? = null, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            _googleSignInState.value = _googleSignInState.value.copy(
+                isLoading = true,
+                errorMessage = null,
+                successMessage = null
+            )
+            val result = authManager.signInWithGoogle(activity = activity)
+            if (result.success && !result.email.isNullOrBlank()) {
+                val registeredUser = repository.registerOrUpdateGoogleUser(
+                    email = result.email,
+                    displayName = result.displayName ?: "مستخدم جوجل",
+                    photoUrl = result.photoUrl ?: ""
+                )
+                _currentUser.value = registeredUser
+                _googleSignInState.value = GoogleSignInUiState(
+                    isLoading = false,
+                    successMessage = "تم التحقق وتسجيل الدخول الرسمي بحساب ${result.email}",
+                    activeFirebaseEmail = result.email,
+                    activeFirebaseUid = result.uid,
+                    activeAuthProvider = result.authProvider
+                )
+                // Automatically sync cloud partition with verified email
+                triggerCloudSync()
+                onComplete(true)
+            } else if (result.isCancelled) {
+                _googleSignInState.value = _googleSignInState.value.copy(
+                    isLoading = false,
+                    errorMessage = null
+                )
+                onComplete(false)
+            } else if (result.isMissingClientId) {
+                _googleSignInState.value = _googleSignInState.value.copy(
+                    isLoading = false,
+                    isMissingClientId = true,
+                    errorMessage = result.errorMessage
+                )
+                onComplete(false)
+            } else {
+                _googleSignInState.value = _googleSignInState.value.copy(
+                    isLoading = false,
+                    errorMessage = result.errorMessage ?: "تعذر إكمال تسجيل الدخول عبر Google"
+                )
+                onComplete(false)
+            }
+        }
+    }
+
+    fun signOutGoogle() {
+        viewModelScope.launch {
+            authManager.signOut()
+            val defaultUser = users.value.firstOrNull { !it.isGoogleUser } ?: users.value.firstOrNull()
+            _currentUser.value = defaultUser
+            _googleSignInState.value = GoogleSignInUiState(
+                successMessage = "تم تسجيل الخروج من حساب Google و Firebase"
+            )
+        }
+    }
+
+    fun dismissGoogleMessage() {
+        _googleSignInState.value = _googleSignInState.value.copy(errorMessage = null, successMessage = null)
+    }
+
+    // Reset To Production Environment (حذف كافة البيانات التجريبية وتهيئة التطبيق للعمل الفعلي)
+    private val _resetProductionState = MutableStateFlow<String?>(null)
+    val resetProductionState: StateFlow<String?> = _resetProductionState.asStateFlow()
+
+    fun resetToProductionEnvironment(onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            val activeUser = currentUser.value
+            val productionAdmin = repository.resetToProductionEnvironment(
+                activeGoogleUser = if (activeUser?.isGoogleUser == true) activeUser else null
+            )
+            _currentUser.value = productionAdmin
+            _resetProductionState.value = "تمت تهيئة بيئة العمل الفعلية بنجاح وحذف كافة البيانات الافتراضية."
+            triggerCloudSync()
+            onComplete()
+        }
+    }
+
+    fun dismissResetMessage() {
+        _resetProductionState.value = null
+    }
+
+    // Devices
+    val devices: StateFlow<List<NetworkDeviceEntity>> = repository.allDevices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val deviceCount: StateFlow<Int> = repository.deviceCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    // IP Conflict and Subnet check
+    private val _ipValidation = MutableStateFlow(IpValidationResult())
+    val ipValidation: StateFlow<IpValidationResult> = _ipValidation.asStateFlow()
+
+    // Network Identity & Configuration State
+    val networkIdentity: StateFlow<NetworkIdentityEntity> = repository.networkIdentity
+        .map { it ?: NetworkIdentityEntity() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, NetworkIdentityEntity())
+
+    fun saveNetworkIdentity(identity: NetworkIdentityEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.saveNetworkIdentity(identity)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushNetworkIdentity(identity, userEmail)
+            onComplete()
+        }
+    }
+
+    fun resetNetworkIdentityToDefault(onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            val defaultIdentity = NetworkIdentityEntity(
+                id = 1L,
+                networkName = "شبكة سام ميكروتك الذكية",
+                ownerName = _currentUser.value?.fullName ?: "المهندس سام",
+                supportPhone = "770000001",
+                supportWhatsapp = "967770000001",
+                supportEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() } ?: "support@sam-mikrotic.ye",
+                networkLocation = "اليمن - صنعاء - السبعين",
+                routerModel = "MikroTik CCR2004-16G-2S+",
+                routerOsVersion = "RouterOS v7.15",
+                approvedDeviceSubnet = "192.168.88.0/24",
+                gatewayIp = "192.168.88.1",
+                ipRangeStart = "192.168.88.2",
+                ipRangeEnd = "192.168.88.254",
+                hotspotSubnet = "10.5.50.0/24",
+                hotspotGatewayIp = "10.5.50.1",
+                dnsServers = "8.8.8.8, 1.1.1.1",
+                welcomeNotice = "أهلاً بكم في شبكة سام اللاسلكية - إنترنت فائق السرعة واستقرار دائم"
+            )
+            repository.saveNetworkIdentity(defaultIdentity)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushNetworkIdentity(defaultIdentity, userEmail)
+            onComplete()
+        }
+    }
+
+    fun validateIp(ip: String, excludeDeviceId: Long? = null) {
+        viewModelScope.launch {
+            val cleanIp = ip.trim()
+            val currentIdentity = networkIdentity.value
+            if (cleanIp.isEmpty()) {
+                _ipValidation.value = IpValidationResult(false, approvedSubnet = currentIdentity.approvedDeviceSubnet)
+                return@launch
+            }
+            val isOutside = !repository.isIpInApprovedSubnet(cleanIp, currentIdentity.approvedDeviceSubnet)
+            val conflict = repository.checkIpConflict(cleanIp, excludeDeviceId)
+            if (conflict != null) {
+                _ipValidation.value = IpValidationResult(
+                    hasConflict = true,
+                    conflictingDeviceName = conflict.name,
+                    conflictingDeviceLocation = conflict.locationArea,
+                    isOutsideSubnet = isOutside,
+                    approvedSubnet = currentIdentity.approvedDeviceSubnet
+                )
+            } else {
+                _ipValidation.value = IpValidationResult(
+                    hasConflict = false,
+                    isOutsideSubnet = isOutside,
+                    approvedSubnet = currentIdentity.approvedDeviceSubnet
+                )
+            }
+        }
+    }
+
+    fun clearIpValidation() {
+        _ipValidation.value = IpValidationResult(false, approvedSubnet = networkIdentity.value.approvedDeviceSubnet)
+    }
+
+    suspend fun getSuggestedIp(): String {
+        return repository.suggestNextAvailableIp()
+    }
+
+    fun saveDevice(device: NetworkDeviceEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            val id = repository.saveDevice(device)
+            val updated = if (device.id == 0L) device.copy(id = id) else device
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushDevice(updated, userEmail)
+            onComplete()
+        }
+    }
+
+    fun updateDeviceCoordinates(
+        deviceId: Long,
+        latitude: Double,
+        longitude: Double,
+        coverageRadiusMeters: Int? = null,
+        parentDeviceId: Long? = null,
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val currentDevice = devices.value.firstOrNull { it.id == deviceId } ?: return@launch
+            val updated = currentDevice.copy(
+                latitude = latitude,
+                longitude = longitude,
+                coverageRadiusMeters = coverageRadiusMeters ?: currentDevice.coverageRadiusMeters,
+                parentDeviceId = parentDeviceId ?: currentDevice.parentDeviceId
+            )
+            repository.saveDevice(updated)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushDevice(updated, userEmail)
+            onComplete()
+        }
+    }
+
+    fun deleteDevice(device: NetworkDeviceEntity) {
+        viewModelScope.launch {
+            repository.deleteDevice(device)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.deleteDevice(device.id, userEmail)
+        }
+    }
+
+    // Inventory Management (مخزن الكروت الفيزيائية)
+    val inventoryItems: StateFlow<List<InventoryItemEntity>> = repository.allInventoryItems
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun saveInventoryItem(
+        packageName: String,
+        quantity: Int,
+        wholesalePrice: Double,
+        retailPrice: Double
+    ) {
+        viewModelScope.launch {
+            repository.saveInventoryItem(
+                InventoryItemEntity(
+                    packageName = packageName,
+                    quantityAvailable = quantity,
+                    wholesalePrice = wholesalePrice,
+                    retailPrice = retailPrice
+                )
+            )
+        }
+    }
+
+    fun distributeFromInventory(
+        inventoryId: Long,
+        retailerId: Long,
+        quantity: Int,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            val success = repository.distributeFromInventory(inventoryId, retailerId, quantity)
+            onResult(success)
+        }
+    }
+
+    // Cards & Batches
+    val cardBatches: StateFlow<List<CardBatchEntity>> = repository.allBatches
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cards: StateFlow<List<CardEntity>> = repository.allCards
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val availableCardsCount: StateFlow<Int> = repository.availableCardsCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val distributedCardsCount: StateFlow<Int> = repository.distributedCardsCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val soldCardsCount: StateFlow<Int> = repository.soldCardsCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    fun createBatchAndGenerateCards(
+        batchName: String,
+        categoryName: String,
+        retailPrice: Double,
+        wholesalePrice: Double,
+        quotaMb: Long,
+        validityHours: Int,
+        speedLimit: String,
+        count: Int,
+        prefix: String,
+        codeLength: Int = 6,
+        charSet: com.example.data.cards.CodeCharacterSet = com.example.data.cards.CodeCharacterSet.DIGITS_ONLY,
+        passwordPolicy: com.example.data.cards.PasswordPolicy = com.example.data.cards.PasswordPolicy.SAME_AS_USERNAME,
+        onComplete: (Long) -> Unit
+    ) {
+        viewModelScope.launch {
+            val id = repository.createBatchAndGenerateCards(
+                batchName, categoryName, retailPrice, wholesalePrice,
+                quotaMb, validityHours, speedLimit, count, prefix,
+                codeLength, charSet, passwordPolicy
+            )
+            onComplete(id)
+        }
+    }
+
+    // Retailers / Groceries
+    val retailers: StateFlow<List<RetailerEntity>> = repository.allRetailers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun saveRetailer(retailer: RetailerEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            val id = repository.saveRetailer(retailer)
+            val updated = if (retailer.id == 0L) retailer.copy(id = id) else retailer
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushRetailer(updated, userEmail)
+            onComplete()
+        }
+    }
+
+    fun deleteRetailer(retailer: RetailerEntity) {
+        viewModelScope.launch {
+            repository.deleteRetailer(retailer)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.deleteRetailer(retailer.id, userEmail)
+        }
+    }
+
+    fun distributeCardsToRetailer(
+        batchId: Long,
+        retailerId: Long,
+        quantity: Int,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            val success = repository.distributeCardsToRetailer(batchId, retailerId, quantity)
+            onResult(success)
+        }
+    }
+
+    fun markCardSold(cardId: Long) {
+        viewModelScope.launch {
+            repository.markCardSold(cardId)
+        }
+    }
+
+    // Financial Vouchers
+    val vouchers: StateFlow<List<FinancialVoucherEntity>> = repository.allVouchers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalReceipts: StateFlow<Double?> = repository.totalReceipts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val totalPayments: StateFlow<Double?> = repository.totalPayments
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    fun createVoucher(
+        voucherType: String,
+        amount: Double,
+        partyName: String,
+        retailerId: Long?,
+        category: String,
+        paymentMethod: String,
+        description: String,
+        onComplete: () -> Unit
+    ) {
+        viewModelScope.launch {
+            val issuer = _currentUser.value?.fullName ?: "المهندس سام"
+            val id = repository.createVoucher(
+                voucherType, amount, partyName, retailerId,
+                category, paymentMethod, description, issuer
+            )
+            val voucherNumber = "${if (voucherType == "RECEIPT") "REC" else "PAY"}-2026-${id}"
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushVoucher(
+                FinancialVoucherEntity(
+                    id = id,
+                    voucherNumber = voucherNumber,
+                    voucherType = voucherType,
+                    amount = amount,
+                    partyName = partyName,
+                    retailerId = retailerId,
+                    category = category,
+                    paymentMethod = paymentMethod,
+                    description = description,
+                    issuerName = issuer
+                ),
+                userEmail
+            )
+            onComplete()
+        }
+    }
+
+    fun deleteVoucher(voucher: FinancialVoucherEntity) {
+        viewModelScope.launch {
+            repository.deleteVoucher(voucher)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.deleteVoucher(voucher.voucherNumber, userEmail)
+        }
+    }
+
+    // =========================================================
+    // Investment, Partners & Fixed Assets (CAPEX & Equity System)
+    // =========================================================
+    val partners: StateFlow<List<PartnerEntity>> = repository.allPartners
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalInvestedCapital: StateFlow<Double?> = repository.totalInvestedCapital
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val totalDistributedProfits: StateFlow<Double?> = repository.totalDistributedProfits
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val partnerTransactions: StateFlow<List<PartnerTransactionEntity>> = repository.allPartnerTransactions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun savePartner(partner: PartnerEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.savePartner(partner)
+            onComplete()
+        }
+    }
+
+    fun deletePartner(partner: PartnerEntity) {
+        viewModelScope.launch {
+            repository.deletePartner(partner)
+        }
+    }
+
+    fun recordPartnerTransaction(tx: PartnerTransactionEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.recordPartnerTransaction(tx)
+            onComplete()
+        }
+    }
+
+    fun deletePartnerTransaction(tx: PartnerTransactionEntity) {
+        viewModelScope.launch {
+            repository.deletePartnerTransaction(tx)
+        }
+    }
+
+    // Fixed Assets (CAPEX)
+    val assets: StateFlow<List<NetworkAssetEntity>> = repository.allAssets
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalAssetPurchaseCost: StateFlow<Double?> = repository.totalAssetPurchaseCost
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val totalCurrentAssetValue: StateFlow<Double?> = repository.totalCurrentAssetValue
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val assetCount: StateFlow<Int> = repository.assetCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    fun saveAsset(asset: NetworkAssetEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.saveAsset(asset)
+            onComplete()
+        }
+    }
+
+    fun deleteAsset(asset: NetworkAssetEntity) {
+        viewModelScope.launch {
+            repository.deleteAsset(asset)
+        }
+    }
+
+
+    // AI Consultant State
+    private val _aiResponse = MutableStateFlow<String?>(null)
+    val aiResponse: StateFlow<String?> = _aiResponse.asStateFlow()
+
+    private val _isAiLoading = MutableStateFlow(false)
+    val isAiLoading: StateFlow<Boolean> = _isAiLoading.asStateFlow()
+
+    fun consultAi(prompt: String) {
+        viewModelScope.launch {
+            _isAiLoading.value = true
+            val identity = networkIdentity.value
+            val currentDeviceList = devices.value.joinToString { "${it.name} (${it.ipAddress} - ${it.locationArea})" }
+            val statsContext = "إجمالي الأجهزة: ${devices.value.size}, البقالات: ${retailers.value.size}, الكروت المتاحة: ${availableCardsCount.value}, الأجهزة الحالية: $currentDeviceList"
+            val response = aiService.consultMikrotikAi(prompt, statsContext, identity)
+            _aiResponse.value = response
+            _isAiLoading.value = false
+        }
+    }
+
+    // Cloud Sync Status
+    private val _syncStatus = MutableStateFlow("متزامن سحابياً ومحلياً مع Firebase (sam-mikrotic) ☁️⚡")
+    val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
+
+    fun triggerCloudSync(onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            val targetLabel = if (!userEmail.isNullOrBlank()) "حساب $userEmail" else "المشروع sam-mikrotic"
+            _syncStatus.value = "جارٍ الاتصال بقاعدة بيانات Firebase ($targetLabel)..."
+            val devList = devices.value
+            val retList = retailers.value
+            val vouchList = vouchers.value
+            val identity = networkIdentity.value
+            val result = firebaseService.syncAllToCloud(devList, retList, vouchList, userEmail, identity)
+            if (result.success) {
+                _syncStatus.value = "تمت المزامنة بنجاح ($targetLabel): ${result.syncedDevicesCount} جهاز، ${result.syncedRetailersCount} بقالة، ${result.syncedVouchersCount} سند، وهوية الشبكة ✓"
+            } else {
+                _syncStatus.value = result.message
+            }
+            onDone()
+        }
+    }
+
+    init {
+        // Automatically assign default user once users load
+        viewModelScope.launch {
+            repository.allUsers.collect { list ->
+                if (_currentUser.value == null && list.isNotEmpty()) {
+                    _currentUser.value = list.first()
+                }
+            }
+        }
+    }
+}

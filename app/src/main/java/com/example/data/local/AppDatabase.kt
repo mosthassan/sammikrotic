@@ -27,6 +27,7 @@ import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @Database(
@@ -43,7 +44,7 @@ import kotlinx.coroutines.launch
         PartnerTransactionEntity::class,
         InventoryItemEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -61,26 +62,26 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
+        fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "sam_mikrotik_db"
                 ).fallbackToDestructiveMigration()
-                .addCallback(AppDatabaseCallback(scope))
+                .addCallback(AppDatabaseCallback())
                 .build()
                 INSTANCE = instance
                 instance
             }
         }
 
-        private class AppDatabaseCallback(
-            private val scope: CoroutineScope
-        ) : RoomDatabase.Callback() {
+        private class AppDatabaseCallback : RoomDatabase.Callback() {
+            private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
-                scope.launch(Dispatchers.IO) {
+                scope.launch {
                     try {
                         INSTANCE?.let { database ->
                             InitialDataSeeder.seedDatabase(database)
@@ -93,7 +94,7 @@ abstract class AppDatabase : RoomDatabase() {
 
             override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
                 super.onDestructiveMigration(db)
-                scope.launch(Dispatchers.IO) {
+                scope.launch {
                     try {
                         INSTANCE?.let { database ->
                             InitialDataSeeder.seedDatabase(database)

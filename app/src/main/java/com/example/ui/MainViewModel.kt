@@ -48,7 +48,7 @@ data class GoogleSignInUiState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = AppDatabase.getDatabase(application, viewModelScope)
+    private val db = AppDatabase.getDatabase(application)
     private val repository = NetworkRepository(db)
     private val aiService = GeminiAiService()
     private val firebaseService = FirebaseDbService()

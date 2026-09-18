@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Receipt
@@ -38,6 +39,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -72,6 +75,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FinancialVoucherEntity
+import com.example.data.local.entity.RetailerEntity
 import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
 import com.example.ui.theme.EquityBlue
@@ -81,6 +85,9 @@ import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
 import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.ReceiptGreen
+import com.example.ui.theme.WhatsAppDarkGreen
+import com.example.ui.theme.WhatsAppGreen
+import com.example.util.WhatsAppHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -296,9 +303,18 @@ fun VouchersListSubScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     items(filteredVouchers, key = { it.id }) { voucher ->
+                        val linkedRetailer = retailers.firstOrNull { it.id == voucher.retailerId }
                         VoucherItemCard(
                             voucher = voucher,
                             onPreview = { voucherToPreview = voucher },
+                            onWhatsAppShare = {
+                                val msg = WhatsAppHelper.generateVoucherMessage(voucher, linkedRetailer?.phone)
+                                if (linkedRetailer != null && linkedRetailer.phone.isNotBlank()) {
+                                    WhatsAppHelper.sendWhatsAppMessage(context, linkedRetailer.phone, msg)
+                                } else {
+                                    WhatsAppHelper.shareTextIntent(context, msg, "مشاركة السند عبر الواتساب")
+                                }
+                            },
                             onDelete = { voucherToDelete = voucher }
                         )
                     }
@@ -334,7 +350,7 @@ fun VouchersListSubScreen(
             AddVoucherDialog(
                 retailers = retailers,
                 onDismiss = { showAddDialog = false },
-                onSave = { type, amount, party, retailerId, cat, method, desc ->
+                onSave = { type, amount, party, retailerId, cat, method, desc, shareWhatsApp ->
                     viewModel.createVoucher(
                         voucherType = type,
                         amount = amount,
@@ -346,6 +362,26 @@ fun VouchersListSubScreen(
                     ) {
                         showAddDialog = false
                         Toast.makeText(context, "تم إصدار السند المالي بنجاح ✓", Toast.LENGTH_SHORT).show()
+
+                        if (shareWhatsApp) {
+                            val r = retailers.firstOrNull { it.id == retailerId }
+                            val tempVoucher = FinancialVoucherEntity(
+                                voucherNumber = "NEW",
+                                voucherType = type,
+                                amount = amount,
+                                partyName = party,
+                                retailerId = retailerId,
+                                category = cat,
+                                paymentMethod = method,
+                                description = desc
+                            )
+                            val msg = WhatsAppHelper.generateVoucherMessage(tempVoucher, r?.phone)
+                            if (r != null && r.phone.isNotBlank()) {
+                                WhatsAppHelper.sendWhatsAppMessage(context, r.phone, msg)
+                            } else {
+                                WhatsAppHelper.shareTextIntent(context, msg, "مشاركة السند المالي عبر الواتساب")
+                            }
+                        }
                     }
                 }
             )
@@ -353,8 +389,10 @@ fun VouchersListSubScreen(
 
         // Voucher Print & Share Slip Modal
         if (voucherToPreview != null) {
+            val previewRetailer = retailers.firstOrNull { it.id == voucherToPreview?.retailerId }
             VoucherSlipModal(
                 voucher = voucherToPreview!!,
+                retailer = previewRetailer,
                 onDismiss = { voucherToPreview = null },
                 onShare = { shareText ->
                     val sendIntent = Intent().apply {
@@ -431,6 +469,7 @@ fun VoucherSummaryCard(
 fun VoucherItemCard(
     voucher: FinancialVoucherEntity,
     onPreview: () -> Unit,
+    onWhatsAppShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     val isReceipt = voucher.voucherType == "RECEIPT"
@@ -502,7 +541,7 @@ fun VoucherItemCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Footer info and action buttons
             Row(
@@ -518,6 +557,17 @@ fun VoucherItemCard(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
+                        onClick = onWhatsAppShare,
+                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = "واتساب", tint = WhatsAppDarkGreen, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("واتساب", color = WhatsAppDarkGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
                         onClick = onPreview,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                         shape = RoundedCornerShape(6.dp),
@@ -525,7 +575,7 @@ fun VoucherItemCard(
                     ) {
                         Icon(Icons.Default.Print, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("معاينة السند", color = MikroTikPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("معاينة", color = MikroTikPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
@@ -542,7 +592,7 @@ fun VoucherItemCard(
 fun AddVoucherDialog(
     retailers: List<com.example.data.local.entity.RetailerEntity>,
     onDismiss: () -> Unit,
-    onSave: (String, Double, String, Long?, String, String, String) -> Unit
+    onSave: (String, Double, String, Long?, String, String, String, Boolean) -> Unit
 ) {
     var voucherType by remember { mutableStateOf("RECEIPT") } // RECEIPT or PAYMENT
     var amountText by remember { mutableStateOf("") }
@@ -551,6 +601,7 @@ fun AddVoucherDialog(
     var category by remember { mutableStateOf("توريد مبيعات كروت") }
     var paymentMethod by remember { mutableStateOf("نقداً") }
     var description by remember { mutableStateOf("") }
+    var shareViaWhatsApp by remember { mutableStateOf(false) }
 
     var isRetailerDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -637,6 +688,9 @@ fun AddVoucherDialog(
                                         onClick = {
                                             selectedRetailerId = r.id
                                             partyName = r.name
+                                            if (r.phone.isNotBlank()) {
+                                                shareViaWhatsApp = true
+                                            }
                                             isRetailerDropdownExpanded = false
                                         }
                                     )
@@ -689,6 +743,43 @@ fun AddVoucherDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                // خيار إرسال السند للواتساب بتذييل طلقة نت
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = WhatsAppGreen.copy(alpha = 0.1f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WhatsAppGreen.copy(alpha = 0.35f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { shareViaWhatsApp = !shareViaWhatsApp }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = shareViaWhatsApp,
+                                onCheckedChange = { shareViaWhatsApp = it },
+                                colors = CheckboxDefaults.colors(checkedColor = WhatsAppDarkGreen)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Text(
+                                    text = "مشاركة السند فوراً عبر الواتساب",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = WhatsAppDarkGreen
+                                )
+                                Text(
+                                    text = "تذييل تلقائي معتمد باسم (${WhatsAppHelper.NETWORK_BRAND_NAME})",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF1F2937)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -696,13 +787,21 @@ fun AddVoucherDialog(
                 onClick = {
                     val amt = amountText.toDoubleOrNull() ?: 0.0
                     if (amt > 0 && partyName.isNotBlank()) {
-                        onSave(voucherType, amt, partyName.trim(), selectedRetailerId, category.trim(), paymentMethod.trim(), description.trim())
+                        onSave(voucherType, amt, partyName.trim(), selectedRetailerId, category.trim(), paymentMethod.trim(), description.trim(), shareViaWhatsApp)
                     }
                 },
                 enabled = amountText.toDoubleOrNull() != null && partyName.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = if (voucherType == "RECEIPT") ReceiptGreen else PaymentRed)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (shareViaWhatsApp) WhatsAppDarkGreen else (if (voucherType == "RECEIPT") ReceiptGreen else PaymentRed)
+                )
             ) {
-                Text("إصدار السند")
+                if (shareViaWhatsApp) {
+                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("إصدار ومشاركة واتساب", color = Color.White)
+                } else {
+                    Text("إصدار السند", color = Color.White)
+                }
             }
         },
         dismissButton = {
@@ -716,26 +815,16 @@ fun AddVoucherDialog(
 @Composable
 fun VoucherSlipModal(
     voucher: FinancialVoucherEntity,
+    retailer: RetailerEntity? = null,
     onDismiss: () -> Unit,
     onShare: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val isReceipt = voucher.voucherType == "RECEIPT"
     val title = if (isReceipt) "سند قبض مالي رسمي" else "سند صرف مالي رسمي"
-    val dateStr = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(Date(voucher.dateMillis))
+    val dateStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(voucher.dateMillis))
 
-    val shareText = """
-        🧾 *سام ميكروتك - $title*
-        رقم السند: ${voucher.voucherNumber}
-        التاريخ: $dateStr
-        المبلغ: ${voucher.amount.toInt()} ريال يمني
-        ${if (isReceipt) "استلمنا من" else "صرفنا إلى"}: ${voucher.partyName}
-        البيان: ${voucher.description}
-        البند: ${voucher.category}
-        طريقة الدفع: ${voucher.paymentMethod}
-        المسؤول: ${voucher.issuerName}
-        ------------------------------
-        نظام سام ميكروتك لإدارة شبكات الوايرلس والمحاسبة
-    """.trimIndent()
+    val shareText = WhatsAppHelper.generateVoucherMessage(voucher, retailer?.phone)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -753,7 +842,7 @@ fun VoucherSlipModal(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(text = "سام ميكروتك", fontWeight = FontWeight.Bold, color = MikroTikNavy, fontSize = 14.sp)
+                        Text(text = WhatsAppHelper.NETWORK_BRAND_NAME, fontWeight = FontWeight.Bold, color = MikroTikNavy, fontSize = 14.sp)
                         Text(text = voucher.voucherNumber, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = MikroTikPrimary, fontSize = 12.sp)
                     }
                     Text(text = "التاريخ: $dateStr", fontSize = 11.sp, color = Color.Gray)
@@ -818,13 +907,30 @@ fun VoucherSlipModal(
             }
         },
         confirmButton = {
-            Button(
-                onClick = { onShare(shareText) },
-                colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
-            ) {
-                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("مشاركة السند")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        if (retailer != null && retailer.phone.isNotBlank()) {
+                            WhatsAppHelper.sendWhatsAppMessage(context, retailer.phone, shareText)
+                        } else {
+                            WhatsAppHelper.shareTextIntent(context, shareText, "مشاركة السند عبر الواتساب")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppDarkGreen)
+                ) {
+                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("واتساب (طلقة نت)")
+                }
+
+                Button(
+                    onClick = { onShare(shareText) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("مشاركة")
+                }
             }
         },
         dismissButton = {

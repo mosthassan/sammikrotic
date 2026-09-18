@@ -165,9 +165,32 @@ fun CardStudioScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val allCards by viewModel.cards.collectAsState()
+    val systemPackages by viewModel.cardPackages.collectAsState()
+
+    val allPresets = remember(systemPackages) {
+        val converted = systemPackages.map { pkg ->
+            PackagePreset(
+                id = "pkg_${pkg.id}",
+                title = pkg.name,
+                price = pkg.retailPrice,
+                categoryName = "${pkg.name} - ${pkg.formattedQuota}",
+                quota = pkg.formattedQuota,
+                uptime = if (pkg.validityHours >= 24) "${pkg.validityHours / 24} يوم" else "${pkg.validityHours} ساعة",
+                speed = pkg.speedLimit,
+                cardColorThemeId = when {
+                    pkg.retailPrice >= 4000 -> "royal_gold"
+                    pkg.retailPrice >= 1000 -> "emerald_green"
+                    pkg.retailPrice >= 500 -> "fiber_blue"
+                    else -> "turbo_blaze"
+                },
+                tag = "باقة ${pkg.retailPrice.toInt()} ر.ي"
+            )
+        }
+        if (converted.isNotEmpty()) converted + DEFAULT_PACKAGE_PRESETS else DEFAULT_PACKAGE_PRESETS
+    }
 
     // Studio Active State
-    var activePreset by remember { mutableStateOf(DEFAULT_PACKAGE_PRESETS[1]) } // Default to "أبو 1000" like web app screenshot
+    var activePreset by remember { mutableStateOf(allPresets.firstOrNull() ?: DEFAULT_PACKAGE_PRESETS[1]) }
     var activeTab by remember { mutableIntStateOf(1) } // 0: التوليد والأكواد, 1: القوالب AI, 2: عناصر ومقاس الكرت, 3: ورقة A4 والقص
     var previewMode by remember { mutableIntStateOf(0) } // 0: ورقة A4 كاملة للطباعة, 1: استوديو السحب, 2: معاينة كرت مفرد
     var zoomLevel by remember { mutableFloatStateOf(1.0f) }
@@ -500,7 +523,7 @@ fun CardStudioScreen(
             item {
                 StudioTemplateLibraryCard(
                     activePreset = activePreset,
-                    presets = DEFAULT_PACKAGE_PRESETS,
+                    presets = allPresets,
                     onSelectPreset = { applyPreset(it) },
                     onDuplicate = {
                         Toast.makeText(context, "تم استنساخ التنسيق لفئة جديدة بنجاح ✓", Toast.LENGTH_SHORT).show()

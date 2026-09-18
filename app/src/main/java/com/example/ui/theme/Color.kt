@@ -21,6 +21,9 @@ val StatusDistributed = Color(0xFF3B82F6)
 val ReceiptGreen = Color(0xFF059669)
 val PaymentRed = Color(0xFFDC2626)
 
+val WhatsAppGreen = Color(0xFF25D366)
+val WhatsAppDarkGreen = Color(0xFF075E54)
+
 val InvestmentGold = Color(0xFFF59E0B)
 val InvestmentGoldDark = Color(0xFFD97706)
 val AssetPurple = Color(0xFF8B5CF6)

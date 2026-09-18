@@ -2,6 +2,7 @@ package com.example.data.local
 
 import com.example.data.local.entity.CardBatchEntity
 import com.example.data.local.entity.CardEntity
+import com.example.data.local.entity.CardPackageEntity
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.NetworkAssetEntity
 import com.example.data.local.entity.NetworkDeviceEntity
@@ -19,10 +20,10 @@ object InitialDataSeeder {
         val defaultIdentity = NetworkIdentityEntity(
             id = 1L,
             networkName = "شبكة سام ميكروتك الذكية",
-            ownerName = "المهندس سام",
+            ownerName = "المهندس حسن",
             supportPhone = "770000001",
             supportWhatsapp = "967770000001",
-            supportEmail = "support@sam-mikrotic.ye",
+            supportEmail = "mosthassan.ye@gmail.com",
             networkLocation = "اليمن - صنعاء - السبعين",
             routerModel = "MikroTik CCR2004-16G-2S+",
             routerOsVersion = "RouterOS v7.15",
@@ -37,9 +38,16 @@ object InitialDataSeeder {
         )
         db.networkIdentityDao().insertOrUpdate(defaultIdentity)
 
-        // 1. Seed Users
+        // 1. Seed Users (mosthassan.ye@gmail.com as Supreme Owner/Admin)
         val users = listOf(
-            UserEntity(username = "owner_sam", fullName = "المهندس سام (مالك الشبكة)", role = "OWNER", phone = "770000001"),
+            UserEntity(
+                username = "mosthassan",
+                fullName = "المهندس حسن (المدير العام والمسؤول الأعلى)",
+                role = "OWNER",
+                email = "mosthassan.ye@gmail.com",
+                phone = "770000001",
+                isGoogleUser = true
+            ),
             UserEntity(username = "eng_ayman", fullName = "م. أيمن الشبواني (مهندس الشبكة)", role = "ENGINEER", phone = "770000002"),
             UserEntity(username = "dist_fahad", fullName = "فهد القدسي (مسؤول التوزيع)", role = "DISTRIBUTOR", phone = "770000003"),
             UserEntity(username = "pos_baraka", fullName = "أبو محمد (بقالة البركة)", role = "RETAILER", phone = "771234567", retailerId = 1L)
@@ -199,6 +207,77 @@ object InitialDataSeeder {
                 notes = "أغلب زبائنه طلاب جامعة"
             )
         )
+
+        // 3.5 Seed Standard Card Packages (الباقات والبروفايلات الرسمية للشبكة)
+        val initialPackages = listOf(
+            CardPackageEntity(
+                name = "باقة 100 ريال سريعة",
+                retailPrice = 100.0,
+                wholesalePrice = 90.0,
+                quotaMb = 700,
+                validityHours = 12,
+                speedLimit = "2M/1M",
+                mikrotikProfile = "profile-100r",
+                colorTheme = "amber",
+                notes = "باقة اقتصادية خفيفة للتصفح السريع والمراسلة"
+            ),
+            CardPackageEntity(
+                name = "باقة 200 ريال يومية",
+                retailPrice = 200.0,
+                wholesalePrice = 180.0,
+                quotaMb = 1536,
+                validityHours = 24,
+                speedLimit = "4M/2M",
+                mikrotikProfile = "profile-200r",
+                colorTheme = "cyan",
+                notes = "الباقة الأكثر مبيعاً للزبائن اليوميين"
+            ),
+            CardPackageEntity(
+                name = "باقة 500 ريال فايبر",
+                retailPrice = 500.0,
+                wholesalePrice = 450.0,
+                quotaMb = 4608,
+                validityHours = 72,
+                speedLimit = "6M/3M",
+                mikrotikProfile = "profile-500r",
+                colorTheme = "emerald",
+                notes = "باقة عائلية سريعة صالحة 3 أيام مع يوتيوب سلس"
+            ),
+            CardPackageEntity(
+                name = "باقة 1000 ريال أسبوعية",
+                retailPrice = 1000.0,
+                wholesalePrice = 900.0,
+                quotaMb = 10240,
+                validityHours = 168,
+                speedLimit = "8M/4M",
+                mikrotikProfile = "profile-1000r",
+                colorTheme = "gold",
+                notes = "باقة 10 جيجا أسبوعية لأصحاب الأعمال والمحلات"
+            ),
+            CardPackageEntity(
+                name = "باقة 2000 ريال نصف شهرية",
+                retailPrice = 2000.0,
+                wholesalePrice = 1800.0,
+                quotaMb = 22528,
+                validityHours = 360,
+                speedLimit = "10M/5M",
+                mikrotikProfile = "profile-2000r",
+                colorTheme = "purple",
+                notes = "باقة 22 جيجا صالحة 15 يوماً سرعة فائقة"
+            ),
+            CardPackageEntity(
+                name = "باقة 4500 ريال شهرية VIP",
+                retailPrice = 4500.0,
+                wholesalePrice = 4000.0,
+                quotaMb = 51200,
+                validityHours = 720,
+                speedLimit = "15M/8M",
+                mikrotikProfile = "profile-vip-month",
+                colorTheme = "rose",
+                notes = "باقة شهرية 50 جيجابايت VIP بدون تقطيع أولوية باندويث"
+            )
+        )
+        db.cardPackageDao().insertPackages(initialPackages)
 
         // 4. Seed Card Batches & Cards
         val b1Id = db.cardDao().insertBatch(

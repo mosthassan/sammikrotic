@@ -1,8 +1,13 @@
 package com.example.ui.screens
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.provider.ContactsContract
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,17 +28,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -42,7 +55,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,6 +83,9 @@ import com.example.ui.theme.ReceiptGreen
 import com.example.ui.theme.StatusOffline
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
+import com.example.ui.theme.WhatsAppDarkGreen
+import com.example.ui.theme.WhatsAppGreen
+import com.example.util.WhatsAppHelper
 
 @Composable
 fun DistributionScreen(
@@ -80,10 +98,12 @@ fun DistributionScreen(
     val context = LocalContext.current
 
     var showAddRetailerDialog by remember { mutableStateOf(false) }
+    var retailerToEdit by remember { mutableStateOf<RetailerEntity?>(null) }
     var showDistributeDialog by remember { mutableStateOf(false) }
     var selectedRetailerForDistribution by remember { mutableStateOf<RetailerEntity?>(null) }
     var showQuickPayDialog by remember { mutableStateOf<RetailerEntity?>(null) }
     var retailerToDelete by remember { mutableStateOf<RetailerEntity?>(null) }
+    var retailerForWhatsAppMenu by remember { mutableStateOf<RetailerEntity?>(null) }
 
     val totalDebt = retailers.sumOf { it.balanceOwed }
     val totalActiveCardsWithRetailers = retailers.sumOf { it.activeCardsCount }
@@ -189,6 +209,16 @@ fun DistributionScreen(
                                 val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${retailer.phone}"))
                                 context.startActivity(intent)
                             },
+                            onWhatsApp = {
+                                if (retailer.phone.isBlank()) {
+                                    Toast.makeText(context, "يرجى إضافة رقم الهاتف للبقالة أولاً لتفعيل الواتساب", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    retailerForWhatsAppMenu = retailer
+                                }
+                            },
+                            onEdit = {
+                                retailerToEdit = retailer
+                            },
                             onDistribute = {
                                 selectedRetailerForDistribution = retailer
                                 showDistributeDialog = true
@@ -230,12 +260,27 @@ fun DistributionScreen(
 
         // Add Retailer Dialog
         if (showAddRetailerDialog) {
-            AddRetailerDialog(
+            AddEditRetailerDialog(
+                initialRetailer = null,
                 onDismiss = { showAddRetailerDialog = false },
                 onSave = { newRetailer ->
                     viewModel.saveRetailer(newRetailer) {
                         showAddRetailerDialog = false
-                        Toast.makeText(context, "تمت إضافة البقالة بنجاح ✓", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "تمت إضافة البقالة وربط الحساب بالواتساب بنجاح ✓", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+        }
+
+        // Edit Retailer Dialog
+        retailerToEdit?.let { existingRetailer ->
+            AddEditRetailerDialog(
+                initialRetailer = existingRetailer,
+                onDismiss = { retailerToEdit = null },
+                onSave = { updatedRetailer ->
+                    viewModel.saveRetailer(updatedRetailer) {
+                        retailerToEdit = null
+                        Toast.makeText(context, "تم تحديث بيانات البقالة بنجاح ✓", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
@@ -248,11 +293,25 @@ fun DistributionScreen(
                 inventoryItems = inventoryItems,
                 initialRetailer = selectedRetailerForDistribution,
                 onDismiss = { showDistributeDialog = false },
-                onConfirm = { inventoryId, retailerId, qty ->
+                onConfirm = { inventoryId, retailerId, qty, sendWhatsAppNotice ->
+                    val chosenRetailer = retailers.find { it.id == retailerId }
+                    val chosenItem = inventoryItems.find { it.id == inventoryId }
+
                     viewModel.distributeFromInventory(inventoryId, retailerId, qty) { success ->
                         showDistributeDialog = false
                         if (success) {
                             Toast.makeText(context, "تم تسليم $qty كرت للبقالة وقيد المبلغ على الحساب ✓", Toast.LENGTH_LONG).show()
+
+                            if (sendWhatsAppNotice && chosenRetailer != null && chosenItem != null && chosenRetailer.phone.isNotBlank()) {
+                                val totalWholesale = chosenItem.wholesalePrice * qty
+                                val message = WhatsAppHelper.generateCardDeliveryReceiptMessage(
+                                    retailer = chosenRetailer,
+                                    batchName = chosenItem.packageName,
+                                    quantity = qty,
+                                    totalWholesale = totalWholesale
+                                )
+                                WhatsAppHelper.sendWhatsAppMessage(context, chosenRetailer.phone, message)
+                            }
                         } else {
                             Toast.makeText(context, "الكمية المطلوبة غير متوفرة في المخزن!", Toast.LENGTH_LONG).show()
                         }
@@ -267,7 +326,7 @@ fun DistributionScreen(
             QuickPaymentDialog(
                 retailer = r,
                 onDismiss = { showQuickPayDialog = null },
-                onConfirm = { amount, method, desc ->
+                onConfirm = { amount, method, desc, sendWhatsAppReceipt ->
                     viewModel.createVoucher(
                         voucherType = "RECEIPT",
                         amount = amount,
@@ -276,9 +335,110 @@ fun DistributionScreen(
                         category = "توريد مبيعات كروت",
                         paymentMethod = method,
                         description = desc
-                    ) {
+                    ) { voucherNumber ->
                         showQuickPayDialog = null
                         Toast.makeText(context, "تم إنشاء سند قبض بمبلغ $amount ريال وتخفيض مديونية البقالة ✓", Toast.LENGTH_LONG).show()
+
+                        if (sendWhatsAppReceipt && r.phone.isNotBlank()) {
+                            val dummyVoucher = com.example.data.local.entity.FinancialVoucherEntity(
+                                voucherNumber = voucherNumber,
+                                voucherType = "RECEIPT",
+                                amount = amount,
+                                partyName = r.name,
+                                retailerId = r.id,
+                                category = "توريد مبيعات كروت",
+                                paymentMethod = method,
+                                description = desc,
+                                issuerName = "المهندس حسن"
+                            )
+                            val message = WhatsAppHelper.generateVoucherMessage(dummyVoucher)
+                            WhatsAppHelper.sendWhatsAppMessage(context, r.phone, message)
+                        }
+                    }
+                }
+            )
+        }
+
+        // WhatsApp Options Dialog for Retailer
+        retailerForWhatsAppMenu?.let { r ->
+            AlertDialog(
+                onDismissRequest = { retailerForWhatsAppMenu = null },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Chat, contentDescription = null, tint = WhatsAppGreen, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("مراسلة ${r.name} عبر الواتساب", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "رقم الواتساب المسجل: ${r.phone}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "اختر نوع المعاملة المراد إرسالها للبقالة عبر الواتساب بتذييل (${WhatsAppHelper.NETWORK_BRAND_NAME}):",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+
+                        // 1. كشف حساب ومطابقة رصيد
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = WhatsAppGreen.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, WhatsAppGreen.copy(alpha = 0.3f)),
+                            onClick = {
+                                val msg = WhatsAppHelper.generateRetailerStatementMessage(r)
+                                WhatsAppHelper.sendWhatsAppMessage(context, r.phone, msg)
+                                retailerForWhatsAppMenu = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = WhatsAppDarkGreen, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("إرسال كشف حساب ومطابقة رصيد", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = WhatsAppDarkGreen)
+                                    Text("المستحق: ${r.balanceOwed.toInt()} ر.ي • الكروت: ${r.activeCardsCount} كرت", fontSize = 11.sp, color = Color.DarkGray)
+                                }
+                            }
+                        }
+
+                        // 2. فتح محادثة مباشرة
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            onClick = {
+                                val msg = "مرحباً ${r.name}، بخصوص حسابكم لدى ${WhatsAppHelper.NETWORK_BRAND_NAME}."
+                                WhatsAppHelper.sendWhatsAppMessage(context, r.phone, msg)
+                                retailerForWhatsAppMenu = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Chat, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("فتح محادثة واتساب مباشرة", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text("محادثة فورية مع مسؤول المحل", fontSize = 11.sp, color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { retailerForWhatsAppMenu = null }) {
+                        Text("إلغاء")
                     }
                 }
             )
@@ -316,6 +476,8 @@ fun DistributionScreen(
 fun RetailerCard(
     retailer: RetailerEntity,
     onCall: () -> Unit,
+    onWhatsApp: () -> Unit,
+    onEdit: () -> Unit,
     onDistribute: () -> Unit,
     onQuickPay: () -> Unit,
     onDelete: () -> Unit
@@ -352,7 +514,7 @@ fun RetailerCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "المسؤول: ${retailer.ownerName} • عمولة ${retailer.commissionPercent.toInt()}%",
+                            text = "المسؤول: ${retailer.ownerName.ifBlank { "غير محدد" }} • عمولة ${retailer.commissionPercent.toInt()}%",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -377,7 +539,7 @@ fun RetailerCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Location & Phone
+            // Location & Phone / WhatsApp Bar
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -387,7 +549,7 @@ fun RetailerCard(
                     Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = retailer.location,
+                        text = retailer.location.ifBlank { "لم يحدد الموقع" },
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -396,39 +558,79 @@ fun RetailerCard(
                 if (retailer.phone.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .clickable { onCall() }
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(Icons.Default.Call, contentDescription = "اتصال", tint = StatusOnline, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = retailer.phone,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        // WhatsApp Quick Action Button
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = WhatsAppGreen.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, WhatsAppGreen.copy(alpha = 0.4f)),
+                            onClick = onWhatsApp
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            ) {
+                                Icon(Icons.Default.Chat, contentDescription = "واتساب", tint = WhatsAppDarkGreen, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "واتساب",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WhatsAppDarkGreen
+                                )
+                            }
+                        }
+
+                        // Direct Call Action
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            onClick = onCall
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "اتصال", tint = StatusOnline, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = retailer.phone,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Stats row (Cards held, Total paid)
+            // Stats row (Cards held, Total paid, WhatsApp status)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                     .padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "الكروت بحوزته: ${retailer.activeCardsCount} كرت",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+
+                if (retailer.phone.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = WhatsAppGreen, modifier = Modifier.size(11.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("مربوط بالواتساب", fontSize = 10.sp, color = WhatsAppDarkGreen, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
                 Text(
                     text = "إجمالي المسدد: ${retailer.totalPaid.toInt()} ريال",
                     fontSize = 11.sp,
@@ -444,8 +646,13 @@ fun RetailerCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MikroTikPrimary, modifier = Modifier.size(16.dp))
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -477,22 +684,87 @@ fun RetailerCard(
 }
 
 @Composable
-fun AddRetailerDialog(
+fun AddEditRetailerDialog(
+    initialRetailer: RetailerEntity? = null,
     onDismiss: () -> Unit,
     onSave: (RetailerEntity) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var ownerName by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
-    var commission by remember { mutableStateOf("10") }
-    var notes by remember { mutableStateOf("") }
+    val isEditing = initialRetailer != null
+    val context = LocalContext.current
+
+    var name by remember { mutableStateOf(initialRetailer?.name ?: "") }
+    var ownerName by remember { mutableStateOf(initialRetailer?.ownerName ?: "") }
+    var phone by remember { mutableStateOf(initialRetailer?.phone ?: "") }
+    var location by remember { mutableStateOf(initialRetailer?.location ?: "") }
+    var commission by remember { mutableStateOf((initialRetailer?.commissionPercent ?: 10.0).toInt().toString()) }
+    var notes by remember { mutableStateOf(initialRetailer?.notes ?: "") }
+
+    // Contact Picker
+    val contactPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val contactUri: Uri? = result.data?.data
+            if (contactUri != null) {
+                try {
+                    context.contentResolver.query(
+                        contactUri,
+                        arrayOf(
+                            ContactsContract.CommonDataKinds.Phone.NUMBER,
+                            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                        ),
+                        null, null, null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                            val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                            if (numIdx != -1) {
+                                val rawNum = cursor.getString(numIdx) ?: ""
+                                phone = rawNum.replace("[^0-9+]".toRegex(), "")
+                            }
+                            if (nameIdx != -1) {
+                                val contactName = cursor.getString(nameIdx) ?: ""
+                                if (ownerName.isBlank() && contactName.isNotBlank()) {
+                                    ownerName = contactName
+                                }
+                                if (name.isBlank() && contactName.isNotBlank()) {
+                                    name = "بقالة $contactName"
+                                }
+                            }
+                            Toast.makeText(context, "تم استيراد الرقم والاسم من جهات الاتصال بنجاح ✓", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "تعذر استيراد جهة الاتصال: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    val openContactsBook: () -> Unit = {
+        try {
+            val intent = Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
+            contactPickerLauncher.launch(intent)
+        } catch (e: Exception) {
+            try {
+                val genericIntent = Intent(Intent.ACTION_PICK, ContactsContract.Contacts.CONTENT_URI)
+                contactPickerLauncher.launch(genericIntent)
+            } catch (ex: Exception) {
+                Toast.makeText(context, "تعذر فتح دفتر الهاتف", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("إضافة بقالة أو نقطة بيع جديدة", fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                text = if (isEditing) "تعديل بيانات البقالة / نقطة البيع" else "إضافة بقالة أو نقطة بيع جديدة",
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item {
                     OutlinedTextField(
                         value = name,
@@ -503,6 +775,7 @@ fun AddRetailerDialog(
                         modifier = Modifier.fillMaxWidth().testTag("retailer_name_input")
                     )
                 }
+
                 item {
                     OutlinedTextField(
                         value = ownerName,
@@ -512,15 +785,78 @@ fun AddRetailerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                // Phone field with Contact Picker button
                 item {
-                    OutlinedTextField(
-                        value = phone,
-                        onValueChange = { phone = it },
-                        label = { Text("رقم الهاتف / الواتساب") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Column {
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = { Text("رقم الهاتف / الواتساب *") },
+                            placeholder = { Text("77XXXXXXX") },
+                            trailingIcon = {
+                                IconButton(onClick = openContactsBook) {
+                                    Icon(
+                                        imageVector = Icons.Default.Contacts,
+                                        contentDescription = "اختيار من دفتر الهاتف",
+                                        tint = MikroTikPrimary
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedButton(
+                            onClick = openContactsBook,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                        ) {
+                            Icon(Icons.Default.Contacts, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("اختيار الرقم من دفتر الهاتف / جهات الاتصال", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
+
+                // WhatsApp banner
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = WhatsAppGreen.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, WhatsAppGreen.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Chat,
+                                contentDescription = null,
+                                tint = WhatsAppDarkGreen,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "ربط الحساب بنظام واتساب شبكة طلقة نت ✓",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WhatsAppDarkGreen
+                                )
+                                Text(
+                                    text = "إرسال الفواتير وسندات القبض وكشوفات الحساب للبقالة بنقرة واحدة بتذييل (${WhatsAppHelper.NETWORK_BRAND_NAME})",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF1F2937)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = location,
@@ -531,6 +867,7 @@ fun AddRetailerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
                 item {
                     OutlinedTextField(
                         value = commission,
@@ -540,12 +877,27 @@ fun AddRetailerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                item {
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("ملاحظات إضافية (اختياري)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val entity = RetailerEntity(
+                    val entity = (initialRetailer ?: RetailerEntity(
+                        name = "",
+                        ownerName = "",
+                        phone = "",
+                        location = ""
+                    )).copy(
                         name = name.trim(),
                         ownerName = ownerName.trim(),
                         phone = phone.trim(),
@@ -558,7 +910,7 @@ fun AddRetailerDialog(
                 enabled = name.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
             ) {
-                Text("حفظ البقالة")
+                Text(if (isEditing) "تحديث البيانات" else "حفظ وربط البقالة")
             }
         },
         dismissButton = {
@@ -576,11 +928,12 @@ fun DistributeCardsDialog(
     inventoryItems: List<com.example.data.local.entity.InventoryItemEntity>,
     initialRetailer: RetailerEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (Long, Long, Int) -> Unit
+    onConfirm: (inventoryId: Long, retailerId: Long, quantity: Int, sendWhatsAppNotice: Boolean) -> Unit
 ) {
     var selectedRetailer by remember { mutableStateOf(initialRetailer ?: retailers.firstOrNull()) }
     var selectedItem by remember { mutableStateOf(inventoryItems.firstOrNull()) }
     var quantityText by remember { mutableStateOf("20") }
+    var sendWhatsAppNotice by remember { mutableStateOf(true) }
 
     var isRetailerExpanded by remember { mutableStateOf(false) }
     var isItemExpanded by remember { mutableStateOf(false) }
@@ -613,7 +966,7 @@ fun DistributeCardsDialog(
                     ) {
                         retailers.forEach { r ->
                             DropdownMenuItem(
-                                text = { Text(r.name) },
+                                text = { Text("${r.name} (${r.location})") },
                                 onClick = {
                                     selectedRetailer = r
                                     isRetailerExpanded = false
@@ -687,13 +1040,37 @@ fun DistributeCardsDialog(
                         )
                     }
                 }
+
+                // WhatsApp Receipt Notification Checkbox
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(WhatsAppGreen.copy(alpha = 0.1f))
+                        .clickable { sendWhatsAppNotice = !sendWhatsAppNotice }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = sendWhatsAppNotice,
+                        onCheckedChange = { sendWhatsAppNotice = it },
+                        colors = CheckboxDefaults.colors(checkedColor = WhatsAppDarkGreen)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "مشاركة إشعار الاستلام للبقالة عبر الواتساب (${WhatsAppHelper.NETWORK_BRAND_NAME})",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = WhatsAppDarkGreen
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (selectedItem != null && selectedRetailer != null && qty > 0) {
-                        onConfirm(selectedItem!!.id, selectedRetailer!!.id, qty)
+                        onConfirm(selectedItem!!.id, selectedRetailer!!.id, qty, sendWhatsAppNotice)
                     }
                 },
                 enabled = selectedItem != null && selectedRetailer != null && qty > 0,
@@ -714,11 +1091,12 @@ fun DistributeCardsDialog(
 fun QuickPaymentDialog(
     retailer: RetailerEntity,
     onDismiss: () -> Unit,
-    onConfirm: (Double, String, String) -> Unit
+    onConfirm: (amount: Double, method: String, desc: String, sendWhatsAppReceipt: Boolean) -> Unit
 ) {
     var amountText by remember { mutableStateOf(retailer.balanceOwed.toInt().toString()) }
     var paymentMethod by remember { mutableStateOf("نقداً") }
     var description by remember { mutableStateOf("سداد قيمة كروت هوتسبوت مباعة") }
+    var sendWhatsAppReceipt by remember { mutableStateOf(retailer.phone.isNotBlank()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -752,6 +1130,30 @@ fun QuickPaymentDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // WhatsApp checkbox
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(WhatsAppGreen.copy(alpha = 0.1f))
+                        .clickable { sendWhatsAppReceipt = !sendWhatsAppReceipt }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = sendWhatsAppReceipt,
+                        onCheckedChange = { sendWhatsAppReceipt = it },
+                        colors = CheckboxDefaults.colors(checkedColor = WhatsAppDarkGreen)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "مشاركة سند القبض عبر الواتساب فوراً (${WhatsAppHelper.NETWORK_BRAND_NAME})",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = WhatsAppDarkGreen
+                    )
+                }
             }
         },
         confirmButton = {
@@ -759,7 +1161,7 @@ fun QuickPaymentDialog(
                 onClick = {
                     val amt = amountText.toDoubleOrNull() ?: 0.0
                     if (amt > 0) {
-                        onConfirm(amt, paymentMethod, description)
+                        onConfirm(amt, paymentMethod, description, sendWhatsAppReceipt)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = ReceiptGreen)

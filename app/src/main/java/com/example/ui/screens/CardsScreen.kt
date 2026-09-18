@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,12 +23,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
@@ -39,6 +44,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,9 +69,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CardEntity
+import com.example.data.local.entity.CardPackageEntity
 import com.example.ui.MainViewModel
+import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
+import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.StatusDistributed
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
@@ -77,6 +86,8 @@ fun CardsScreen(
 ) {
     val batches by viewModel.cardBatches.collectAsState()
     val cards by viewModel.cards.collectAsState()
+    val cardPackages by viewModel.cardPackages.collectAsState()
+    val retailers by viewModel.retailers.collectAsState()
     val availableCount by viewModel.availableCardsCount.collectAsState()
     val distributedCount by viewModel.distributedCardsCount.collectAsState()
     val soldCount by viewModel.soldCardsCount.collectAsState()
@@ -85,8 +96,13 @@ fun CardsScreen(
     val clipboard = LocalClipboardManager.current
 
     var selectedStatusFilter by remember { mutableStateOf("الكل") }
-    var screenViewMode by remember { mutableIntStateOf(0) } // 0: استوديو وتصميم الكروت (مطابق للموقع), 1: جدول وسجل المخزن
+    // 0: استوديو وتصميم الكروت A4, 1: باقات وفئات الكروت, 2: سجل ودفعات المخزن, 3: المخزن الفعلي للأجهزة
+    var screenViewMode by remember { mutableIntStateOf(1) } // الباقات افتراضياً أو الاستوديو
     var showGenerateDialog by remember { mutableStateOf(false) }
+    var selectedPackageForBatch by remember { mutableStateOf<CardPackageEntity?>(null) }
+    var showImportExternalDialog by remember { mutableStateOf(false) }
+    var selectedPackageForImport by remember { mutableStateOf<CardPackageEntity?>(null) }
+    var showBatchChoiceDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showStudioDialog by remember { mutableStateOf(false) }
     var selectedCardForStudio by remember { mutableStateOf<CardEntity?>(null) }
@@ -105,121 +121,115 @@ fun CardsScreen(
     Box(modifier = modifier.fillMaxSize().testTag("cards_screen")) {
         when (screenViewMode) {
             0 -> {
-            // نمط استوديو وتصميم الكروت وطباعتها (مطابق تماماً لموقع سام ميكروتك sammikrotic.vercel.app)
-            Column(modifier = Modifier.fillMaxSize()) {
-                // شريط تبديل سريع بين الاستوديو وقائمة المخزن
-                Surface(
-                    color = Color(0xFF091424),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = Color(0xFF0284C7),
-                                onClick = { screenViewMode = 0 }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Palette, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("استوديو وتصميم الكروت A4", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                }
-                            }
+                // 0: نمط استوديو وتصميم الكروت وطباعتها A4
+                Column(modifier = Modifier.fillMaxSize()) {
+                    CardsTopNavBar(
+                        activeMode = screenViewMode,
+                        onSelectMode = { screenViewMode = it },
+                        packagesCount = cardPackages.size,
+                        cardsCount = cards.size
+                    )
 
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = Color(0xFF1E293B),
-                                onClick = { screenViewMode = 1 }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("سجل الدفعات (${cards.size})", color = Color.LightGray, fontSize = 11.sp)
-                                }
-                            }
-                        }
-
-                        // Status Info
-                        Text("طاقة إنتاجية متقدمة", color = Color(0xFF38BDF8), fontSize = 10.sp)
-                    }
+                    // شاشة الاستوديو الكاملة
+                    CardStudioScreen(
+                        viewModel = viewModel,
+                        onNavigateToInventory = { screenViewMode = 2 }
+                    )
                 }
-
-                // شاشة الاستوديو الكاملة
-                CardStudioScreen(
-                    viewModel = viewModel,
-                    onNavigateToInventory = { screenViewMode = 1 }
-                )
             }
-        } 1 -> {
-            // نمط جدول وسجل كروت المخزن
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                // شريط التبديل العلوي
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "مخزن كروت ودفعات ميكروتك",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "إدارة وسجل الكروت بالمستودع والتوزيع",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            1 -> {
+                // 1: تبويب باقات وفئات الكروت (أسعار الجملة، البيع النهائي، الأرباح، والربط بالتوليد والفواتير)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    CardsTopNavBar(
+                        activeMode = screenViewMode,
+                        onSelectMode = { screenViewMode = it },
+                        packagesCount = cardPackages.size,
+                        cardsCount = cards.size,
+                        onImportExternal = {
+                            selectedPackageForImport = cardPackages.firstOrNull()
+                            showImportExternalDialog = true
+                        }
+                    )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(
-                            onClick = { screenViewMode = 0 },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Palette, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("استوديو الكروت", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = { screenViewMode = 2 },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Store, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("المخزن الفعلي", color = MikroTikPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = { showExportDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("تصدير", color = MikroTikPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                    PackagesManagementTab(
+                        viewModel = viewModel,
+                        onQuickGenerateBatch = { pkg ->
+                            selectedPackageForBatch = pkg
+                            showGenerateDialog = true
+                        },
+                        onImportExternalBatch = { pkg ->
+                            selectedPackageForImport = pkg
+                            showImportExternalDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
+            }
+            2 -> {
+                // 2: نمط جدول وسجل كروت المخزن
+                Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+                    CardsTopNavBar(
+                        activeMode = screenViewMode,
+                        onSelectMode = { screenViewMode = it },
+                        packagesCount = cardPackages.size,
+                        cardsCount = cards.size,
+                        onExport = { showExportDialog = true },
+                        onImportExternal = {
+                            selectedPackageForImport = cardPackages.firstOrNull()
+                            showImportExternalDialog = true
+                        }
+                    )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // شريط العمليات السريعة لتغذية المخزن
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF0F1E33),
+                        border = BorderStroke(1.dp, Color(0xFF1E3A5F)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("إدارة ودفعات الكروت:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedPackageForImport = cardPackages.firstOrNull()
+                                        showImportExternalDialog = true
+                                    },
+                                    border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Icon(Icons.Default.PostAdd, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("استيراد خارجي", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        selectedPackageForBatch = cardPackages.firstOrNull()
+                                        showGenerateDialog = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("توليد كروت", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                 // Inventory Metric Cards Row
                 Row(
@@ -298,9 +308,9 @@ fun CardsScreen(
                 }
             }
 
-            // FAB to Generate New Batch
+            // FAB to Add / Generate Batches
             FloatingActionButton(
-                onClick = { showGenerateDialog = true },
+                onClick = { showBatchChoiceDialog = true },
                 containerColor = MikroTikPrimary,
                 contentColor = Color.White,
                 modifier = Modifier
@@ -312,20 +322,150 @@ fun CardsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "توليد كروت")
+                    Icon(Icons.Default.Add, contentDescription = "إضافة كروت")
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("توليد كروت جديدة", fontWeight = FontWeight.Bold)
+                    Text("إضافة كروت جديدة", fontWeight = FontWeight.Bold)
                 }
             }
         }
-        2 -> {
+        3 -> {
             InventoryScreen(
                 viewModel = viewModel,
                 onNavigateToStudio = { screenViewMode = 0 },
-                onNavigateToBatches = { screenViewMode = 1 }
+                onNavigateToBatches = { screenViewMode = 2 }
             )
         }
     }
+
+        // نافذة الاختيار المرنة: توليد عبر التطبيق أو استيراد دفعة من برنامج آخر
+        if (showBatchChoiceDialog) {
+            AlertDialog(
+                onDismissRequest = { showBatchChoiceDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("إضافة كروت جديدة للمخزن", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "اختر الطريقة المناسبة لإضافة دفعة الكروت وتغذية حسابات الشبكة والموزعين:",
+                            fontSize = 11.5.sp,
+                            color = Color.Gray
+                        )
+
+                        // الخيار 1: توليد كروت عبر التطبيق
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF0F1E33),
+                            border = BorderStroke(1.dp, Color(0xFF1E3A5F)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showBatchChoiceDialog = false
+                                    selectedPackageForBatch = cardPackages.firstOrNull()
+                                    showGenerateDialog = true
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF0284C7).copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(22.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("توليد كروت جديدة عبر التطبيق", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                    Text("توليد رموز عشوائية مشفرة وبروفايل ميكروتك وقوالب طباعة A4", fontSize = 10.5.sp, color = Color(0xFF94A3B8))
+                                }
+                            }
+                        }
+
+                        // الخيار 2: استيراد دفعة من برنامج آخر
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF062820),
+                            border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showBatchChoiceDialog = false
+                                    selectedPackageForImport = cardPackages.firstOrNull()
+                                    showImportExternalDialog = true
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ProfitEmerald.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.PostAdd, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(22.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("إضافة دفعة من برنامج آخر", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                    Text("استيراد كروت من ميكروتك يوزر مانجر أو إكسل CSV أو كروت مطبوعة", fontSize = 10.5.sp, color = Color(0xFF6EE7B7))
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showBatchChoiceDialog = false }) {
+                        Text("إلغاء")
+                    }
+                }
+            )
+        }
+
+        // نافذة استيراد كروت من برامج أخرى (MikroTik User Manager, Excel, SAS4, إلخ)
+        if (showImportExternalDialog) {
+            ImportExternalCardsDialog(
+                packages = cardPackages,
+                retailers = retailers,
+                initialPackage = selectedPackageForImport,
+                onDismiss = {
+                    showImportExternalDialog = false
+                    selectedPackageForImport = null
+                },
+                onImportConfirmed = { bName, cat, retail, wholesale, mb, hours, speed, cardsList, source, prefix, retailerId ->
+                    viewModel.importExternalCardBatch(
+                        batchName = bName,
+                        categoryName = cat,
+                        retailPrice = retail,
+                        wholesalePrice = wholesale,
+                        quotaMb = mb,
+                        validityHours = hours,
+                        speedLimit = speed,
+                        cardsList = cardsList,
+                        sourceProgram = source,
+                        prefix = prefix,
+                        targetRetailerId = retailerId
+                    ) { batchId, count ->
+                        showImportExternalDialog = false
+                        selectedPackageForImport = null
+                        val destMsg = if (retailerId != null) "وصرفها للبقالة بنجاح ✓" else "إلى المستودع بنجاح ✓"
+                        Toast.makeText(context, "تم استيراد $count كرت من ($source) $destMsg", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        }
 
         // Card Studio Dialog
         if (showStudioDialog) {
@@ -339,15 +479,21 @@ fun CardsScreen(
             )
         }
 
-        // Generate Cards Dialog
+        // Generate Cards Dialog (مرتبطة بالباقات تلقائياً)
         if (showGenerateDialog) {
             GenerateBatchDialog(
-                onDismiss = { showGenerateDialog = false },
+                packages = cardPackages,
+                initialPackage = selectedPackageForBatch,
+                onDismiss = {
+                    showGenerateDialog = false
+                    selectedPackageForBatch = null
+                },
                 onGenerate = { name, cat, retail, wholesale, mb, hours, speed, count, prefix, len, charSet, pwdPolicy ->
                     viewModel.createBatchAndGenerateCards(
                         name, cat, retail, wholesale, mb, hours, speed, count, prefix, len, charSet, pwdPolicy
                     ) {
                         showGenerateDialog = false
+                        selectedPackageForBatch = null
                         Toast.makeText(context, "تم توليد $count كرت جديد بنجاح ✓", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -546,7 +692,113 @@ fun CardItemRow(
 }
 
 @Composable
+fun CardsTopNavBar(
+    activeMode: Int,
+    onSelectMode: (Int) -> Unit,
+    packagesCount: Int,
+    cardsCount: Int,
+    onExport: (() -> Unit)? = null,
+    onImportExternal: (() -> Unit)? = null
+) {
+    Surface(
+        color = Color(0xFF091424),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NavPill(
+                    selected = activeMode == 1,
+                    icon = Icons.Default.LocalOffer,
+                    label = "باقات الكروت ($packagesCount)",
+                    onClick = { onSelectMode(1) }
+                )
+                NavPill(
+                    selected = activeMode == 0,
+                    icon = Icons.Default.Palette,
+                    label = "استوديو A4",
+                    onClick = { onSelectMode(0) }
+                )
+                NavPill(
+                    selected = activeMode == 2,
+                    icon = Icons.Default.ConfirmationNumber,
+                    label = "المخزن ($cardsCount)",
+                    onClick = { onSelectMode(2) }
+                )
+                NavPill(
+                    selected = activeMode == 3,
+                    icon = Icons.Default.Store,
+                    label = "الأجهزة",
+                    onClick = { onSelectMode(3) }
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onImportExternal != null) {
+                    IconButton(onClick = onImportExternal, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.PostAdd,
+                            contentDescription = "استيراد كروت خارجية",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                }
+                if (onExport != null) {
+                    IconButton(onClick = onExport, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Share, contentDescription = "تصدير", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPill(
+    selected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) Color(0xFF0284C7) else Color(0xFF132238),
+        onClick = onClick
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) Color.White else Color(0xFF94A3B8),
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                color = if (selected) Color.White else Color(0xFFCBD5E1),
+                fontSize = 11.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
+    }
+}
+
+@Composable
 fun GenerateBatchDialog(
+    packages: List<CardPackageEntity> = emptyList(),
+    initialPackage: CardPackageEntity? = null,
     onDismiss: () -> Unit,
     onGenerate: (
         name: String,
@@ -563,21 +815,90 @@ fun GenerateBatchDialog(
         passwordPolicy: com.example.data.cards.PasswordPolicy
     ) -> Unit
 ) {
-    var batchName by remember { mutableStateOf("دفعة كروت فئة 200 ريال") }
-    var categoryName by remember { mutableStateOf("200 ريال - 1.5GB / 24H") }
-    var retailPrice by remember { mutableStateOf("200") }
-    var wholesalePrice by remember { mutableStateOf("180") }
+    var selectedPkg by remember { mutableStateOf(initialPackage) }
+    var batchName by remember {
+        mutableStateOf(initialPackage?.let { "دفعة ${it.name}" } ?: "دفعة كروت فئة 500 ريال")
+    }
+    var categoryName by remember {
+        mutableStateOf(initialPackage?.let { "${it.name} - ${it.formattedQuota}" } ?: "500 ريال - 4.5GB")
+    }
+    var retailPrice by remember {
+        mutableStateOf(initialPackage?.retailPrice?.toInt()?.toString() ?: "500")
+    }
+    var wholesalePrice by remember {
+        mutableStateOf(initialPackage?.wholesalePrice?.toInt()?.toString() ?: "450")
+    }
+    var quotaMb by remember {
+        mutableStateOf(initialPackage?.quotaMb ?: 4608L)
+    }
+    var validityHours by remember {
+        mutableStateOf(initialPackage?.validityHours ?: 72)
+    }
+    var speedLimit by remember {
+        mutableStateOf(initialPackage?.speedLimit ?: "6M/3M")
+    }
     var countText by remember { mutableStateOf("50") }
-    var prefix by remember { mutableStateOf("SAM") }
+    var prefix by remember {
+        mutableStateOf(initialPackage?.let { "SAM${it.retailPrice.toInt()}" } ?: "SAM500")
+    }
     var codeLength by remember { mutableStateOf("6") }
     var selectedCharSet by remember { mutableStateOf(com.example.data.cards.CodeCharacterSet.DIGITS_ONLY) }
     var selectedPasswordPolicy by remember { mutableStateOf(com.example.data.cards.PasswordPolicy.SAME_AS_USERNAME) }
 
+    val retail = retailPrice.toDoubleOrNull() ?: 0.0
+    val wholesale = wholesalePrice.toDoubleOrNull() ?: 0.0
+    val profit = (retail - wholesale).coerceAtLeast(0.0)
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("توليد دفعة كروت هوتسبوت جديدة", fontWeight = FontWeight.Bold) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("توليد دفعة كروت هوتسبوت جديدة", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Quick Packages Selection Row
+                if (packages.isNotEmpty()) {
+                    item {
+                        Column {
+                            Text("تعبئة تلقائية من باقات الشبكة:", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(packages) { pkg ->
+                                    val isSelected = selectedPkg?.id == pkg.id
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) Color(0xFF0284C7) else Color(0xFF0F1E33),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color.White else Color(0xFF1E3A5F)),
+                                        onClick = {
+                                            selectedPkg = pkg
+                                            batchName = "دفعة ${pkg.name}"
+                                            categoryName = "${pkg.name} - ${pkg.formattedQuota}"
+                                            retailPrice = pkg.retailPrice.toInt().toString()
+                                            wholesalePrice = pkg.wholesalePrice.toInt().toString()
+                                            quotaMb = pkg.quotaMb
+                                            validityHours = pkg.validityHours
+                                            speedLimit = pkg.speedLimit
+                                            prefix = "SAM${pkg.retailPrice.toInt()}"
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "${pkg.name} (${pkg.retailPrice.toInt()} ر.ي)",
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = batchName,
@@ -592,7 +913,7 @@ fun GenerateBatchDialog(
                         value = categoryName,
                         onValueChange = { categoryName = it },
                         label = { Text("الفئة / السعة") },
-                        placeholder = { Text("مثال: 500 ريال - 4GB") },
+                        placeholder = { Text("مثال: 500 ريال - 4.5GB") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -602,14 +923,29 @@ fun GenerateBatchDialog(
                         OutlinedTextField(
                             value = retailPrice,
                             onValueChange = { retailPrice = it },
-                            label = { Text("سعر المستهلك") },
+                            label = { Text("سعر المستهلك (ر.ي)") },
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = wholesalePrice,
                             onValueChange = { wholesalePrice = it },
-                            label = { Text("سعر البقالة") },
+                            label = { Text("سعر الجملة (ر.ي)") },
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF0F1E33),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "هامش ربح البقالة للكرت الواحد: ${profit.toInt()} ر.ي",
+                            fontSize = 11.sp,
+                            color = Color(0xFF10B981),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
@@ -667,18 +1003,18 @@ fun GenerateBatchDialog(
             Button(
                 onClick = {
                     val count = countText.toIntOrNull() ?: 50
-                    val retail = retailPrice.toDoubleOrNull() ?: 200.0
-                    val wholesale = wholesalePrice.toDoubleOrNull() ?: 180.0
+                    val finalRetail = retailPrice.toDoubleOrNull() ?: 500.0
+                    val finalWholesale = wholesalePrice.toDoubleOrNull() ?: 450.0
                     val len = codeLength.toIntOrNull() ?: 6
                     onGenerate(
-                        batchName, categoryName, retail, wholesale,
-                        1500L, 24, "4M/2M", count, prefix, len,
+                        batchName, categoryName, finalRetail, finalWholesale,
+                        quotaMb, validityHours, speedLimit, count, prefix, len,
                         selectedCharSet, selectedPasswordPolicy
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
             ) {
-                Text("توليد الكروت الآن")
+                Text("توليد الكروت الآن", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

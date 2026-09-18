@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.UserEntity
+import com.example.data.repository.NetworkRepository
 import com.example.ui.GoogleSignInUiState
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
@@ -110,18 +111,28 @@ fun TopNavBar(
                                 fontSize = 18.sp
                             )
                             Spacer(modifier = Modifier.width(6.dp))
+                            val isSuperAdmin = NetworkRepository.isSuperAdminEmail(currentUser?.email)
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = if (currentUser?.role == "DISTRIBUTOR") Color(0xFF3B2D05) else Color(0xFF0F2D4A)
+                                color = when {
+                                    isSuperAdmin -> Color(0xFF1E3A8A)
+                                    currentUser?.role == "DISTRIBUTOR" -> Color(0xFF3B2D05)
+                                    else -> Color(0xFF0F2D4A)
+                                }
                             ) {
                                 Text(
-                                    text = when (currentUser?.role) {
-                                        "DISTRIBUTOR" -> "بوابة الموزع 🛵"
-                                        "RETAILER" -> "نقطة بيع 🛒"
-                                        "ENGINEER" -> "مهندس شبكة 🛠️"
+                                    text = when {
+                                        isSuperAdmin -> "المدير العام الأعلى 👑"
+                                        currentUser?.role == "DISTRIBUTOR" -> "بوابة الموزع 🛵"
+                                        currentUser?.role == "RETAILER" -> "نقطة بيع 🛒"
+                                        currentUser?.role == "ENGINEER" -> "مهندس شبكة 🛠️"
                                         else -> "لوحة المالك 👑"
                                     },
-                                    color = if (currentUser?.role == "DISTRIBUTOR") Color(0xFFFBBF24) else Color(0xFF38BDF8),
+                                    color = when {
+                                        isSuperAdmin -> Color(0xFF67E8F9)
+                                        currentUser?.role == "DISTRIBUTOR" -> Color(0xFFFBBF24)
+                                        else -> Color(0xFF38BDF8)
+                                    },
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -398,15 +409,17 @@ fun TopNavBar(
                                                 fontSize = 13.sp
                                             )
                                             Text(
-                                                text = when (user.role) {
-                                                    "OWNER" -> "👑 مالك ومدير الشبكة"
-                                                    "ENGINEER" -> "🛠️ مهندس الشبكة"
-                                                    "DISTRIBUTOR" -> "🚚 موزع كروت وكاشير"
-                                                    "RETAILER" -> "🏪 بقالة ونقطة بيع"
+                                                text = when {
+                                                    NetworkRepository.isSuperAdminEmail(user.email) -> "👑 المدير العام والمسؤول الأعلى (Super Admin)"
+                                                    user.role == "OWNER" -> "👑 مالك ومدير الشبكة"
+                                                    user.role == "ENGINEER" -> "🛠️ مهندس الشبكة"
+                                                    user.role == "DISTRIBUTOR" -> "🚚 موزع كروت وكاشير"
+                                                    user.role == "RETAILER" -> "🏪 بقالة ونقطة بيع"
                                                     else -> user.role
                                                 },
                                                 fontSize = 11.sp,
-                                                color = Color(0xFF94A3B8)
+                                                color = if (NetworkRepository.isSuperAdminEmail(user.email)) Color(0xFFFDE047) else Color(0xFF94A3B8),
+                                                fontWeight = if (NetworkRepository.isSuperAdminEmail(user.email)) FontWeight.Bold else FontWeight.Normal
                                             )
                                             if (user.email.isNotBlank()) {
                                                 Text(

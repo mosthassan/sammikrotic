@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.repository.NetworkRepository
 import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
 import com.example.ui.theme.EquityBlue
@@ -237,7 +238,11 @@ fun DashboardScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "مرحباً بك، ${currentUser?.fullName ?: "مدير الشبكة"}",
+                                        text = if (NetworkRepository.isSuperAdminEmail(currentUser?.email)) {
+                                            "مرحباً بك، ${currentUser?.fullName ?: "المهندس حسن"} 👑 (صلاحيات عليا)"
+                                        } else {
+                                            "مرحباً بك، ${currentUser?.fullName ?: "مدير الشبكة"}"
+                                        },
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 16.sp

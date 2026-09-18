@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.app.Activity
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ai.GeminiAiService
@@ -10,6 +11,7 @@ import com.example.data.firebase.FirebaseDbService
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.CardBatchEntity
 import com.example.data.local.entity.CardEntity
+import com.example.data.local.entity.CardPackageEntity
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.InventoryItemEntity
 import com.example.data.local.entity.NetworkAssetEntity
@@ -174,7 +176,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun signOutGoogle() {
         viewModelScope.launch {
             authManager.signOut()
-            val defaultUser = users.value.firstOrNull { !it.isGoogleUser } ?: users.value.firstOrNull()
+            val defaultUser = users.value.firstOrNull { NetworkRepository.isSuperAdminEmail(it.email) }
+                ?: users.value.firstOrNull { it.role == "OWNER" }
+                ?: users.value.firstOrNull()
             _currentUser.value = defaultUser
             _googleSignInState.value = GoogleSignInUiState(
                 successMessage = "تم تسجيل الخروج من حساب Google و Firebase"
@@ -412,6 +416,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * استيراد دفعة كروت تم إنشاؤها في برامج خارجية (User Manager, Excel, SAS4, إلخ)
+     */
+    fun importExternalCardBatch(
+        batchName: String,
+        categoryName: String,
+        retailPrice: Double,
+        wholesalePrice: Double,
+        quotaMb: Long,
+        validityHours: Int,
+        speedLimit: String,
+        cardsList: List<Pair<String, String>>,
+        sourceProgram: String = "برنامج خارجي",
+        prefix: String = "EXT",
+        targetRetailerId: Long? = null,
+        onComplete: (batchId: Long, importedCount: Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            val batchId = repository.importExternalCardBatch(
+                batchName = batchName,
+                categoryName = categoryName,
+                retailPrice = retailPrice,
+                wholesalePrice = wholesalePrice,
+                quotaMb = quotaMb,
+                validityHours = validityHours,
+                speedLimit = speedLimit,
+                cardsList = cardsList,
+                sourceProgram = sourceProgram,
+                prefix = prefix,
+                targetRetailerId = targetRetailerId
+            )
+            onComplete(batchId, cardsList.size)
+        }
+    }
+
     // Retailers / Groceries
     val retailers: StateFlow<List<RetailerEntity>> = repository.allRetailers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -452,6 +491,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Packages & Profiles (باقات وفئات الكروت والبروفايلات)
+    val cardPackages: StateFlow<List<CardPackageEntity>> = repository.allPackages
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun savePackage(pkg: CardPackageEntity, onDone: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            repository.savePackage(pkg)
+            onDone?.invoke()
+        }
+    }
+
+    fun deletePackage(pkg: CardPackageEntity, onDone: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            repository.deletePackage(pkg)
+            onDone?.invoke()
+        }
+    }
+
+    fun issueCardSalesInvoice(
+        pkg: CardPackageEntity,
+        retailerId: Long,
+        quantity: Int,
+        paymentMethod: String = "نقداً",
+        notes: String = "",
+        onDone: ((Long) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+            val voucherId = repository.issueCardSalesInvoice(
+                packageEntity = pkg,
+                retailerId = retailerId,
+                quantity = quantity,
+                paymentMethod = paymentMethod,
+                issuerName = issuer,
+                notes = notes
+            )
+            onDone?.invoke(voucherId)
+        }
+    }
+
     // Financial Vouchers
     val vouchers: StateFlow<List<FinancialVoucherEntity>> = repository.allVouchers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -470,7 +549,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         category: String,
         paymentMethod: String,
         description: String,
-        onComplete: () -> Unit
+        onComplete: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
             val issuer = _currentUser.value?.fullName ?: "المهندس سام"
@@ -495,7 +574,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ),
                 userEmail
             )
-            onComplete()
+            onComplete(voucherNumber)
         }
     }
 
@@ -618,11 +697,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        // Automatically assign default user once users load
         viewModelScope.launch {
+            try {
+                // Ensure mosthassan.ye@gmail.com is registered as OWNER in database
+                repository.ensureSuperAdminExists()
+            } catch (e: Throwable) {
+                Log.e("MainViewModel", "Error ensuring super admin: ${e.message}")
+            }
+
             repository.allUsers.collect { list ->
-                if (_currentUser.value == null && list.isNotEmpty()) {
-                    _currentUser.value = list.first()
+                if (list.isNotEmpty()) {
+                    val activeEmail = authManager.getActiveEmail()?.trim()?.lowercase()
+                    val current = _currentUser.value
+                    if (current == null) {
+                        val matchedLoggedIn = if (!activeEmail.isNullOrBlank()) {
+                            list.find { it.email.trim().lowercase() == activeEmail }
+                        } else null
+                        val superAdmin = list.find { NetworkRepository.isSuperAdminEmail(it.email) }
+                        val owner = list.find { it.role == "OWNER" }
+                        _currentUser.value = matchedLoggedIn ?: superAdmin ?: owner ?: list.first()
+                    } else {
+                        // Refresh current user if data was updated in database
+                        val refreshed = list.find { it.id == current.id || (current.email.isNotBlank() && it.email.equals(current.email, ignoreCase = true)) }
+                        if (refreshed != null && refreshed != current) {
+                            _currentUser.value = refreshed
+                        }
+                    }
                 }
             }
         }

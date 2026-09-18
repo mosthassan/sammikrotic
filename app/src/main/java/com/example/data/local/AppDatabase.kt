@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.local.dao.CardDao
+import com.example.data.local.dao.CardPackageDao
 import com.example.data.local.dao.FinancialVoucherDao
 import com.example.data.local.dao.InventoryDao
 import com.example.data.local.dao.NetworkAssetDao
@@ -16,6 +17,7 @@ import com.example.data.local.dao.RetailerDao
 import com.example.data.local.dao.UserDao
 import com.example.data.local.entity.CardBatchEntity
 import com.example.data.local.entity.CardEntity
+import com.example.data.local.entity.CardPackageEntity
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.InventoryItemEntity
 import com.example.data.local.entity.NetworkAssetEntity
@@ -35,6 +37,7 @@ import kotlinx.coroutines.launch
         NetworkDeviceEntity::class,
         CardBatchEntity::class,
         CardEntity::class,
+        CardPackageEntity::class,
         RetailerEntity::class,
         FinancialVoucherEntity::class,
         UserEntity::class,
@@ -44,12 +47,13 @@ import kotlinx.coroutines.launch
         PartnerTransactionEntity::class,
         InventoryItemEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun networkDeviceDao(): NetworkDeviceDao
     abstract fun cardDao(): CardDao
+    abstract fun cardPackageDao(): CardPackageDao
     abstract fun retailerDao(): RetailerDao
     abstract fun financialVoucherDao(): FinancialVoucherDao
     abstract fun userDao(): UserDao

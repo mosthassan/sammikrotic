@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.CardBatchEntity
 import com.example.data.local.entity.CardEntity
+import com.example.data.local.entity.CardPackageEntity
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.InventoryItemEntity
 import com.example.data.local.entity.NetworkAssetEntity
@@ -178,6 +179,68 @@ class NetworkRepository(private val db: AppDatabase) {
         batchId
     }
 
+    /**
+     * استيراد دفعة كروت خارجية منشأة في برامج أخرى (مثل ميكروتك يوزر مانجر، إكسل، SAS4، وغيرها)
+     * مع إمكانية إيداعها بالمستودع أو صرفها مباشرة لبقالة وتحديث القيود المحاسبية.
+     */
+    suspend fun importExternalCardBatch(
+        batchName: String,
+        categoryName: String,
+        retailPrice: Double,
+        wholesalePrice: Double,
+        quotaMb: Long,
+        validityHours: Int,
+        speedLimit: String,
+        cardsList: List<Pair<String, String>>,
+        sourceProgram: String = "برنامج خارجي",
+        prefix: String = "EXT",
+        targetRetailerId: Long? = null
+    ): Long = withContext(Dispatchers.IO) {
+        val totalCount = cardsList.size
+        val batch = CardBatchEntity(
+            batchName = batchName,
+            categoryName = categoryName,
+            retailPrice = retailPrice,
+            wholesalePrice = wholesalePrice,
+            quotaMb = quotaMb,
+            validityHours = validityHours,
+            speedLimit = speedLimit,
+            totalCount = totalCount,
+            mikrotikProfile = "ext-${retailPrice.toInt()}",
+            prefix = prefix
+        )
+        val batchId = db.cardDao().insertBatch(batch)
+
+        val retailer = if (targetRetailerId != null && targetRetailerId > 0) {
+            db.retailerDao().getRetailerById(targetRetailerId)
+        } else null
+
+        val now = System.currentTimeMillis()
+        val cards = cardsList.map { (user, pass) ->
+            CardEntity(
+                batchId = batchId,
+                username = user.trim(),
+                password = pass.trim().ifEmpty { user.trim() },
+                categoryName = categoryName,
+                retailPrice = retailPrice,
+                wholesalePrice = wholesalePrice,
+                status = if (retailer != null) "DISTRIBUTED" else "AVAILABLE",
+                retailerId = retailer?.id,
+                retailerName = retailer?.name,
+                distributedAt = if (retailer != null) now else null
+            )
+        }
+        db.cardDao().insertCards(cards)
+
+        // إذا تم الصرف الفوري لبقالة، نقيد الرصيد والكمية بحساب البقالة
+        if (retailer != null) {
+            val totalWholesaleDebt = wholesalePrice * totalCount
+            db.retailerDao().updateBalanceAndCards(retailer.id, totalWholesaleDebt, totalCount)
+        }
+
+        batchId
+    }
+
     // Inventory Management (مخزن الكروت)
     val allInventoryItems: Flow<List<InventoryItemEntity>> = db.inventoryDao().getAllInventoryItems()
 
@@ -237,6 +300,74 @@ class NetworkRepository(private val db: AppDatabase) {
 
     suspend fun markCardSold(cardId: Long) = withContext(Dispatchers.IO) {
         db.cardDao().markCardSold(cardId, System.currentTimeMillis())
+    }
+
+    // Packages (باقات وفئات الكروت والبروفايلات)
+    val allPackages: Flow<List<CardPackageEntity>> = db.cardPackageDao().getAllPackages()
+
+    suspend fun savePackage(pkg: CardPackageEntity): Long = withContext(Dispatchers.IO) {
+        if (pkg.id == 0L) {
+            db.cardPackageDao().insertPackage(pkg)
+        } else {
+            db.cardPackageDao().updatePackage(pkg)
+            pkg.id
+        }
+    }
+
+    suspend fun deletePackage(pkg: CardPackageEntity) = withContext(Dispatchers.IO) {
+        db.cardPackageDao().deletePackage(pkg)
+    }
+
+    /**
+     * إصدار فاتورة وسند بيع كروت مباشرة للبقالة أو نقطة البيع
+     * وحساب سعر الجملة وإجمالي القيمة وربح البقالة وتحديث الرصيد وسندات القبض
+     */
+    suspend fun issueCardSalesInvoice(
+        packageEntity: CardPackageEntity,
+        retailerId: Long,
+        quantity: Int,
+        paymentMethod: String = "نقداً",
+        issuerName: String = "المهندس حسن",
+        notes: String = ""
+    ): Long = withContext(Dispatchers.IO) {
+        val retailer = db.retailerDao().getRetailerById(retailerId)
+        val retailerName = retailer?.name ?: "نقطة توزيع"
+        val totalWholesale = packageEntity.wholesalePrice * quantity
+        val totalRetail = packageEntity.retailPrice * quantity
+        val retailerProfit = (packageEntity.retailPrice - packageEntity.wholesalePrice) * quantity
+
+        val randomNum = Random.nextInt(1000, 9999)
+        val voucherNumber = "INV-2026-$randomNum"
+
+        val descriptionText = buildString {
+            append("فاتورة بيع $quantity كرت [${packageEntity.name}]")
+            append(" بسعر جملة ${packageEntity.wholesalePrice.toInt()} ر.ي (إجمالي الجملة: ${totalWholesale.toInt()} ر.ي)")
+            append(" - سعر البيع للمستهلك: ${packageEntity.retailPrice.toInt()} ر.ي (إجمالي: ${totalRetail.toInt()} ر.ي)")
+            append(" - ربح البقالة المقدر: ${retailerProfit.toInt()} ر.ي")
+            if (notes.isNotBlank()) append(" | ملاحظة: $notes")
+        }
+
+        val voucher = FinancialVoucherEntity(
+            voucherNumber = voucherNumber,
+            voucherType = "RECEIPT",
+            amount = totalWholesale,
+            partyName = retailerName,
+            retailerId = retailerId,
+            category = "مبيعات كروت",
+            paymentMethod = paymentMethod,
+            description = descriptionText,
+            issuerName = issuerName,
+            notes = notes
+        )
+
+        val voucherId = db.financialVoucherDao().insertVoucher(voucher)
+
+        // تحديث رصيد البقالة بالمديونية الجديدة وزيادة عدد الكروت المستلمة
+        if (retailer != null) {
+            db.retailerDao().updateBalanceAndCards(retailerId, totalWholesale, quantity)
+        }
+
+        voucherId
     }
 
     // Retailers
@@ -320,20 +451,59 @@ class NetworkRepository(private val db: AppDatabase) {
         db.userDao().deleteUser(user)
     }
 
+    companion object {
+        val SUPER_ADMIN_EMAILS = setOf("mosthassan.ye@gmail.com", "mosthassan.ye2@gmail.com")
+
+        fun isSuperAdminEmail(email: String?): Boolean {
+            if (email.isNullOrBlank()) return false
+            return SUPER_ADMIN_EMAILS.contains(email.trim().lowercase())
+        }
+    }
+
+    suspend fun ensureSuperAdminExists(): UserEntity = withContext(Dispatchers.IO) {
+        val targetEmail = "mosthassan.ye@gmail.com"
+        val existing = db.userDao().getUserByEmail(targetEmail)
+        if (existing != null) {
+            val updated = existing.copy(
+                role = "OWNER",
+                fullName = if (existing.fullName.isNotBlank() && existing.fullName != "مستخدم جوجل") existing.fullName else "المهندس حسن (المدير العام والمسؤول الأعلى)",
+                email = targetEmail,
+                isGoogleUser = true
+            )
+            db.userDao().updateUser(updated)
+            updated
+        } else {
+            val newAdmin = UserEntity(
+                username = "mosthassan",
+                fullName = "المهندس حسن (المدير العام والمسؤول الأعلى)",
+                role = "OWNER",
+                email = targetEmail,
+                phone = "770000001",
+                isGoogleUser = true
+            )
+            val id = db.userDao().insertUser(newAdmin)
+            newAdmin.copy(id = id)
+        }
+    }
+
     suspend fun registerOrUpdateGoogleUser(
         email: String,
         displayName: String,
         photoUrl: String
     ): UserEntity = withContext(Dispatchers.IO) {
         val normalizedEmail = email.trim().lowercase()
+        val isSuperAdmin = isSuperAdminEmail(normalizedEmail)
         val existing = db.userDao().getUserByEmail(normalizedEmail)
             ?: if (email != normalizedEmail) db.userDao().getUserByEmail(email) else null
 
         if (existing != null) {
             val updated = existing.copy(
-                fullName = if (existing.fullName.isNotBlank()) existing.fullName else displayName,
+                fullName = if (isSuperAdmin) {
+                    displayName.ifBlank { "المهندس حسن (المدير العام والمسؤول الأعلى)" }
+                } else if (existing.fullName.isNotBlank()) existing.fullName else displayName,
                 photoUrl = photoUrl,
                 email = normalizedEmail,
+                role = if (isSuperAdmin) "OWNER" else existing.role,
                 isGoogleUser = true
             )
             db.userDao().updateUser(updated)
@@ -346,7 +516,7 @@ class NetworkRepository(private val db: AppDatabase) {
                 null
             }
 
-            if (cloudDistributor != null) {
+            if (cloudDistributor != null && !isSuperAdmin) {
                 val newUser = cloudDistributor.copy(
                     fullName = if (cloudDistributor.fullName.isNotBlank()) cloudDistributor.fullName else displayName,
                     photoUrl = photoUrl,
@@ -356,14 +526,15 @@ class NetworkRepository(private val db: AppDatabase) {
                 val newId = db.userDao().insertUser(newUser)
                 newUser.copy(id = newId)
             } else {
-                // If there is already an owner in local database, default new logins without pre-authorization
-                // to DISTRIBUTOR role so they don't overwrite the network administrator
+                // If this is super admin, always make them OWNER. Otherwise check if owner already exists
                 val hasOwner = db.userDao().getUsersByRole("OWNER").first().isNotEmpty()
-                val assignedRole = if (hasOwner) "DISTRIBUTOR" else "OWNER"
+                val assignedRole = if (isSuperAdmin) "OWNER" else if (hasOwner) "DISTRIBUTOR" else "OWNER"
 
                 val newUser = UserEntity(
-                    username = normalizedEmail.substringBefore("@"),
-                    fullName = displayName.ifBlank { if (assignedRole == "OWNER") "مالك الشبكة" else "موزع كروت جديد" },
+                    username = if (isSuperAdmin) "mosthassan" else normalizedEmail.substringBefore("@"),
+                    fullName = if (isSuperAdmin) {
+                        displayName.ifBlank { "المهندس حسن (المدير العام والمسؤول الأعلى)" }
+                    } else displayName.ifBlank { if (assignedRole == "OWNER") "مالك الشبكة" else "موزع كروت جديد" },
                     role = assignedRole,
                     email = normalizedEmail,
                     photoUrl = photoUrl,
@@ -388,15 +559,20 @@ class NetworkRepository(private val db: AppDatabase) {
 
         // 3. Create or preserve the authentic production administrator
         val productionAdmin = if (activeGoogleUser != null && activeGoogleUser.email.isNotBlank()) {
-            activeGoogleUser.copy(id = 0, role = "OWNER")
+            val isAdmin = isSuperAdminEmail(activeGoogleUser.email)
+            activeGoogleUser.copy(
+                id = 0,
+                role = "OWNER",
+                fullName = if (isAdmin) "المهندس حسن (المدير العام والمسؤول الأعلى)" else activeGoogleUser.fullName
+            )
         } else {
             UserEntity(
-                username = "admin_owner",
-                fullName = "مالك الشبكة (المدير العام)",
+                username = "mosthassan",
+                fullName = "المهندس حسن (المدير العام والمسؤول الأعلى)",
                 role = "OWNER",
-                phone = "",
-                email = "",
-                isGoogleUser = false
+                phone = "770000001",
+                email = "mosthassan.ye@gmail.com",
+                isGoogleUser = true
             )
         }
         val adminId = db.userDao().insertUser(productionAdmin)

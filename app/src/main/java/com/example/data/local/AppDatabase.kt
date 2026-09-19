@@ -13,6 +13,7 @@ import com.example.data.local.dao.NetworkAssetDao
 import com.example.data.local.dao.NetworkDeviceDao
 import com.example.data.local.dao.NetworkIdentityDao
 import com.example.data.local.dao.PartnerDao
+import com.example.data.local.dao.PurchaseInvoiceDao
 import com.example.data.local.dao.RetailerDao
 import com.example.data.local.dao.UserDao
 import com.example.data.local.entity.CardBatchEntity
@@ -25,6 +26,7 @@ import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
 import com.example.data.local.entity.PartnerEntity
 import com.example.data.local.entity.PartnerTransactionEntity
+import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
 import kotlinx.coroutines.CoroutineScope
@@ -45,9 +47,10 @@ import kotlinx.coroutines.launch
         PartnerEntity::class,
         NetworkAssetEntity::class,
         PartnerTransactionEntity::class,
-        InventoryItemEntity::class
+        InventoryItemEntity::class,
+        PurchaseInvoiceEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -61,6 +64,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun partnerDao(): PartnerDao
     abstract fun networkAssetDao(): NetworkAssetDao
     abstract fun inventoryDao(): InventoryDao
+    abstract fun purchaseInvoiceDao(): PurchaseInvoiceDao
 
     companion object {
         @Volatile

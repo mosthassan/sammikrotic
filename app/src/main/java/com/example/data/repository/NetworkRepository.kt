@@ -11,6 +11,7 @@ import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
 import com.example.data.local.entity.PartnerEntity
 import com.example.data.local.entity.PartnerTransactionEntity
+import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
 import kotlinx.coroutines.Dispatchers
@@ -528,6 +529,10 @@ class NetworkRepository(private val db: AppDatabase) {
         db.financialVoucherDao().deleteVoucher(voucher)
     }
 
+    suspend fun insertVoucher(voucher: FinancialVoucherEntity): Long = withContext(Dispatchers.IO) {
+        db.financialVoucherDao().insertVoucher(voucher)
+    }
+
     // Users & Roles
     val allUsers: Flow<List<UserEntity>> = db.userDao().getAllUsers()
     val allDistributors: Flow<List<UserEntity>> = db.userDao().getUsersByRole("DISTRIBUTOR")
@@ -735,6 +740,23 @@ class NetworkRepository(private val db: AppDatabase) {
 
     suspend fun deleteAsset(asset: NetworkAssetEntity) = withContext(Dispatchers.IO) {
         db.networkAssetDao().deleteAsset(asset)
+    }
+
+    // Purchase Invoices (فواتير المشتريات والأصول)
+    val allInvoices: Flow<List<PurchaseInvoiceEntity>> = db.purchaseInvoiceDao().getAllInvoices()
+    val totalInvoicesAmount: Flow<Double?> = db.purchaseInvoiceDao().getTotalInvoicesAmount()
+
+    suspend fun saveInvoice(invoice: PurchaseInvoiceEntity): Long = withContext(Dispatchers.IO) {
+        if (invoice.id == 0L) {
+            db.purchaseInvoiceDao().insertInvoice(invoice)
+        } else {
+            db.purchaseInvoiceDao().updateInvoice(invoice)
+            invoice.id
+        }
+    }
+
+    suspend fun deleteInvoice(invoice: PurchaseInvoiceEntity) = withContext(Dispatchers.IO) {
+        db.purchaseInvoiceDao().deleteInvoice(invoice)
     }
 }
 

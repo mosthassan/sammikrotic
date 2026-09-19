@@ -22,8 +22,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Edit
@@ -70,6 +72,7 @@ import com.example.ui.theme.AssetPurple
 import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
+import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
 import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.StatusOnline
@@ -89,6 +92,7 @@ fun AssetsScreen(
 
     var selectedCategoryFilter by remember { mutableStateOf("الكل") }
     var showAddAssetDialog by remember { mutableStateOf(false) }
+    var showInvoiceScannerDialog by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<NetworkAssetEntity?>(null) }
     var assetToDelete by remember { mutableStateOf<NetworkAssetEntity?>(null) }
 
@@ -224,6 +228,76 @@ fun AssetsScreen(
                 }
             }
 
+            // AI Invoice Scanning Quick Banner
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showInvoiceScannerDialog = true },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = AssetPurple.copy(alpha = 0.15f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AssetPurple.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(AssetPurple.copy(alpha = 0.3f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "تصوير ومسح فاتورة أصول بالذكاء الاصطناعي",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = InvestmentGold,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "صور فاتورة الأجهزة لتحويلها تلقائياً إلى أصول ومعدات معتمدة",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFCBD5E1)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = { showInvoiceScannerDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = AssetPurple),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("scan_asset_invoice_button")
+                        ) {
+                            Text("مسح الآن", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
             // Category Filter Chips
             item {
                 LazyRow(
@@ -317,22 +391,53 @@ fun AssetsScreen(
             }
         }
 
-        // Add Asset FAB
-        FloatingActionButton(
-            onClick = {
-                assetToEdit = null
-                showAddAssetDialog = true
-            },
-            containerColor = AssetPurple,
-            contentColor = Color.White,
-            shape = CircleShape,
+        // Dual Action Floating Buttons: Scan Invoice (AI) & Add Asset
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(20.dp)
-                .testTag("fab_add_asset")
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Add, contentDescription = "إضافة أصل جديد")
+            FloatingActionButton(
+                onClick = { showInvoiceScannerDialog = true },
+                containerColor = MikroTikPrimary,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.testTag("fab_scan_asset_invoice")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("مسح فاتورة (AI)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+
+            FloatingActionButton(
+                onClick = {
+                    assetToEdit = null
+                    showAddAssetDialog = true
+                },
+                containerColor = AssetPurple,
+                contentColor = Color.White,
+                shape = CircleShape,
+                modifier = Modifier.testTag("fab_add_asset")
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "إضافة أصل يدوي")
+            }
         }
+    }
+
+    // Smart Invoice AI Scanner Dialog
+    if (showInvoiceScannerDialog) {
+        SmartInvoiceScannerDialog(
+            viewModel = viewModel,
+            initialTargetType = "ASSETS",
+            onDismissRequest = { showInvoiceScannerDialog = false }
+        )
     }
 
     // Add / Edit Asset Dialog

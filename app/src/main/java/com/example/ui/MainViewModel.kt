@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.app.Activity
 import android.app.Application
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,8 +20,11 @@ import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
 import com.example.data.local.entity.PartnerEntity
 import com.example.data.local.entity.PartnerTransactionEntity
+import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
+import com.example.data.model.InvoiceItem
+import com.example.data.model.ParsedInvoiceData
 import com.example.data.repository.NetworkRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,6 +33,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class IpValidationResult(
     val hasConflict: Boolean = false,
@@ -682,6 +688,131 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteAsset(asset: NetworkAssetEntity) {
         viewModelScope.launch {
             repository.deleteAsset(asset)
+        }
+    }
+
+    // =========================================================
+    // Purchase Invoices & AI Vision Capture (فواتير المشتريات والأصول)
+    // =========================================================
+    val invoices: StateFlow<List<PurchaseInvoiceEntity>> = repository.allInvoices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalInvoicesAmount: StateFlow<Double> = repository.totalInvoicesAmount
+        .map { it ?: 0.0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    private val _isScanningInvoice = MutableStateFlow(false)
+    val isScanningInvoice: StateFlow<Boolean> = _isScanningInvoice.asStateFlow()
+
+    private val _lastScannedInvoice = MutableStateFlow<ParsedInvoiceData?>(null)
+    val lastScannedInvoice: StateFlow<ParsedInvoiceData?> = _lastScannedInvoice.asStateFlow()
+
+    fun scanInvoiceWithAi(
+        bitmap: Bitmap,
+        onResult: (ParsedInvoiceData) -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isScanningInvoice.value = true
+            try {
+                val parsed = aiService.parseInvoiceImage(bitmap)
+                _lastScannedInvoice.value = parsed
+                _isScanningInvoice.value = false
+                onResult(parsed)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error analyzing invoice with AI", e)
+                _isScanningInvoice.value = false
+                onError(e.localizedMessage ?: "فشل تحليل الفاتورة")
+            }
+        }
+    }
+
+    fun approveAndSaveInvoice(
+        invoice: PurchaseInvoiceEntity,
+        items: List<InvoiceItem>,
+        saveAsAssets: Boolean,
+        saveAsVoucher: Boolean,
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            // Build items JSON and summary
+            val itemsArray = JSONArray()
+            items.forEach { item ->
+                val itemObj = JSONObject().apply {
+                    put("name", item.name)
+                    put("quantity", item.quantity)
+                    put("unitPrice", item.unitPrice)
+                    put("subtotal", item.subtotal)
+                    put("category", item.category)
+                }
+                itemsArray.put(itemObj)
+            }
+            val summaryText = items.joinToString("، ") { "${it.name} (${it.quantity.toInt()} × ${it.unitPrice.toInt()})" }
+            val totalCalc = items.sumOf { it.subtotal }
+
+            val invoiceToSave = invoice.copy(
+                totalAmount = if (totalCalc > 0) totalCalc else invoice.totalAmount,
+                itemsJson = itemsArray.toString(),
+                itemsSummary = summaryText,
+                status = "APPROVED"
+            )
+            repository.saveInvoice(invoiceToSave)
+
+            // 1. If user designated as Assets or requested saving items to Fixed Assets
+            if (saveAsAssets || invoice.targetType == "ASSETS") {
+                items.forEach { item ->
+                    val assetCat = when (item.category.uppercase()) {
+                        "SERVERS", "ROUTERS" -> "SERVERS"
+                        "TOWERS", "ANTENNAS" -> "TOWERS"
+                        "SOLAR_POWER", "BATTERIES" -> "SOLAR_POWER"
+                        "CABLES", "FIBER" -> "FIBER_CABLES"
+                        else -> "OTHER"
+                    }
+                    val asset = NetworkAssetEntity(
+                        assetName = item.name,
+                        category = assetCat,
+                        purchaseCost = item.subtotal,
+                        estimatedCurrentValue = item.subtotal,
+                        purchaseDateMillis = invoice.invoiceDateMillis,
+                        location = "المركز الرئيسي والشبكة",
+                        serialNumber = "",
+                        status = "ACTIVE",
+                        notes = "مستورد من فاتورة رقم: ${invoice.invoiceNumber} (المورد: ${invoice.supplierName})"
+                    )
+                    repository.saveAsset(asset)
+                }
+            }
+
+            // 2. If user requested recording in financial accounting vouchers (سند صرف مشتريات)
+            if (saveAsVoucher) {
+                val voucherNum = "PAY-${System.currentTimeMillis() % 100000}"
+                val voucherCat = if (invoice.targetType == "ASSETS") "أصول ومعدات شبكة" else "صيانة ومعدات"
+                val desc = "سداد فاتورة مشتريات #${invoice.invoiceNumber} (${invoice.supplierName}): $summaryText"
+                val voucher = FinancialVoucherEntity(
+                    voucherNumber = voucherNum,
+                    voucherType = "PAYMENT",
+                    amount = invoiceToSave.totalAmount,
+                    partyName = invoice.supplierName.ifBlank { "مورد معدات" },
+                    category = voucherCat,
+                    paymentMethod = invoice.paymentMethod,
+                    description = desc,
+                    issuerName = _currentUser.value?.fullName ?: "المهندس سام",
+                    dateMillis = invoice.invoiceDateMillis,
+                    notes = invoice.notes
+                )
+                repository.insertVoucher(voucher)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushVoucher(voucher, userEmail)
+            }
+
+            onComplete()
+        }
+    }
+
+    fun deleteInvoice(invoice: PurchaseInvoiceEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.deleteInvoice(invoice)
+            onComplete()
         }
     }
 

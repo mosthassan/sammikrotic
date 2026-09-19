@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -80,6 +82,7 @@ import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
 import com.example.ui.theme.EquityBlue
 import com.example.ui.theme.InvestmentGold
+import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
@@ -98,6 +101,8 @@ fun VouchersScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedFinanceTab by remember { mutableStateOf(0) }
+    var showSmartInvoiceScanner by remember { mutableStateOf(false) }
+    var invoiceScannerTargetType by remember { mutableStateOf("EXPENSES") }
 
     Column(modifier = modifier.fillMaxSize()) {
         // High-level Top Finance & Investment Tabs
@@ -111,9 +116,10 @@ fun VouchersScreen(
                     TabRowDefaults.SecondaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(tabPositions[selectedFinanceTab]),
                         color = when (selectedFinanceTab) {
-                            1 -> InvestmentGold
+                            1 -> MikroTikCyan
                             2 -> AssetPurple
-                            3 -> ProfitEmerald
+                            3 -> InvestmentGold
+                            4 -> ProfitEmerald
                             else -> MikroTikPrimary
                         },
                         height = 3.dp
@@ -123,9 +129,10 @@ fun VouchersScreen(
         ) {
             val tabs = listOf(
                 Triple("السندات والمصروفات", Icons.Default.Receipt, 0),
-                Triple("الشركاء ورأس المال", Icons.Default.Group, 1),
+                Triple("فواتير المشتريات (AI)", Icons.Default.AutoAwesome, 1),
                 Triple("الأصول الثابتة (CAPEX)", Icons.Default.Devices, 2),
-                Triple("الأرباح والخسائر (P&L)", Icons.Default.Assessment, 3)
+                Triple("الشركاء ورأس المال", Icons.Default.Group, 3),
+                Triple("الأرباح والخسائر (P&L)", Icons.Default.Assessment, 4)
             )
 
             tabs.forEach { (title, icon, idx) ->
@@ -147,9 +154,10 @@ fun VouchersScreen(
                             contentDescription = null,
                             tint = if (isSelected) {
                                 when (idx) {
-                                    1 -> InvestmentGold
+                                    1 -> MikroTikCyan
                                     2 -> AssetPurple
-                                    3 -> ProfitEmerald
+                                    3 -> InvestmentGold
+                                    4 -> ProfitEmerald
                                     else -> Color.White
                                 }
                             } else Color(0xFF94A3B8),
@@ -162,10 +170,23 @@ fun VouchersScreen(
 
         // Screen Body Based on Selected Tab
         when (selectedFinanceTab) {
-            0 -> VouchersListSubScreen(viewModel = viewModel)
-            1 -> PartnersScreen(viewModel = viewModel)
+            0 -> VouchersListSubScreen(
+                viewModel = viewModel,
+                onOpenScanDialog = { target ->
+                    invoiceScannerTargetType = target
+                    showSmartInvoiceScanner = true
+                }
+            )
+            1 -> PurchaseInvoicesSubScreen(
+                viewModel = viewModel,
+                onOpenScanDialog = { target ->
+                    invoiceScannerTargetType = target
+                    showSmartInvoiceScanner = true
+                }
+            )
             2 -> AssetsScreen(viewModel = viewModel)
-            3 -> ProfitLossScreen(
+            3 -> PartnersScreen(viewModel = viewModel)
+            4 -> ProfitLossScreen(
                 viewModel = viewModel,
                 onNavigateToAI = { prompt ->
                     viewModel.consultAi(prompt)
@@ -173,11 +194,20 @@ fun VouchersScreen(
             )
         }
     }
+
+    if (showSmartInvoiceScanner) {
+        SmartInvoiceScannerDialog(
+            viewModel = viewModel,
+            initialTargetType = invoiceScannerTargetType,
+            onDismissRequest = { showSmartInvoiceScanner = false }
+        )
+    }
 }
 
 @Composable
 fun VouchersListSubScreen(
     viewModel: MainViewModel,
+    onOpenScanDialog: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val vouchers by viewModel.vouchers.collectAsState()
@@ -225,6 +255,17 @@ fun VouchersListSubScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                Button(
+                    onClick = { onOpenScanDialog("EXPENSES") },
+                    colors = ButtonDefaults.buttonColors(containerColor = PaymentRed.copy(alpha = 0.9f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.testTag("scan_invoice_vouchers_header_button")
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("مسح فاتورة (AI)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -325,23 +366,46 @@ fun VouchersListSubScreen(
             }
         }
 
-        // FAB to Add Voucher
-        FloatingActionButton(
-            onClick = { showAddDialog = true },
-            containerColor = MikroTikPrimary,
-            contentColor = Color.White,
+        // Dual FABs: AI Scan Invoice & Issue Financial Voucher
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(20.dp)
-                .testTag("add_voucher_fab")
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 16.dp)
+            FloatingActionButton(
+                onClick = { onOpenScanDialog("EXPENSES") },
+                containerColor = PaymentRed,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.testTag("fab_scan_invoice_vouchers")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "إصدار سند")
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("إصدار سند مالي", fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("مسح فاتورة (AI)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                containerColor = MikroTikPrimary,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.testTag("add_voucher_fab")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "إصدار سند")
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("إصدار سند مالي", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
         }
 

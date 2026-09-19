@@ -355,29 +355,29 @@ fun DashboardScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = if (currentUser?.email?.isNotBlank() == true)
-                                                    "سحابة Firebase: ${currentUser?.email}"
+                                                    "المزامنة السحابية: ${currentUser?.email}"
                                                 else
-                                                    "قاعدة بيانات Firebase (sam-mikrotic)",
+                                                    "المزامنة السحابية: قاعدة Firebase العامة",
                                                 color = TextPrimaryDark,
                                                 fontFamily = CairoFontFamily,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(StatusOnline.copy(alpha = 0.2f))
-                                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                                    ) {
-                                        Text(
-                                            text = if (currentUser?.isGoogleUser == true) "Google Auth" else "مفعلة",
-                                            color = StatusOnline,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(StatusOnline.copy(alpha = 0.2f))
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (currentUser?.isGoogleUser == true) "حساب موثق" else "نشط",
+                                                    color = StatusOnline,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
                                 Text(
                                     text = syncStatus,
                                     color = Color(0xFF94A3B8),

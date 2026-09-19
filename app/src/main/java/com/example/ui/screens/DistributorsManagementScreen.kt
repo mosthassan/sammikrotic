@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
+import com.example.data.repository.NetworkRepository
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.SwitchAccount
 import androidx.compose.material.icons.filled.TwoWheeler
@@ -254,10 +255,19 @@ fun DistributorsManagementScreen(
 
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = if (currentUser?.role == "DISTRIBUTOR") InvestmentGold.copy(alpha = 0.2f) else Color(0xFF1E293B)
+                    color = when {
+                        currentUser?.role == "DISTRIBUTOR" -> InvestmentGold.copy(alpha = 0.2f)
+                        currentUser != null -> Color(0xFF1E293B)
+                        else -> Color(0xFF0F172A)
+                    }
                 ) {
                     Text(
-                        text = if (currentUser?.role == "DISTRIBUTOR") "أنت تتصفح حالياً بدور: موزع معتمد 🛵" else "أنت تتصفح بصلاحية: المدير العام 👑",
+                        text = when {
+                            currentUser?.role == "DISTRIBUTOR" -> "أنت تتصفح حالياً بدور: موزع معتمد 🛵"
+                            currentUser?.role == "OWNER" || NetworkRepository.isSuperAdminEmail(currentUser?.email ?: "") -> "أنت تتصفح بصلاحية: المدير العام 👑"
+                            currentUser != null -> "أنت تتصفح بحساب: ${currentUser?.fullName} (${currentUser?.role})"
+                            else -> "وضع المعاينة (غير مسجل الدخول) 👤"
+                        },
                         color = if (currentUser?.role == "DISTRIBUTOR") InvestmentGold else Color(0xFF94A3B8),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,

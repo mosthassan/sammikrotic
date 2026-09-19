@@ -182,10 +182,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun signOutGoogle() {
         viewModelScope.launch {
             authManager.signOut()
-            val defaultUser = users.value.firstOrNull { NetworkRepository.isSuperAdminEmail(it.email) }
-                ?: users.value.firstOrNull { it.role == "OWNER" }
-                ?: users.value.firstOrNull()
-            _currentUser.value = defaultUser
+            _currentUser.value = null
             _googleSignInState.value = GoogleSignInUiState(
                 successMessage = "تم تسجيل الخروج من حساب Google و Firebase"
             )
@@ -872,7 +869,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             try {
-                // Ensure mosthassan.ye@gmail.com is registered as OWNER in database
+                // Ensure mosthassan.ye@gmail.com is registered as OWNER in database (Role & Permission only, NOT active session)
                 repository.ensureSuperAdminExists()
             } catch (e: Throwable) {
                 Log.e("MainViewModel", "Error ensuring super admin: ${e.message}")
@@ -883,12 +880,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val activeEmail = authManager.getActiveEmail()?.trim()?.lowercase()
                     val current = _currentUser.value
                     if (current == null) {
-                        val matchedLoggedIn = if (!activeEmail.isNullOrBlank()) {
-                            list.find { it.email.trim().lowercase() == activeEmail }
-                        } else null
-                        val superAdmin = list.find { NetworkRepository.isSuperAdminEmail(it.email) }
-                        val owner = list.find { it.role == "OWNER" }
-                        _currentUser.value = matchedLoggedIn ?: superAdmin ?: owner ?: list.first()
+                        // Only log in if there is a genuinely active authenticated Google session
+                        if (!activeEmail.isNullOrBlank()) {
+                            val matchedLoggedIn = list.find { it.email.trim().lowercase() == activeEmail }
+                            if (matchedLoggedIn != null) {
+                                _currentUser.value = matchedLoggedIn
+                            }
+                        }
                     } else {
                         // Refresh current user if data was updated in database
                         val refreshed = list.find { it.id == current.id || (current.email.isNotBlank() && it.email.equals(current.email, ignoreCase = true)) }

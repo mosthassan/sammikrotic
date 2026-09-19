@@ -322,8 +322,10 @@ fun TopNavBar(
                             Text(
                                 text = if (currentUser?.isGoogleUser == true) {
                                     currentUser.fullName.ifBlank { currentUser.email.substringBefore("@") }
+                                } else if (currentUser != null) {
+                                    currentUser.fullName.split(" ").take(2).joinToString(" ").ifBlank { currentUser.role }
                                 } else {
-                                    currentUser?.fullName?.split(" ")?.take(2)?.joinToString(" ") ?: "المستخدم"
+                                    "تسجيل الدخول"
                                 },
                                 color = TextPrimaryDark,
                                 fontFamily = CairoFontFamily,

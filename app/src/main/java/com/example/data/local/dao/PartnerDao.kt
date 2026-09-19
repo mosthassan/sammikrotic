@@ -45,4 +45,10 @@ interface PartnerDao {
 
     @Delete
     suspend fun deletePartnerTransaction(tx: PartnerTransactionEntity)
+
+    @Query("DELETE FROM partners")
+    suspend fun deleteAllPartners()
+
+    @Query("DELETE FROM partner_transactions")
+    suspend fun deleteAllTransactions()
 }

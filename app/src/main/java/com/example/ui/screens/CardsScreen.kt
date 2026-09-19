@@ -4,6 +4,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +73,10 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CardEntity
 import com.example.data.local.entity.CardPackageEntity
 import com.example.ui.MainViewModel
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
@@ -79,6 +84,8 @@ import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.StatusDistributed
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 
 @Composable
 fun CardsScreen(
@@ -794,13 +801,14 @@ fun CardsTopNavBar(
     onAddManualQuantity: (() -> Unit)? = null
 ) {
     Surface(
-        color = Color(0xFF091424),
+        color = CyberDarkSurface,
+        border = BorderStroke(1.dp, CyberBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = 10.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -836,27 +844,50 @@ fun CardsTopNavBar(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onAddManualQuantity != null) {
-                    IconButton(onClick = onAddManualQuantity, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = onAddManualQuantity,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(CyberDarkCardElevated)
+                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                    ) {
                         Icon(
                             Icons.Default.Numbers,
                             contentDescription = "إضافة كروت بالعدد",
                             tint = ProfitEmerald,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
                 if (onImportExternal != null) {
-                    IconButton(onClick = onImportExternal, modifier = Modifier.size(28.dp)) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = onImportExternal,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(CyberDarkCardElevated)
+                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                    ) {
                         Icon(
                             Icons.Default.PostAdd,
                             contentDescription = "استيراد كروت خارجية",
                             tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
                 if (onExport != null) {
-                    IconButton(onClick = onExport, modifier = Modifier.size(28.dp)) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = onExport,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(CyberDarkCardElevated)
+                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                    ) {
                         Icon(Icons.Default.Share, contentDescription = "تصدير", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
                     }
                 }
@@ -873,26 +904,31 @@ private fun NavPill(
     onClick: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) Color(0xFF0284C7) else Color(0xFF132238),
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) Color(0xFF0284C7).copy(alpha = 0.25f) else CyberDarkCardElevated,
+        border = BorderStroke(
+            1.dp,
+            if (selected) Color(0xFF38BDF8).copy(alpha = 0.6f) else CyberBorder
+        ),
         onClick = onClick
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (selected) Color.White else Color(0xFF94A3B8),
-                modifier = Modifier.size(12.dp)
+                tint = if (selected) Color(0xFF38BDF8) else TextSecondaryDark,
+                modifier = Modifier.size(13.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Text(
                 text = label,
-                color = if (selected) Color.White else Color(0xFFCBD5E1),
-                fontSize = 11.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                color = if (selected) Color.White else TextSecondaryDark,
+                fontFamily = CairoFontFamily,
+                fontSize = 11.5.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
             )
         }
     }

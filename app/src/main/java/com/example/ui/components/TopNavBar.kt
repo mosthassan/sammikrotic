@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +48,15 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.UserEntity
 import com.example.data.repository.NetworkRepository
 import com.example.ui.GoogleSignInUiState
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.MikroTikCyan
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
@@ -60,6 +69,7 @@ fun TopNavBar(
     allUsers: List<UserEntity>,
     syncStatus: String,
     googleSignInState: GoogleSignInUiState,
+    isProductionMode: Boolean = false,
     onSelectUser: (UserEntity) -> Unit,
     onTriggerSync: () -> Unit,
     onGoogleSignInClick: () -> Unit,
@@ -69,16 +79,17 @@ fun TopNavBar(
     var showUserMenu by remember { mutableStateOf(false) }
 
     Surface(
-        color = MikroTikNavy,
-        tonalElevation = 4.dp,
+        color = CyberDarkSurface,
+        tonalElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
+            .border(width = 1.dp, color = CyberBorder)
             .testTag("top_nav_bar")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -89,16 +100,17 @@ fun TopNavBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF0284C7)),
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Brush.linearGradient(listOf(MikroTikCyan, Color(0xFF0284C7))))
+                            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Router,
                             contentDescription = "سام تك",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            tint = Color(0xFF070B14),
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
@@ -106,23 +118,32 @@ fun TopNavBar(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "سام تك",
-                                color = Color.White,
+                                color = TextPrimaryDark,
+                                fontFamily = CairoFontFamily,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 18.sp
+                                fontSize = 17.sp
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             val isSuperAdmin = NetworkRepository.isSuperAdminEmail(currentUser?.email)
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = when {
-                                    isSuperAdmin -> Color(0xFF1E3A8A)
-                                    currentUser?.role == "DISTRIBUTOR" -> Color(0xFF3B2D05)
-                                    else -> Color(0xFF0F2D4A)
-                                }
+                                    isSuperAdmin -> Color(0xFF1E3A8A).copy(alpha = 0.6f)
+                                    currentUser?.role == "DISTRIBUTOR" -> Color(0xFF78350F).copy(alpha = 0.6f)
+                                    else -> Color(0xFF0284C7).copy(alpha = 0.25f)
+                                },
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    when {
+                                        isSuperAdmin -> Color(0xFF67E8F9).copy(alpha = 0.4f)
+                                        currentUser?.role == "DISTRIBUTOR" -> Color(0xFFFBBF24).copy(alpha = 0.4f)
+                                        else -> Color(0xFF38BDF8).copy(alpha = 0.4f)
+                                    }
+                                )
                             ) {
                                 Text(
                                     text = when {
-                                        isSuperAdmin -> "المدير العام الأعلى 👑"
+                                        isSuperAdmin -> "المدير العام 👑"
                                         currentUser?.role == "DISTRIBUTOR" -> "بوابة الموزع 🛵"
                                         currentUser?.role == "RETAILER" -> "نقطة بيع 🛒"
                                         currentUser?.role == "ENGINEER" -> "مهندس شبكة 🛠️"
@@ -133,37 +154,67 @@ fun TopNavBar(
                                         currentUser?.role == "DISTRIBUTOR" -> Color(0xFFFBBF24)
                                         else -> Color(0xFF38BDF8)
                                     },
+                                    fontFamily = CairoFontFamily,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                 )
                             }
                         }
                         Text(
-                            text = if (currentUser?.role == "DISTRIBUTOR") "بوابة توزيع الكروت وإدارة البقالات" else "شبكة طلقة نت • نظام إدارة الشبكات",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
+                            text = if (currentUser?.role == "DISTRIBUTOR") "بوابة الموزعين الذكية • طلقة نت" else "شبكة طلقة نت • منصة الإدارة السحابية",
+                            color = TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 10.sp
                         )
                     }
                 }
 
                 // Actions: Cloud Sync & User Profile / Google Sign-In & Factory Reset
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Production Reset Icon Button (Only visible for Owner/Admin)
-                    if (currentUser?.role != "DISTRIBUTOR") {
+                    // Production Status or Reset Button
+                    if (isProductionMode) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF059669).copy(alpha = 0.18f),
+                            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f)),
+                            modifier = Modifier.padding(end = 6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF34D399))
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "فعلي 🚀",
+                                    color = Color(0xFF34D399),
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    } else if (currentUser?.role != "DISTRIBUTOR") {
                         IconButton(
                             onClick = onResetToProductionClick,
                             modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFF2D1219))
+                                .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                                 .testTag("reset_production_navbar_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DeleteSweep,
                                 contentDescription = "تهيئة بيئة العمل الفعلية",
                                 tint = Color(0xFFF87171),
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
 
@@ -174,16 +225,17 @@ fun TopNavBar(
                     IconButton(
                         onClick = onTriggerSync,
                         modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1E293B))
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(CyberDarkCardElevated)
+                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
                             .testTag("sync_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Sync,
                             contentDescription = "مزامنة سحابية",
                             tint = MikroTikCyan,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
@@ -192,21 +244,22 @@ fun TopNavBar(
                     // Quick Google One-Tap Sign-In Button (Prominent when not connected to Google)
                     if (currentUser?.isGoogleUser != true) {
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(14.dp),
                             color = Color(0xFF1D4ED8),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B82F6)),
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(14.dp))
                                 .clickable { onGoogleSignInClick() }
                                 .padding(end = 6.dp)
                                 .testTag("quick_google_signin_button")
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(18.dp)
+                                        .size(16.dp)
                                         .clip(CircleShape)
                                         .background(Color.White),
                                     contentAlignment = Alignment.Center
@@ -215,15 +268,16 @@ fun TopNavBar(
                                         text = "G",
                                         color = Color(0xFF2563EB),
                                         fontWeight = FontWeight.Black,
-                                        fontSize = 11.sp
+                                        fontSize = 10.sp
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = "دخول جوجل",
+                                    text = "دخول",
                                     color = Color.White,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    fontSize = 10.sp
                                 )
                             }
                         }
@@ -234,18 +288,17 @@ fun TopNavBar(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(
-                                    if (currentUser?.isGoogleUser == true) Color(0xFF1E3A8A) else Color(0xFF1E293B)
-                                )
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(CyberDarkCardElevated)
+                                .border(1.dp, CyberBorder, RoundedCornerShape(16.dp))
                                 .clickable { showUserMenu = true }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
                                 .testTag("user_role_selector")
                         ) {
                             if (googleSignInState.isLoading) {
                                 CircularProgressIndicator(
                                     color = MikroTikCyan,
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(14.dp),
                                     strokeWidth = 2.dp
                                 )
                             } else if (currentUser?.isGoogleUser == true) {
@@ -253,18 +306,18 @@ fun TopNavBar(
                                     imageVector = Icons.Default.AccountCircle,
                                     contentDescription = "حساب جوجل",
                                     tint = MikroTikCyan,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = "المستخدم",
                                     tint = StatusOnline,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
 
                             Text(
                                 text = if (currentUser?.isGoogleUser == true) {
@@ -272,9 +325,10 @@ fun TopNavBar(
                                 } else {
                                     currentUser?.fullName?.split(" ")?.take(2)?.joinToString(" ") ?: "المستخدم"
                                 },
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                                color = TextPrimaryDark,
+                                fontFamily = CairoFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
 
@@ -437,42 +491,44 @@ fun TopNavBar(
                                 )
                             }
 
-                            HorizontalDivider(
-                                color = Color(0xFF2E4064),
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
+                            if (!isProductionMode) {
+                                HorizontalDivider(
+                                    color = Color(0xFF2E4064),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
 
-                            // Section 3: Reset to Production Environment
-                            DropdownMenuItem(
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.DeleteSweep,
-                                        contentDescription = null,
-                                        tint = PaymentRed,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                text = {
-                                    Column {
-                                        Text(
-                                            text = "تهيئة بيئة العمل الفعلية 🚀",
-                                            color = PaymentRed,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp
+                                // Section 3: Reset to Production Environment
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.DeleteSweep,
+                                            contentDescription = null,
+                                            tint = PaymentRed,
+                                            modifier = Modifier.size(20.dp)
                                         )
-                                        Text(
-                                            text = "حذف الكروت والسندات والأجهزة الافتراضية",
-                                            color = Color(0xFF94A3B8),
-                                            fontSize = 10.sp
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    showUserMenu = false
-                                    onResetToProductionClick()
-                                },
-                                modifier = Modifier.testTag("menu_reset_production_button")
-                            )
+                                    },
+                                    text = {
+                                        Column {
+                                            Text(
+                                                text = "تهيئة بيئة العمل الفعلية 🚀",
+                                                color = PaymentRed,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                            Text(
+                                                text = "حذف الكروت والسندات والأجهزة الافتراضية",
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        showUserMenu = false
+                                        onResetToProductionClick()
+                                    },
+                                    modifier = Modifier.testTag("menu_reset_production_button")
+                                )
+                            }
                         }
                     }
                 }
@@ -480,25 +536,27 @@ fun TopNavBar(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Sync status line
+            // Micro-telemetry sync status line
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF0F1E33))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CyberDarkCardElevated)
+                    .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
                         .background(StatusOnline)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = syncStatus,
-                    color = Color(0xFFCBD5E1),
+                    color = TextSecondaryDark,
+                    fontFamily = CairoFontFamily,
                     fontSize = 10.sp,
                     maxLines = 1
                 )

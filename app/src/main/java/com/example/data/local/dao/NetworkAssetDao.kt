@@ -34,4 +34,7 @@ interface NetworkAssetDao {
 
     @Delete
     suspend fun deleteAsset(asset: NetworkAssetEntity)
+
+    @Query("DELETE FROM network_assets")
+    suspend fun deleteAllAssets()
 }

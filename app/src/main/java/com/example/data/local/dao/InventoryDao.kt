@@ -27,4 +27,7 @@ interface InventoryDao {
 
     @Query("DELETE FROM inventory_items WHERE id = :id")
     suspend fun deleteItem(id: Long)
+
+    @Query("DELETE FROM inventory_items")
+    suspend fun deleteAllItems()
 }

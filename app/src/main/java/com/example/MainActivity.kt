@@ -7,10 +7,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkSurface
+import com.example.ui.theme.MikroTikCyan
+import com.example.ui.theme.TextSecondaryDark
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -86,6 +95,7 @@ fun SamMikrotikApp(viewModel: MainViewModel) {
     val syncStatus by viewModel.syncStatus.collectAsState()
     val googleSignInState by viewModel.googleSignInState.collectAsState()
     val resetProductionState by viewModel.resetProductionState.collectAsState()
+    val isProductionMode by viewModel.isProductionMode.collectAsState()
 
     var showResetProductionDialog by remember { mutableStateOf(false) }
 
@@ -128,21 +138,21 @@ fun SamMikrotikApp(viewModel: MainViewModel) {
 
     val navItems = if (isDistributor) {
         listOf(
-            NavigationItem("لوحة الموزع", Icons.Default.Dashboard),
-            NavigationItem("الأجهزة (مقيد)", Icons.Default.Lock),
-            NavigationItem("توزيع الكروت", Icons.Default.ConfirmationNumber),
-            NavigationItem("إضافة بقالات", Icons.Default.Store),
-            NavigationItem("تحصيل السندات", Icons.Default.Receipt),
-            NavigationItem("مستشار AI", Icons.Default.AutoAwesome)
+            NavigationItem("الرئيسية", Icons.Default.Dashboard),
+            NavigationItem("الأجهزة", Icons.Default.Lock),
+            NavigationItem("الكروت", Icons.Default.ConfirmationNumber),
+            NavigationItem("البقالات", Icons.Default.Store),
+            NavigationItem("السندات", Icons.Default.Receipt),
+            NavigationItem("مساعد AI", Icons.Default.AutoAwesome)
         )
     } else {
         listOf(
-            NavigationItem("لوحة التحكم", Icons.Default.Dashboard),
-            NavigationItem("الأجهزة والآيبي", Icons.Default.Router),
-            NavigationItem("استوديو الكروت", Icons.Default.ConfirmationNumber),
-            NavigationItem("نقاط البيع", Icons.Default.Store),
-            NavigationItem("المالية والاستثمار", Icons.Default.AccountBalance),
-            NavigationItem("مستشار AI", Icons.Default.AutoAwesome)
+            NavigationItem("الرئيسية", Icons.Default.Dashboard),
+            NavigationItem("الأجهزة", Icons.Default.Router),
+            NavigationItem("الكروت", Icons.Default.ConfirmationNumber),
+            NavigationItem("المبيعات", Icons.Default.Store),
+            NavigationItem("المالية", Icons.Default.AccountBalance),
+            NavigationItem("مساعد AI", Icons.Default.AutoAwesome)
         )
     }
 
@@ -153,6 +163,7 @@ fun SamMikrotikApp(viewModel: MainViewModel) {
                 allUsers = allUsers,
                 syncStatus = syncStatus,
                 googleSignInState = googleSignInState,
+                isProductionMode = isProductionMode,
                 onSelectUser = { viewModel.selectUser(it) },
                 onTriggerSync = {
                     viewModel.triggerCloudSync()
@@ -170,9 +181,17 @@ fun SamMikrotikApp(viewModel: MainViewModel) {
         },
         bottomBar = {
             NavigationBar(
-                containerColor = MikroTikNavy,
-                tonalElevation = 8.dp,
-                modifier = Modifier.testTag("bottom_nav_bar")
+                containerColor = CyberDarkSurface,
+                tonalElevation = 0.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = CyberBorder,
+                        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+                    )
+                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    .testTag("bottom_nav_bar")
             ) {
                 navItems.forEachIndexed { index, item ->
                     val isSelected = selectedTab == index
@@ -190,15 +209,16 @@ fun SamMikrotikApp(viewModel: MainViewModel) {
                             Text(
                                 text = item.label,
                                 fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                fontFamily = CairoFontFamily,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            unselectedIconColor = Color(0xFF94A3B8),
-                            unselectedTextColor = Color(0xFF94A3B8),
-                            indicatorColor = MikroTikPrimary
+                            selectedIconColor = MikroTikCyan,
+                            selectedTextColor = MikroTikCyan,
+                            unselectedIconColor = TextSecondaryDark,
+                            unselectedTextColor = TextSecondaryDark,
+                            indicatorColor = Color(0xFF0284C7).copy(alpha = 0.22f)
                         ),
                         modifier = Modifier.testTag("nav_item_$index")
                     )

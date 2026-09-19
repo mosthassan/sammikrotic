@@ -76,10 +76,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.EquityBlue
 import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
@@ -88,6 +93,8 @@ import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
 import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.ReceiptGreen
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 import com.example.ui.theme.WhatsAppDarkGreen
 import com.example.ui.theme.WhatsAppGreen
 import com.example.util.WhatsAppHelper
@@ -108,7 +115,7 @@ fun VouchersScreen(
         // High-level Top Finance & Investment Tabs
         ScrollableTabRow(
             selectedTabIndex = selectedFinanceTab,
-            containerColor = MikroTikNavy,
+            containerColor = CyberDarkSurface,
             contentColor = Color.White,
             edgePadding = 12.dp,
             indicator = { tabPositions ->
@@ -120,7 +127,7 @@ fun VouchersScreen(
                             2 -> AssetPurple
                             3 -> InvestmentGold
                             4 -> ProfitEmerald
-                            else -> MikroTikPrimary
+                            else -> Color(0xFF38BDF8)
                         },
                         height = 3.dp
                     )
@@ -143,9 +150,10 @@ fun VouchersScreen(
                     text = {
                         Text(
                             text = title,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.White else TextSecondaryDark
                         )
                     },
                     icon = {
@@ -158,9 +166,9 @@ fun VouchersScreen(
                                     2 -> AssetPurple
                                     3 -> InvestmentGold
                                     4 -> ProfitEmerald
-                                    else -> Color.White
+                                    else -> Color(0xFF38BDF8)
                                 }
-                            } else Color(0xFF94A3B8),
+                            } else TextSecondaryDark,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -506,25 +514,37 @@ fun VoucherSummaryCard(
     modifier: Modifier = Modifier
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+        border = BorderStroke(1.dp, CyberBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(text = title, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = title,
+                    fontFamily = CairoFontFamily,
+                    fontSize = 11.sp,
+                    color = TextSecondaryDark
+                )
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "${amount.toInt()}",
-                fontSize = 15.sp,
+                fontFamily = CairoFontFamily,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 color = color
             )
-            Text(text = "ريال", fontSize = 10.sp, color = Color.Gray)
+            Text(
+                text = "ريال",
+                fontFamily = CairoFontFamily,
+                fontSize = 10.sp,
+                color = TextSecondaryDark
+            )
         }
     }
 }
@@ -542,9 +562,10 @@ fun VoucherItemCard(
     val dateStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(voucher.dateMillis))
 
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+        border = BorderStroke(1.dp, CyberBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth().testTag("voucher_card_${voucher.id}")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -557,13 +578,15 @@ fun VoucherItemCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(8.dp))
                             .background(badgeColor.copy(alpha = 0.15f))
+                            .border(1.dp, badgeColor.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
                             text = badgeText,
                             color = badgeColor,
+                            fontFamily = CairoFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -580,6 +603,7 @@ fun VoucherItemCard(
 
                 Text(
                     text = "${voucher.amount.toInt()} ريال",
+                    fontFamily = CairoFontFamily,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = badgeColor
@@ -591,17 +615,19 @@ fun VoucherItemCard(
             // Party Name
             Text(
                 text = if (isReceipt) "استلمنا من: ${voucher.partyName}" else "صرفنا إلى: ${voucher.partyName}",
+                fontFamily = CairoFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface
+                fontSize = 14.5.sp,
+                color = Color.White
             )
 
             // Category & Description
             if (voucher.description.isNotEmpty()) {
                 Text(
                     text = "${voucher.category} • ${voucher.description}",
+                    fontFamily = CairoFontFamily,
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TextSecondaryDark
                 )
             }
 

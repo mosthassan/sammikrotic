@@ -197,6 +197,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Reset To Production Environment (حذف كافة البيانات التجريبية وتهيئة التطبيق للعمل الفعلي)
+    private val prefs = application.getSharedPreferences("sam_mikrotik_prefs", android.content.Context.MODE_PRIVATE)
+
+    private val _isProductionMode = MutableStateFlow(
+        prefs.getBoolean("is_production_mode", false)
+    )
+    val isProductionMode: StateFlow<Boolean> = _isProductionMode.asStateFlow()
+
     private val _resetProductionState = MutableStateFlow<String?>(null)
     val resetProductionState: StateFlow<String?> = _resetProductionState.asStateFlow()
 
@@ -207,7 +214,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeGoogleUser = if (activeUser?.isGoogleUser == true) activeUser else null
             )
             _currentUser.value = productionAdmin
-            _resetProductionState.value = "تمت تهيئة بيئة العمل الفعلية بنجاح وحذف كافة البيانات الافتراضية."
+            // تثبيت حالة الوضع الفعلي بحيث يختفي زر التهيئة نهائياً
+            prefs.edit().putBoolean("is_production_mode", true).apply()
+            _isProductionMode.value = true
+            _resetProductionState.value = "تمت تهيئة بيئة العمل الفعلية بنجاح وحذف كافة البيانات الافتراضية والتحول للوضع الفعلي."
             triggerCloudSync()
             onComplete()
         }

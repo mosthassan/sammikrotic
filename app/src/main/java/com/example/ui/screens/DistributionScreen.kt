@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,12 +78,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.RetailerEntity
 import com.example.ui.MainViewModel
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
+import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.ReceiptGreen
 import com.example.ui.theme.StatusOffline
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 import com.example.ui.theme.WhatsAppDarkGreen
 import com.example.ui.theme.WhatsAppGreen
 import com.example.util.WhatsAppHelper
@@ -153,16 +161,24 @@ fun DistributionScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = StatusWarning.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                    border = BorderStroke(1.dp, StatusWarning.copy(alpha = 0.35f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(text = "إجمالي ديون المحلات", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(2.dp))
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "إجمالي ديون المحلات",
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            color = TextSecondaryDark
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "${totalDebt.toInt()} ريال",
-                            fontSize = 18.sp,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
                             color = StatusWarning
                         )
@@ -170,18 +186,26 @@ fun DistributionScreen(
                 }
 
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MikroTikPrimary.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                    border = BorderStroke(1.dp, CyberBorder),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(text = "كروت بحوزة البقالات", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(2.dp))
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "كروت بحوزة البقالات",
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            color = TextSecondaryDark
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "$totalActiveCardsWithRetailers كرت",
-                            fontSize = 18.sp,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MikroTikPrimary
+                            color = Color(0xFF38BDF8)
                         )
                     }
                 }
@@ -484,8 +508,9 @@ fun RetailerCard(
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+        border = BorderStroke(1.dp, CyberBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth().testTag("retailer_card_${retailer.id}")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -498,25 +523,28 @@ fun RetailerCard(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(40.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(MikroTikPrimary.copy(alpha = 0.12f)),
+                            .background(CyberDarkCardElevated)
+                            .border(1.dp, CyberBorder, RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Store, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(22.dp))
+                        Icon(Icons.Default.Store, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(22.dp))
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
                             text = retailer.name,
+                            fontFamily = CairoFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = Color.White
                         )
                         Text(
                             text = "المسؤول: ${retailer.ownerName.ifBlank { "غير محدد" }} • عمولة ${retailer.commissionPercent.toInt()}%",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            color = TextSecondaryDark
                         )
                     }
                 }
@@ -525,11 +553,13 @@ fun RetailerCard(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = "الرصيد المستحق:",
+                        fontFamily = CairoFontFamily,
                         fontSize = 10.sp,
-                        color = Color.Gray
+                        color = TextSecondaryDark
                     )
                     Text(
                         text = "${retailer.balanceOwed.toInt()} ريال",
+                        fontFamily = CairoFontFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = if (retailer.balanceOwed > 0) StatusWarning else StatusOnline

@@ -13,18 +13,20 @@ import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
     primary = MikroTikCyan,
-    onPrimary = MikroTikNavy,
-    primaryContainer = MikroTikPrimaryDark,
+    onPrimary = CyberDarkCanvas,
+    primaryContainer = CyberDarkCardElevated,
     onPrimaryContainer = Color.White,
     secondary = MikroTikTeal,
-    onSecondary = MikroTikNavy,
+    onSecondary = CyberDarkCanvas,
     tertiary = StatusOnline,
-    background = MikroTikDarkBg,
-    surface = MikroTikDarkSurface,
+    background = CyberDarkCanvas,
+    surface = CyberDarkSurface,
     onBackground = TextPrimaryDark,
     onSurface = TextPrimaryDark,
-    surfaceVariant = MikroTikNavyLight,
-    onSurfaceVariant = TextSecondaryDark
+    surfaceVariant = CyberDarkCardElevated,
+    onSurfaceVariant = TextSecondaryDark,
+    outline = CyberBorder,
+    outlineVariant = CyberBorderGlow
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -58,5 +60,5 @@ fun MyApplicationTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+    MaterialTheme(colorScheme = colorScheme, typography = AppTypography, content = content)
 }

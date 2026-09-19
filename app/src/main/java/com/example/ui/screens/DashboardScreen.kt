@@ -89,9 +89,17 @@ import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.graphics.Brush
 import com.example.data.local.entity.UserEntity
 import com.example.ui.GoogleSignInUiState
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 
 @Composable
 fun DashboardScreen(
@@ -115,6 +123,7 @@ fun DashboardScreen(
     val totalReceipts by viewModel.totalReceipts.collectAsState()
     val totalPayments by viewModel.totalPayments.collectAsState()
     val distributors by viewModel.distributors.collectAsState()
+    val isProductionMode by viewModel.isProductionMode.collectAsState()
 
     var selectedDashboardTab by remember { mutableIntStateOf(0) }
 
@@ -129,74 +138,54 @@ fun DashboardScreen(
             .fillMaxSize()
             .testTag("dashboard_screen")
     ) {
-        // Modern Dashboard Sub-Tabs Header
-        Card(
-            shape = RoundedCornerShape(0.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-            modifier = Modifier.fillMaxWidth()
+        // 2026 Sleek Segmented Capsule Selector
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(CyberDarkSurface)
+                .border(1.dp, CyberBorder, RoundedCornerShape(16.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            TabRow(
-                selectedTabIndex = selectedDashboardTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MikroTikPrimary,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedDashboardTab]),
-                        color = MikroTikPrimary,
-                        height = 3.dp
-                    )
-                },
-                divider = {}
-            ) {
-                Tab(
-                    selected = selectedDashboardTab == 0,
-                    onClick = { selectedDashboardTab = 0 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Dashboard, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "مؤشرات وتشغيل الشبكة",
-                                fontWeight = if (selectedDashboardTab == 0) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 12.sp
-                            )
-                        }
-                    },
-                    modifier = Modifier.testTag("tab_dashboard_overview")
-                )
-                Tab(
-                    selected = selectedDashboardTab == 1,
-                    onClick = { selectedDashboardTab = 1 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.TwoWheeler, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "إدارة الموزعين (${distributors.size})",
-                                fontWeight = if (selectedDashboardTab == 1) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 12.sp
-                            )
-                        }
-                    },
-                    modifier = Modifier.testTag("tab_dashboard_distributors")
-                )
-                Tab(
-                    selected = selectedDashboardTab == 2,
-                    onClick = { selectedDashboardTab = 2 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "هوية وإعدادات الشبكة",
-                                fontWeight = if (selectedDashboardTab == 2) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 12.sp
-                            )
-                        }
-                    },
-                    modifier = Modifier.testTag("tab_dashboard_identity")
-                )
+            listOf(
+                Triple(0, "المؤشرات", Icons.Default.Dashboard),
+                Triple(1, "الموزعين (${distributors.size})", Icons.Default.TwoWheeler),
+                Triple(2, "هوية الشبكة", Icons.Default.Wifi)
+            ).forEach { (tabIndex, title, icon) ->
+                val isSelected = selectedDashboardTab == tabIndex
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isSelected) Brush.horizontalGradient(
+                                listOf(Color(0xFF0284C7), Color(0xFF0369A1))
+                            ) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                        )
+                        .clickable { selectedDashboardTab = tabIndex }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSelected) Color.White else TextSecondaryDark,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = title,
+                            color = if (isSelected) Color.White else TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
+                }
             }
         }
 
@@ -225,9 +214,10 @@ fun DashboardScreen(
                 // Welcome Hero Banner
                 item {
                     Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MikroTikNavy),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                        border = BorderStroke(1.dp, CyberBorder),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(18.dp)) {
@@ -239,18 +229,20 @@ fun DashboardScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = if (NetworkRepository.isSuperAdminEmail(currentUser?.email)) {
-                                            "مرحباً بك، ${currentUser?.fullName ?: "المهندس حسن"} 👑 (صلاحيات عليا)"
+                                            "مرحباً بك، ${currentUser?.fullName ?: "المهندس حسن"} 👑"
                                         } else {
                                             "مرحباً بك، ${currentUser?.fullName ?: "مدير الشبكة"}"
                                         },
-                                        color = Color.White,
+                                        color = TextPrimaryDark,
+                                        fontFamily = CairoFontFamily,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 16.sp
                                     )
                                     Text(
-                                        text = "${networkIdentity.networkName} • رينج ${networkIdentity.approvedDeviceSubnet}",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 12.sp,
+                                        text = "${networkIdentity.networkName} • نطاق ${networkIdentity.approvedDeviceSubnet}",
+                                        color = TextSecondaryDark,
+                                        fontFamily = CairoFontFamily,
+                                        fontSize = 11.5.sp,
                                         maxLines = 1
                                     )
                                 }
@@ -258,18 +250,20 @@ fun DashboardScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(MikroTikPrimary.copy(alpha = 0.25f))
-                                            .clickable { selectedDashboardTab = 1 }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(CyberDarkCardElevated)
+                                            .border(1.dp, CyberBorder, RoundedCornerShape(10.dp))
+                                            .clickable { selectedDashboardTab = 2 }
+                                            .padding(horizontal = 8.dp, vertical = 5.dp)
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Settings, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(12.dp))
+                                            Icon(Icons.Default.Settings, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(13.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(
-                                                text = "تعديل الهوية",
+                                                text = "الهوية",
                                                 color = MikroTikCyan,
-                                                fontSize = 10.sp,
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
@@ -279,86 +273,97 @@ fun DashboardScreen(
 
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(StatusOnline.copy(alpha = 0.2f))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (isProductionMode) Color(0xFF059669).copy(alpha = 0.2f) else StatusOnline.copy(alpha = 0.15f))
+                                            .border(
+                                                1.dp,
+                                                if (isProductionMode) Color(0xFF10B981).copy(alpha = 0.4f) else StatusOnline.copy(alpha = 0.4f),
+                                                RoundedCornerShape(10.dp)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 5.dp)
                                     ) {
                                         Text(
-                                            text = "مستقر 100%",
-                                            color = StatusOnline,
-                                            fontSize = 10.sp,
+                                            text = if (isProductionMode) "الوضع الفعلي 🚀" else "مستقر 100%",
+                                            color = if (isProductionMode) Color(0xFF34D399) else StatusOnline,
+                                            fontFamily = CairoFontFamily,
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
                             }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
-                    // IP Anti-Collision Security Widget
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF172A45))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MikroTikCyan,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "نظام الحماية من تعارض الآي بي (IP Conflict Guard)",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "جميع عناوين الـ IP (${devices.size} جهاز) مفحوصة ومؤمنة دون أي تكرار",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 10.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Firebase Cloud Database Status Banner
-                    val syncStatus by viewModel.syncStatus.collectAsState()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF0D2137))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(
-                                Icons.Default.CloudQueue,
-                                contentDescription = null,
-                                tint = MikroTikCyan,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                            // IP Anti-Collision Security Widget
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberDarkCardElevated)
+                                    .border(1.dp, CyberBorder, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MikroTikCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
                                     Text(
-                                        text = if (currentUser?.email?.isNotBlank() == true)
-                                            "سحابة Firebase: ${currentUser?.email}"
-                                        else
-                                            "قاعدة بيانات Firebase (sam-mikrotic)",
-                                        color = Color.White,
+                                        text = "نظام الحماية من تعارض الآي بي (IP Conflict Guard)",
+                                        color = TextPrimaryDark,
+                                        fontFamily = CairoFontFamily,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "جميع عناوين الـ IP (${devices.size} جهاز) مفحوصة ومؤمنة دون أي تكرار",
+                                        color = TextSecondaryDark,
+                                        fontFamily = CairoFontFamily,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Firebase Cloud Database Status Banner
+                            val syncStatus by viewModel.syncStatus.collectAsState()
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberDarkCardElevated)
+                                    .border(1.dp, CyberBorder, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        Icons.Default.CloudQueue,
+                                        contentDescription = null,
+                                        tint = MikroTikCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = if (currentUser?.email?.isNotBlank() == true)
+                                                    "سحابة Firebase: ${currentUser?.email}"
+                                                else
+                                                    "قاعدة بيانات Firebase (sam-mikrotic)",
+                                                color = TextPrimaryDark,
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(4.dp))
@@ -601,89 +606,99 @@ fun DashboardScreen(
             }
         }
 
-        // Production Environment Initialization & Factory Reset Card
-        item {
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1917)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, PaymentRed.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("production_reset_card")
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(PaymentRed.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
+        // Production Environment Initialization & Factory Reset Card (يختفي تماماً بمجرد الضغط عليه والتحول للوضع الفعلي)
+        val hasDefaultDemoData = devices.isNotEmpty() || vouchers.isNotEmpty() || (availableCards ?: 0) > 0
+        if (!isProductionMode && hasDefaultDemoData) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                    border = BorderStroke(1.dp, PaymentRed.copy(alpha = 0.45f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("production_reset_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.RocketLaunch,
-                                contentDescription = null,
-                                tint = PaymentRed,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(PaymentRed.copy(alpha = 0.15f))
+                                    .border(1.dp, PaymentRed.copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.RocketLaunch,
+                                    contentDescription = null,
+                                    tint = PaymentRed,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "تهيئة بيئة العمل الفعلية",
+                                        color = TextPrimaryDark,
+                                        fontFamily = CairoFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = PaymentRed.copy(alpha = 0.18f),
+                                        border = BorderStroke(1.dp, PaymentRed.copy(alpha = 0.35f))
+                                    ) {
+                                        Text(
+                                            text = "بيانات تجريبية نشطة ⚠️",
+                                            color = PaymentRed,
+                                            fontFamily = CairoFontFamily,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                                 Text(
-                                    text = "تهيئة بيئة العمل الفعلية",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    text = "حذف كل البيانات الافتراضية وتصفير الكروت والسندات لبدء تشغيل شبكتك الخاصة",
+                                    color = TextSecondaryDark,
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = onResetToProduction,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PaymentRed),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .testTag("dashboard_reset_production_button")
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteSweep,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = PaymentRed.copy(alpha = 0.2f)
-                                ) {
-                                    Text(
-                                        text = if (devices.isEmpty() && availableCards == 0 && retailers.isEmpty()) "مهيأ للعمل الفعلي ✅" else "بيانات تجريبية نشطة ⚠️",
-                                        color = if (devices.isEmpty() && availableCards == 0 && retailers.isEmpty()) StatusOnline else PaymentRed,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
+                                Text(
+                                    text = "تهيئة التطبيق وحذف البيانات الافتراضية للعمل الفعلي",
+                                    fontFamily = CairoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
                             }
-                            Text(
-                                text = "حذف كل البيانات الافتراضية وتصفير الكروت والسندات لبدء تشغيل شبكتك الخاصة",
-                                color = Color(0xFFA8A29E),
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Button(
-                        onClick = onResetToProduction,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PaymentRed),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .testTag("dashboard_reset_production_button")
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteSweep,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "تهيئة التطبيق وحذف البيانات الافتراضية للعمل الفعلي",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
                         }
                     }
                 }
@@ -746,10 +761,10 @@ fun DashboardScreen(
         // Authorized Distributors & Field Sales Team Overview Card
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D223A)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                border = BorderStroke(1.dp, CyberBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { selectedDashboardTab = 1 }
@@ -765,14 +780,15 @@ fun DashboardScreen(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF38BDF8).copy(alpha = 0.2f)),
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF38BDF8).copy(alpha = 0.15f))
+                                    .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Default.TwoWheeler,
                                     contentDescription = null,
-                                    tint = Color(0xFF38BDF8),
+                                    tint = MikroTikCyan,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -780,13 +796,15 @@ fun DashboardScreen(
                             Column {
                                 Text(
                                     text = "فريق الموزعين ونقاط التوزيع الميدانية",
-                                    color = Color.White,
+                                    color = TextPrimaryDark,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
                                 )
                                 Text(
                                     text = "إضافة وتفويض الموزعين عبر البريد الإلكتروني لتوزيع الكروت والبقالات",
-                                    color = Color(0xFF94A3B8),
+                                    color = TextSecondaryDark,
+                                    fontFamily = CairoFontFamily,
                                     fontSize = 11.sp
                                 )
                             }
@@ -794,13 +812,15 @@ fun DashboardScreen(
 
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF0284C7).copy(alpha = 0.25f))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF0284C7).copy(alpha = 0.2f))
+                                .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = "${distributors.size} موزع معتمد",
-                                color = Color(0xFF38BDF8),
+                                color = MikroTikCyan,
+                                fontFamily = CairoFontFamily,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -814,49 +834,55 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.05f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("الموزعين النشطين", fontSize = 10.sp, color = Color.Gray)
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("الموزعين النشطين", fontSize = 10.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
                                 Text(
                                     text = "${distributors.count { it.isActive }} موزع",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = CairoFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
                                     color = ProfitEmerald
                                 )
                             }
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.05f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("نقاط البيع (البقالات)", fontSize = 10.sp, color = Color.Gray)
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("نقاط البيع (البقالات)", fontSize = 10.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
                                 Text(
                                     text = "${retailers.size} بقالة",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = CairoFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
                                     color = StatusWarning
                                 )
                             }
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.05f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.weight(1.2f)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("الصلاحية الممنوحة", fontSize = 10.sp, color = Color.Gray)
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("الصلاحية الممنوحة", fontSize = 10.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
                                 Text(
                                     text = "توزيع + بقالات + سندات",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF38BDF8)
+                                    color = MikroTikCyan
                                 )
                             }
                         }
@@ -870,7 +896,8 @@ fun DashboardScreen(
                     ) {
                         Text(
                             text = "إدارة فريق الموزعين وإضافة موزع جديد ←",
-                            color = Color(0xFF38BDF8),
+                            color = MikroTikCyan,
+                            fontFamily = CairoFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -882,10 +909,10 @@ fun DashboardScreen(
         // Investment, Partners & CAPEX Project Overview Banner
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0C1929)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, InvestmentGold.copy(alpha = 0.4f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                border = BorderStroke(1.dp, CyberBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onNavigateToTab(4) }
@@ -901,8 +928,9 @@ fun DashboardScreen(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(InvestmentGold.copy(alpha = 0.2f)),
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(InvestmentGold.copy(alpha = 0.15f))
+                                    .border(1.dp, InvestmentGold.copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -916,13 +944,15 @@ fun DashboardScreen(
                             Column {
                                 Text(
                                     text = "نظام الاستثمار والشركاء والأصول",
-                                    color = Color.White,
+                                    color = TextPrimaryDark,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
                                 )
                                 Text(
                                     text = "إدارة حصص الشركاء، أصول الشبكة (CAPEX)، والأرباح",
-                                    color = Color(0xFF94A3B8),
+                                    color = TextSecondaryDark,
+                                    fontFamily = CairoFontFamily,
                                     fontSize = 11.sp
                                 )
                             }
@@ -930,13 +960,15 @@ fun DashboardScreen(
 
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(ProfitEmerald.copy(alpha = 0.2f))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(ProfitEmerald.copy(alpha = 0.18f))
+                                .border(1.dp, ProfitEmerald.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = "مشروع استثماري",
                                 color = ProfitEmerald,
+                                fontFamily = CairoFontFamily,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -952,20 +984,22 @@ fun DashboardScreen(
                         // Partner Capital
                         Card(
                             shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                            colors = CardDefaults.cardColors(containerColor = CyberDarkCardElevated),
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Group, contentDescription = null, tint = InvestmentGold, modifier = Modifier.size(13.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("رأس المال", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                    Text("رأس المال", color = TextSecondaryDark, fontFamily = CairoFontFamily, fontSize = 10.sp)
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
                                     text = "${String.format(java.util.Locale.US, "%,.0f", totalInvestedCapital ?: 0.0)} ر.ي",
                                     color = InvestmentGold,
-                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = CairoFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
                                     fontSize = 12.sp
                                 )
                             }
@@ -974,20 +1008,22 @@ fun DashboardScreen(
                         // Fixed Assets (CAPEX)
                         Card(
                             shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                            colors = CardDefaults.cardColors(containerColor = CyberDarkCardElevated),
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Devices, contentDescription = null, tint = AssetPurple, modifier = Modifier.size(13.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("الأصول (${assets.size})", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                    Text("الأصول (${assets.size})", color = TextSecondaryDark, fontFamily = CairoFontFamily, fontSize = 10.sp)
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
                                     text = "${String.format(java.util.Locale.US, "%,.0f", totalAssetPurchaseCost ?: 0.0)} ر.ي",
                                     color = AssetPurple,
-                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = CairoFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
                                     fontSize = 12.sp
                                 )
                             }
@@ -996,20 +1032,22 @@ fun DashboardScreen(
                         // Net Profit
                         Card(
                             shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                            colors = CardDefaults.cardColors(containerColor = CyberDarkCardElevated),
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("صافي الربح", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                    Text("صافي الربح", color = TextSecondaryDark, fontFamily = CairoFontFamily, fontSize = 10.sp)
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
                                     text = "${String.format(java.util.Locale.US, "%,.0f", netProfitVal)} ر.ي",
                                     color = if (netProfitVal >= 0) ProfitEmerald else PaymentRed,
-                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = CairoFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
                                     fontSize = 12.sp
                                 )
                             }
@@ -1019,14 +1057,14 @@ fun DashboardScreen(
             }
         }
 
-
         // Network GIS Map Card
         item {
             val mappedDevicesCount = devices.count { it.latitude != 0.0 && it.longitude != 0.0 }
             Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F243A)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0D9488).copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                border = BorderStroke(1.dp, CyberBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onNavigateToTab(1) }
@@ -1038,16 +1076,17 @@ fun DashboardScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF0D9488).copy(alpha = 0.2f)),
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0D9488).copy(alpha = 0.15f))
+                            .border(1.dp, Color(0xFF0D9488).copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.CellTower,
                             contentDescription = null,
                             tint = Color(0xFF2DD4BF),
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
@@ -1055,39 +1094,44 @@ fun DashboardScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "خريطة الأبراج والتغطية اللاسلكية GIS",
-                                color = Color.White,
+                                color = TextPrimaryDark,
+                                fontFamily = CairoFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFF0D9488).copy(alpha = 0.25f)
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF0D9488).copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, Color(0xFF0D9488).copy(alpha = 0.35f))
                             ) {
                                 Text(
                                     text = "خريطة تفاعلية",
                                     color = Color(0xFF2DD4BF),
+                                    fontFamily = CairoFontFamily,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
                         Spacer(modifier = Modifier.height(3.dp))
                         Text(
                             text = "$mappedDevicesCount أبراج وسواري محددة على الخريطة من أصل ${devices.size} جهاز",
-                            color = Color(0xFF94A3B8),
+                            color = TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
                             fontSize = 11.sp
                         )
                     }
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = Color(0xFF0D9488),
                         modifier = Modifier.clickable { onNavigateToTab(1) }
                     ) {
                         Text(
                             text = "عرض 🗺️",
                             color = Color.White,
+                            fontFamily = CairoFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -1097,15 +1141,16 @@ fun DashboardScreen(
             }
         }
 
-        // Quick Actions Grid
+        // Quick Actions Section Header
         item {
             Text(
                 text = "الإجراءات والعمليات السريعة",
+                fontFamily = CairoFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onBackground
+                color = TextPrimaryDark
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1114,7 +1159,7 @@ fun DashboardScreen(
                 QuickActionButton(
                     title = "إضافة جهاز وفحص IP",
                     icon = Icons.Default.Lan,
-                    color = MikroTikPrimary,
+                    color = MikroTikCyan,
                     onClick = { onNavigateToTab(1) },
                     modifier = Modifier.weight(1f)
                 )
@@ -1135,7 +1180,7 @@ fun DashboardScreen(
                 QuickActionButton(
                     title = "مستشار سام AI",
                     icon = Icons.Default.AutoAwesome,
-                    color = Color(0xFF8B5CF6),
+                    color = Color(0xFFA78BFA),
                     onClick = { onNavigateToTab(5) },
                     modifier = Modifier.weight(1f)
                 )
@@ -1151,15 +1196,17 @@ fun DashboardScreen(
             ) {
                 Text(
                     text = "آخر السندات المالية المقيدة",
+                    fontFamily = CairoFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = TextPrimaryDark
                 )
 
                 Text(
-                    text = "عرض الكل",
+                    text = "عرض الكل ←",
+                    fontFamily = CairoFontFamily,
                     fontSize = 12.sp,
-                    color = MikroTikPrimary,
+                    color = MikroTikCyan,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable { onNavigateToTab(4) }
                 )
@@ -1168,15 +1215,21 @@ fun DashboardScreen(
 
         if (vouchers.isEmpty()) {
             item {
-                Text(text = "لا توجد حركات مالية مسجلة بعد", color = Color.Gray, fontSize = 12.sp)
+                Text(
+                    text = "لا توجد حركات مالية مسجلة بعد",
+                    fontFamily = CairoFontFamily,
+                    color = TextSecondaryDark,
+                    fontSize = 12.sp
+                )
             }
         } else {
             items(vouchers.take(4), key = { it.id }) { voucher ->
                 val isReceipt = voucher.voucherType == "RECEIPT"
                 Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                    border = BorderStroke(1.dp, CyberBorder),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onNavigateToTab(4) }
@@ -1189,9 +1242,10 @@ fun DashboardScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isReceipt) ReceiptGreen.copy(alpha = 0.15f) else PaymentRed.copy(alpha = 0.15f)),
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isReceipt) ReceiptGreen.copy(alpha = 0.15f) else PaymentRed.copy(alpha = 0.15f))
+                                    .border(1.dp, if (isReceipt) ReceiptGreen.copy(alpha = 0.35f) else PaymentRed.copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -1205,20 +1259,24 @@ fun DashboardScreen(
                             Column {
                                 Text(
                                     text = voucher.partyName,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 13.sp,
+                                    color = TextPrimaryDark
                                 )
                                 Text(
                                     text = "${voucher.voucherNumber} • ${voucher.category}",
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 10.5.sp,
+                                    color = TextSecondaryDark
                                 )
                             }
                         }
 
                         Text(
                             text = "${if (isReceipt) "+" else "-"}${voucher.amount.toInt()} ريال",
-                            fontWeight = FontWeight.Bold,
+                            fontFamily = CairoFontFamily,
+                            fontWeight = FontWeight.ExtraBold,
                             fontSize = 13.sp,
                             color = if (isReceipt) ReceiptGreen else PaymentRed
                         )
@@ -1246,9 +1304,10 @@ fun DashboardStatCard(
     modifier: Modifier = Modifier
 ) {
     Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.25f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier.clickable { onClick() }
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -1259,18 +1318,36 @@ fun DashboardStatCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(color.copy(alpha = 0.12f)),
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Brush.linearGradient(listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0.05f))))
+                        .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color)
-            Text(text = title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-            Text(text = subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = value,
+                fontSize = 17.sp,
+                fontFamily = CairoFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                color = color
+            )
+            Text(
+                text = title,
+                fontSize = 12.sp,
+                fontFamily = CairoFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimaryDark
+            )
+            Text(
+                text = subtitle,
+                fontSize = 10.sp,
+                fontFamily = CairoFontFamily,
+                color = TextSecondaryDark
+            )
         }
     }
 }
@@ -1284,9 +1361,10 @@ fun QuickActionButton(
     modifier: Modifier = Modifier
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+        border = BorderStroke(1.dp, CyberBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier.clickable { onClick() }
     ) {
         Column(
@@ -1297,7 +1375,8 @@ fun QuickActionButton(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(color.copy(alpha = 0.12f)),
+                    .background(Brush.linearGradient(listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0.05f))))
+                    .border(1.dp, color.copy(alpha = 0.35f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
@@ -1306,9 +1385,10 @@ fun QuickActionButton(
             Text(
                 text = title,
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
+                fontFamily = CairoFontFamily,
+                fontWeight = FontWeight.SemiBold,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = TextPrimaryDark,
                 maxLines = 2
             )
         }

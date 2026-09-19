@@ -12,10 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.RocketLaunch
@@ -33,14 +31,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.PaymentRed
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 
 @Composable
 fun ResetProductionDialog(
@@ -52,13 +55,13 @@ fun ResetProductionDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF0F172A),
-            tonalElevation = 14.dp,
+            shape = RoundedCornerShape(22.dp),
+            color = CyberDarkSurface,
+            tonalElevation = 0.dp,
             modifier = Modifier
                 .padding(20.dp)
                 .fillMaxWidth()
-                .border(1.5.dp, PaymentRed.copy(alpha = 0.6f), RoundedCornerShape(24.dp))
+                .border(1.5.dp, PaymentRed.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
                 .testTag("reset_production_dialog")
         ) {
             Column(
@@ -73,16 +76,17 @@ fun ResetProductionDialog(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(PaymentRed.copy(alpha = 0.2f)),
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(PaymentRed.copy(alpha = 0.18f))
+                            .border(1.dp, PaymentRed.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.DeleteSweep,
                             contentDescription = null,
                             tint = PaymentRed,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
 
@@ -91,14 +95,16 @@ fun ResetProductionDialog(
                     Column {
                         Text(
                             text = "تهيئة بيئة العمل الفعلية",
-                            color = Color.White,
+                            color = TextPrimaryDark,
+                            fontFamily = CairoFontFamily,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 17.sp
                         )
                         Text(
                             text = "حذف كافة البيانات التجريبية والافتراضية",
                             color = StatusWarning,
-                            fontSize = 12.sp,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -107,10 +113,11 @@ fun ResetProductionDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "سيقوم هذا الإجراء بتفريغ وتنظيف قاعدة بيانات التطبيق تماماً ليصبح جاهزاً للعمل الميداني الفعلي والربط الحقيقي مع شبكتك الخاصة من الصفر:",
-                    color = Color(0xFFE2E8F0),
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
+                    text = "سيقوم هذا الإجراء بتفريغ وتنظيف قاعدة بيانات التطبيق تماماً ليصبح جاهزاً للعمل الميداني الفعلي والربط الحقيقي مع شبكتك الخاصة من الصفر، وسيختفي زر التهيئة نهائياً:",
+                    color = TextPrimaryDark,
+                    fontFamily = CairoFontFamily,
+                    fontSize = 12.5.sp,
+                    lineHeight = 20.sp
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -118,7 +125,8 @@ fun ResetProductionDialog(
                 // Detailed Checklist of What Will Be Cleared
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF1E293B),
+                    color = CyberDarkCardElevated,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -163,6 +171,11 @@ fun ResetProductionDialog(
                     OutlinedButton(
                         onClick = onDismissRequest,
                         shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.Transparent,
+                            contentColor = TextSecondaryDark
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberBorder),
                         modifier = Modifier
                             .weight(1f)
                             .height(46.dp)
@@ -170,8 +183,10 @@ fun ResetProductionDialog(
                     ) {
                         Text(
                             text = "إلغاء",
-                            color = Color(0xFF94A3B8),
-                            fontWeight = FontWeight.SemiBold
+                            fontFamily = CairoFontFamily,
+                            color = TextSecondaryDark,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
                         )
                     }
 
@@ -192,9 +207,10 @@ fun ResetProductionDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "تفريغ وتهيئة للعمل الفعلي",
+                                text = "تفريغ والتحول للوضع الفعلي",
+                                fontFamily = CairoFontFamily,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = 12.5.sp
                             )
                         }
                     }
@@ -218,13 +234,14 @@ private fun ResetInfoRow(
             imageVector = icon,
             contentDescription = null,
             tint = iconColor,
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(15.dp)
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = text,
-            color = Color(0xFFCBD5E1),
-            fontSize = 12.sp
+            color = TextPrimaryDark,
+            fontFamily = CairoFontFamily,
+            fontSize = 11.5.sp
         )
     }
 }

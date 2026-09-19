@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
@@ -529,7 +530,8 @@ fun CardStudioScreen(
                         Toast.makeText(context, "تم استنساخ التنسيق لفئة جديدة بنجاح ✓", Toast.LENGTH_SHORT).show()
                     },
                     onReset = {
-                        Toast.makeText(context, "تم تصفير السجلات والتهيئة الافتراضية", Toast.LENGTH_SHORT).show()
+                        applyPreset(activePreset)
+                        Toast.makeText(context, "تمت استعادة إعدادات ألوان القالب الأصلية ✓", Toast.LENGTH_SHORT).show()
                     }
                 )
                 Spacer(modifier = Modifier.height(14.dp))
@@ -729,7 +731,7 @@ fun StudioTemplateLibraryCard(
 
                 // Reset Action
                 IconButton(onClick = onReset, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.DeleteSweep, contentDescription = "تصفير السجلات", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Refresh, contentDescription = "استعادة الألوان الأصلية", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                 }
             }
 

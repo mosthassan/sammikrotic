@@ -81,14 +81,21 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.ui.MainViewModel
+import com.example.ui.theme.CairoFontFamily
+import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCardElevated
+import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.StatusOffline
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
+import com.example.ui.theme.TextPrimaryDark
+import com.example.ui.theme.TextSecondaryDark
 import com.example.util.LocationHelper
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -130,82 +137,94 @@ fun DevicesScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF0C192E))
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .background(CyberDarkSurface)
+                    .border(BorderStroke(1.dp, CyberBorder))
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (activeSubTab == 0) MikroTikPrimary else Color(0xFF1E293B),
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (activeSubTab == 0) MikroTikPrimary.copy(alpha = 0.25f) else CyberDarkCardElevated,
+                    border = BorderStroke(1.dp, if (activeSubTab == 0) MikroTikPrimary.copy(alpha = 0.6f) else CyberBorder),
                     onClick = { activeSubTab = 0 },
                     modifier = Modifier.weight(1f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(vertical = 8.dp),
+                        modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Router, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.Router,
+                            contentDescription = null,
+                            tint = if (activeSubTab == 0) MikroTikCyan else TextSecondaryDark,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = "الأجهزة (${devices.size})",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = if (activeSubTab == 0) FontWeight.Bold else FontWeight.Normal
+                            color = if (activeSubTab == 0) Color.White else TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (activeSubTab == 0) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (activeSubTab == 1) Color(0xFF0D9488) else Color(0xFF1E293B),
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (activeSubTab == 1) Color(0xFF0D9488).copy(alpha = 0.25f) else CyberDarkCardElevated,
+                    border = BorderStroke(1.dp, if (activeSubTab == 1) Color(0xFF2DD4BF).copy(alpha = 0.6f) else CyberBorder),
                     onClick = { activeSubTab = 1 },
                     modifier = Modifier.weight(1.15f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(vertical = 8.dp),
+                        modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.CellTower,
                             contentDescription = null,
-                            tint = if (activeSubTab == 1) Color.White else Color(0xFF2DD4BF),
+                            tint = if (activeSubTab == 1) Color(0xFF2DD4BF) else TextSecondaryDark,
                             modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = "خريطة الأبراج 🗺️",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = if (activeSubTab == 1) FontWeight.Bold else FontWeight.Normal
+                            color = if (activeSubTab == 1) Color.White else TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (activeSubTab == 1) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (activeSubTab == 2) Color(0xFF0284C7) else Color(0xFF1E293B),
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (activeSubTab == 2) Color(0xFF0284C7).copy(alpha = 0.25f) else CyberDarkCardElevated,
+                    border = BorderStroke(1.dp, if (activeSubTab == 2) Color(0xFF38BDF8).copy(alpha = 0.6f) else CyberBorder),
                     onClick = { activeSubTab = 2 },
                     modifier = Modifier.weight(1.1f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(vertical = 8.dp),
+                        modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.GraphicEq,
                             contentDescription = null,
-                            tint = if (activeSubTab == 2) Color.White else Color(0xFF38BDF8),
+                            tint = if (activeSubTab == 2) Color(0xFF38BDF8) else TextSecondaryDark,
                             modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = "محلل الترددات ⚡",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = if (activeSubTab == 2) FontWeight.Bold else FontWeight.Normal
+                            color = if (activeSubTab == 2) Color.White else TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (activeSubTab == 2) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
@@ -462,8 +481,9 @@ fun DeviceCard(
 
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+        border = BorderStroke(1.dp, CyberBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth().testTag("device_card_${device.id}")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -481,25 +501,28 @@ fun DeviceCard(
                     }
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MikroTikPrimary.copy(alpha = 0.12f)),
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(CyberDarkCardElevated)
+                            .border(1.dp, CyberBorder, RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(icon, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(20.dp))
+                        Icon(icon, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(20.dp))
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
                             text = device.name,
+                            fontFamily = CairoFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = Color.White
                         )
                         Text(
                             text = "${device.deviceType} • ${device.model.ifEmpty { "عام" }}",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            color = TextSecondaryDark
                         )
                     }
                 }
@@ -514,9 +537,10 @@ fun DeviceCard(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(statusColor.copy(alpha = 0.15f))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                        .border(1.dp, statusColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -524,12 +548,13 @@ fun DeviceCard(
                             .clip(CircleShape)
                             .background(statusColor)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = statusText,
                         color = statusColor,
+                        fontFamily = CairoFontFamily,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }

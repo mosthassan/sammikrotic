@@ -652,6 +652,11 @@ class NetworkRepository(private val db: AppDatabase) {
         db.financialVoucherDao().deleteAllVouchers()
         db.retailerDao().deleteAllRetailers()
         db.networkDeviceDao().deleteAllDevices()
+        db.partnerDao().deleteAllPartners()
+        db.partnerDao().deleteAllTransactions()
+        db.networkAssetDao().deleteAllAssets()
+        db.purchaseInvoiceDao().deleteAllInvoices()
+        db.inventoryDao().deleteAllItems()
 
         // 2. Clear previous demo users
         db.userDao().deleteAllUsers()

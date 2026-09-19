@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.GTranslate
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Sync
@@ -43,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.UserEntity
@@ -97,23 +100,26 @@ fun TopNavBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // App Brand matching original site "سام تك - شبكة طلقة نت"
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(Brush.linearGradient(listOf(MikroTikCyan, Color(0xFF0284C7))))
-                            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Router,
                             contentDescription = "سام تك",
                             tint = Color(0xFF070B14),
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -121,18 +127,19 @@ fun TopNavBar(
                                 color = TextPrimaryDark,
                                 fontFamily = CairoFontFamily,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 17.sp
+                                fontSize = 15.sp,
+                                maxLines = 1
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             val isSuperAdmin = NetworkRepository.isSuperAdminEmail(currentUser?.email)
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(6.dp),
                                 color = when {
                                     isSuperAdmin -> Color(0xFF1E3A8A).copy(alpha = 0.6f)
                                     currentUser?.role == "DISTRIBUTOR" -> Color(0xFF78350F).copy(alpha = 0.6f)
                                     else -> Color(0xFF0284C7).copy(alpha = 0.25f)
                                 },
-                                border = androidx.compose.foundation.BorderStroke(
+                                border = BorderStroke(
                                     1.dp,
                                     when {
                                         isSuperAdmin -> Color(0xFF67E8F9).copy(alpha = 0.4f)
@@ -143,11 +150,11 @@ fun TopNavBar(
                             ) {
                                 Text(
                                     text = when {
-                                        isSuperAdmin -> "المدير العام 👑"
-                                        currentUser?.role == "DISTRIBUTOR" -> "بوابة الموزع 🛵"
-                                        currentUser?.role == "RETAILER" -> "نقطة بيع 🛒"
-                                        currentUser?.role == "ENGINEER" -> "مهندس شبكة 🛠️"
-                                        else -> "لوحة المالك 👑"
+                                        isSuperAdmin -> "المدير 👑"
+                                        currentUser?.role == "DISTRIBUTOR" -> "موزع 🛵"
+                                        currentUser?.role == "RETAILER" -> "بقالة 🛒"
+                                        currentUser?.role == "ENGINEER" -> "مهندس 🛠️"
+                                        else -> "المالك"
                                     },
                                     color = when {
                                         isSuperAdmin -> Color(0xFF67E8F9)
@@ -155,47 +162,52 @@ fun TopNavBar(
                                         else -> Color(0xFF38BDF8)
                                     },
                                     fontFamily = CairoFontFamily,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
+                                    maxLines = 1
                                 )
                             }
                         }
                         Text(
-                            text = if (currentUser?.role == "DISTRIBUTOR") "بوابة الموزعين الذكية • طلقة نت" else "شبكة طلقة نت • منصة الإدارة السحابية",
+                            text = "شبكة طلقة نت • الإدارة الذكية",
                             color = TextSecondaryDark,
                             fontFamily = CairoFontFamily,
-                            fontSize = 10.sp
+                            fontSize = 9.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Actions: Cloud Sync & User Profile / Google Sign-In & Factory Reset
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Production Status or Reset Button
+                // Actions: Cloud Sync & User Profile
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Production Status Pill or Reset Button
                     if (isProductionMode) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = Color(0xFF059669).copy(alpha = 0.18f),
-                            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f)),
-                            modifier = Modifier.padding(end = 6.dp)
+                            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f))
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(6.dp)
+                                        .size(5.dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFF34D399))
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = "فعلي 🚀",
+                                    text = "فعلي",
                                     color = Color(0xFF34D399),
                                     fontFamily = CairoFontFamily,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -214,11 +226,9 @@ fun TopNavBar(
                                 imageVector = Icons.Default.DeleteSweep,
                                 contentDescription = "تهيئة بيئة العمل الفعلية",
                                 tint = Color(0xFFF87171),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
-
-                        Spacer(modifier = Modifier.width(6.dp))
                     }
 
                     // Sync Button
@@ -239,99 +249,79 @@ fun TopNavBar(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    // Quick Google One-Tap Sign-In Button (Prominent when not connected to Google)
-                    if (currentUser?.isGoogleUser != true) {
+                    // User Selector Pill with Google Account integration
+                    Box {
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color(0xFF1D4ED8),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B82F6)),
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (currentUser?.isGoogleUser == true) Color(0xFF1E3A8A).copy(alpha = 0.4f) else CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, if (currentUser?.isGoogleUser == true) MikroTikCyan.copy(alpha = 0.5f) else CyberBorder),
                             modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable { onGoogleSignInClick() }
-                                .padding(end = 6.dp)
-                                .testTag("quick_google_signin_button")
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { showUserMenu = true }
+                                .testTag("user_role_selector")
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "G",
-                                        color = Color(0xFF2563EB),
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 10.sp
+                                if (googleSignInState.isLoading) {
+                                    CircularProgressIndicator(
+                                        color = MikroTikCyan,
+                                        modifier = Modifier.size(13.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else if (currentUser?.isGoogleUser == true) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = "حساب جوجل",
+                                        tint = MikroTikCyan,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                } else if (currentUser != null) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "المستخدم",
+                                        tint = StatusOnline,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Login,
+                                        contentDescription = "دخول",
+                                        tint = MikroTikCyan,
+                                        modifier = Modifier.size(15.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(5.dp))
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                val displayLabel = when {
+                                    currentUser?.isGoogleUser == true -> {
+                                        currentUser.fullName.split(" ").firstOrNull()?.take(7) ?: "جوجل"
+                                    }
+                                    currentUser != null -> {
+                                        when (currentUser.role) {
+                                            "OWNER" -> "المدير"
+                                            "DISTRIBUTOR" -> "موزع"
+                                            "ENGINEER" -> "مهندس"
+                                            "RETAILER" -> "بقالة"
+                                            else -> currentUser.fullName.split(" ").firstOrNull()?.take(7) ?: "المستخدم"
+                                        }
+                                    }
+                                    else -> "دخول"
+                                }
+
                                 Text(
-                                    text = "دخول",
-                                    color = Color.White,
+                                    text = displayLabel,
+                                    color = TextPrimaryDark,
                                     fontFamily = CairoFontFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 60.dp)
                                 )
                             }
-                        }
-                    }
-
-                    // User Selector Pill with Google Account integration
-                    Box {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(CyberDarkCardElevated)
-                                .border(1.dp, CyberBorder, RoundedCornerShape(16.dp))
-                                .clickable { showUserMenu = true }
-                                .padding(horizontal = 8.dp, vertical = 5.dp)
-                                .testTag("user_role_selector")
-                        ) {
-                            if (googleSignInState.isLoading) {
-                                CircularProgressIndicator(
-                                    color = MikroTikCyan,
-                                    modifier = Modifier.size(14.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else if (currentUser?.isGoogleUser == true) {
-                                Icon(
-                                    imageVector = Icons.Default.AccountCircle,
-                                    contentDescription = "حساب جوجل",
-                                    tint = MikroTikCyan,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "المستخدم",
-                                    tint = StatusOnline,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(5.dp))
-
-                            Text(
-                                text = if (currentUser?.isGoogleUser == true) {
-                                    currentUser.fullName.ifBlank { currentUser.email.substringBefore("@") }
-                                } else if (currentUser != null) {
-                                    currentUser.fullName.split(" ").take(2).joinToString(" ").ifBlank { currentUser.role }
-                                } else {
-                                    "تسجيل الدخول"
-                                },
-                                color = TextPrimaryDark,
-                                fontFamily = CairoFontFamily,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
                         }
 
                         DropdownMenu(
@@ -559,8 +549,10 @@ fun TopNavBar(
                     text = syncStatus,
                     color = TextSecondaryDark,
                     fontFamily = CairoFontFamily,
-                    fontSize = 10.sp,
-                    maxLines = 1
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }

@@ -328,80 +328,9 @@ fun DashboardScreen(
                                     )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Firebase Cloud Database Status Banner
-                            val syncStatus by viewModel.syncStatus.collectAsState()
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(CyberDarkCardElevated)
-                                    .border(1.dp, CyberBorder, RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Icon(
-                                        Icons.Default.CloudQueue,
-                                        contentDescription = null,
-                                        tint = MikroTikCyan,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = if (currentUser?.email?.isNotBlank() == true)
-                                                    "المزامنة السحابية: ${currentUser?.email}"
-                                                else
-                                                    "المزامنة السحابية: قاعدة Firebase العامة",
-                                                color = TextPrimaryDark,
-                                                fontFamily = CairoFontFamily,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(StatusOnline.copy(alpha = 0.2f))
-                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                                            ) {
-                                                Text(
-                                                    text = if (currentUser?.isGoogleUser == true) "حساب موثق" else "نشط",
-                                                    color = StatusOnline,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-                                Text(
-                                    text = syncStatus,
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 10.sp,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { viewModel.triggerCloudSync() },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "مزامنة سحابية",
-                                tint = MikroTikCyan,
-                                modifier = Modifier.size(16.dp)
-                            )
                         }
                     }
                 }
-            }
-        }
 
         // Google Cloud Account & Remote Backup Card (Matching the modern native security & backup card)
         item {
@@ -463,20 +392,31 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     if (!isConnected) {
-                        // Warning Notice Box (Modeled directly after the reference screenshot)
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFF450A0A).copy(alpha = 0.55f),
-                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.7f)),
+                            shape = RoundedCornerShape(12.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = "تنبيه هام ⚠️: إذا لم تقم بتسجيل الدخول بحساب Google، فلن تتمكن من مزامنة كروت الشبكة، البقالات، وسجلات المحاسبة سحابياً ومتابعتها عن بُعد!",
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 11.5.sp,
-                                lineHeight = 17.sp,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(12.dp)
-                            )
+                            ) {
+                                Icon(
+                                    Icons.Default.CloudQueue,
+                                    contentDescription = null,
+                                    tint = MikroTikCyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "يعمل النظام محلياً بشكل كامل ومستقل. اربط حسابك السحابي لتفعيل النسخ الاحتياطي والمزامنة اللامركزية التلقائية.",
+                                    color = TextSecondaryDark,
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))

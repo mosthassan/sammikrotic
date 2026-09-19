@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import com.example.ui.theme.CairoFontFamily
 import com.example.ui.theme.CyberBorder
+import com.example.ui.theme.CyberDarkCanvas
 import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.TextSecondaryDark
@@ -157,6 +158,7 @@ fun SamMikrotikApp(viewModel: MainViewModel) {
     }
 
     Scaffold(
+        containerColor = CyberDarkCanvas,
         topBar = {
             TopNavBar(
                 currentUser = currentUser,

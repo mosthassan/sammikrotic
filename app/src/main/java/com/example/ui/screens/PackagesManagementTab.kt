@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Router
@@ -110,6 +111,7 @@ fun PackagesManagementTab(
     viewModel: MainViewModel,
     onQuickGenerateBatch: (CardPackageEntity) -> Unit,
     onImportExternalBatch: (CardPackageEntity) -> Unit = {},
+    onAddManualQuantity: (CardPackageEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -172,6 +174,26 @@ fun PackagesManagementTab(
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // إضافة كروت يدوياً بالعدد دون اشتراط أرقام الكروت
+                            Button(
+                                onClick = {
+                                    val target = packages.firstOrNull() ?: CardPackageEntity(
+                                        name = "كروت فئة 200 ريال",
+                                        wholesalePrice = 180.0,
+                                        retailPrice = 200.0,
+                                        quotaMb = 1500,
+                                        validityHours = 24
+                                    )
+                                    onAddManualQuantity(target)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Numbers, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("إضافة كروت بالعدد", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
                             OutlinedButton(
                                 onClick = {
                                     val target = packages.firstOrNull() ?: CardPackageEntity(
@@ -322,6 +344,9 @@ fun PackagesManagementTab(
                     },
                     onImportExternal = {
                         onImportExternalBatch(pkg)
+                    },
+                    onAddManualQuantity = {
+                        onAddManualQuantity(pkg)
                     }
                 )
             }
@@ -413,6 +438,7 @@ fun PackageCardItem(
     onQuickGenerate: () -> Unit,
     onSalesInvoice: () -> Unit,
     onImportExternal: () -> Unit = {},
+    onAddManualQuantity: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Determine theme accent colors
@@ -649,21 +675,33 @@ fun PackageCardItem(
                 HorizontalDivider(color = Color(0xFF1E293B))
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3. Operational Integration Buttons (توليد، استيراد خارجي، وفواتير بيع الكروت)
+                // 3. Operational Integration Buttons (إضافة بالعدد، توليد، استيراد خارجي، وفواتير بيع الكروت)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    // توليد دفعة كروت فورية من هذه الباقة
+                    // إضافة كروت يدوياً بالعدد دون رموز
                     Button(
-                        onClick = onQuickGenerate,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                        onClick = onAddManualQuantity,
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1.15f)
                     ) {
-                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                        Icon(Icons.Default.Numbers, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("توليد", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("إضافة بالعدد", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // توليد دفعة كروت فورية من هذه الباقة
+                    OutlinedButton(
+                        onClick = onQuickGenerate,
+                        border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(0.9f)
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("توليد", color = Color(0xFF0284C7), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // استيراد كروت من برنامج آخر لهذه الباقة
@@ -671,23 +709,23 @@ fun PackageCardItem(
                         onClick = onImportExternal,
                         border = BorderStroke(1.dp, Color(0xFF38BDF8)),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1.1f)
+                        modifier = Modifier.weight(0.9f)
                     ) {
                         Icon(Icons.Default.PostAdd, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("استيراد", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("استيراد", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // فاتورة بيع كروت للبقالة
                     OutlinedButton(
                         onClick = onSalesInvoice,
-                        border = BorderStroke(1.dp, ProfitEmerald),
+                        border = BorderStroke(1.dp, Color(0xFFFBBF24)),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1.1f)
+                        modifier = Modifier.weight(0.95f)
                     ) {
-                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("فاتورة بيع", color = ProfitEmerald, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("فاتورة", color = Color(0xFFFBBF24), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

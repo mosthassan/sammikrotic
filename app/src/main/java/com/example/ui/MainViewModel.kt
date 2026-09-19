@@ -451,6 +451,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * إضافة كروت يدوياً بالعدد فقط (مثلاً كروت فئة 200 ريال بعدد 1000 كرت)
+     * دون اشتراط وجود رموز وأرقام الكروت مسبقاً.
+     */
+    fun addManualCardQuantity(
+        categoryName: String,
+        quantity: Int,
+        retailPrice: Double,
+        wholesalePrice: Double,
+        batchName: String = "إضافة يدوية - $categoryName",
+        quotaMb: Long = 0,
+        validityHours: Int = 24,
+        speedLimit: String = "4M/2M",
+        targetRetailerId: Long? = null,
+        onComplete: (batchId: Long, count: Int) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val batchId = repository.addManualCardQuantity(
+                categoryName = categoryName,
+                quantity = quantity,
+                retailPrice = retailPrice,
+                wholesalePrice = wholesalePrice,
+                batchName = batchName,
+                quotaMb = quotaMb,
+                validityHours = validityHours,
+                speedLimit = speedLimit,
+                targetRetailerId = targetRetailerId
+            )
+            onComplete(batchId, quantity)
+        }
+    }
+
     // Retailers / Groceries
     val retailers: StateFlow<List<RetailerEntity>> = repository.allRetailers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

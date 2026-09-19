@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Print
@@ -102,6 +103,8 @@ fun CardsScreen(
     var selectedPackageForBatch by remember { mutableStateOf<CardPackageEntity?>(null) }
     var showImportExternalDialog by remember { mutableStateOf(false) }
     var selectedPackageForImport by remember { mutableStateOf<CardPackageEntity?>(null) }
+    var showManualCountDialog by remember { mutableStateOf(false) }
+    var selectedPackageForManualCount by remember { mutableStateOf<CardPackageEntity?>(null) }
     var showBatchChoiceDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showStudioDialog by remember { mutableStateOf(false) }
@@ -148,6 +151,10 @@ fun CardsScreen(
                         onImportExternal = {
                             selectedPackageForImport = cardPackages.firstOrNull()
                             showImportExternalDialog = true
+                        },
+                        onAddManualQuantity = {
+                            selectedPackageForManualCount = cardPackages.firstOrNull()
+                            showManualCountDialog = true
                         }
                     )
 
@@ -160,6 +167,10 @@ fun CardsScreen(
                         onImportExternalBatch = { pkg ->
                             selectedPackageForImport = pkg
                             showImportExternalDialog = true
+                        },
+                        onAddManualQuantity = { pkg ->
+                            selectedPackageForManualCount = pkg
+                            showManualCountDialog = true
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -177,6 +188,10 @@ fun CardsScreen(
                         onImportExternal = {
                             selectedPackageForImport = cardPackages.firstOrNull()
                             showImportExternalDialog = true
+                        },
+                        onAddManualQuantity = {
+                            selectedPackageForManualCount = cardPackages.firstOrNull()
+                            showManualCountDialog = true
                         }
                     )
 
@@ -198,6 +213,21 @@ fun CardsScreen(
                         ) {
                             Text("إدارة ودفعات الكروت:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                // زر إضافة بالعدد مباشرة
+                                Button(
+                                    onClick = {
+                                        selectedPackageForManualCount = cardPackages.firstOrNull()
+                                        showManualCountDialog = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Numbers, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("إضافة بالعدد", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+
                                 OutlinedButton(
                                     onClick = {
                                         selectedPackageForImport = cardPackages.firstOrNull()
@@ -356,7 +386,41 @@ fun CardsScreen(
                             color = Color.Gray
                         )
 
-                        // الخيار 1: توليد كروت عبر التطبيق
+                        // الخيار 1 (الأساسي): إضافة كروت يدوياً بالعدد دون اشتراط أرقام الكروت
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF062820),
+                            border = BorderStroke(1.2.dp, ProfitEmerald),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showBatchChoiceDialog = false
+                                    selectedPackageForManualCount = cardPackages.firstOrNull()
+                                    showManualCountDialog = true
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ProfitEmerald.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Numbers, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(22.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("إضافة كروت يدوياً بالعدد (مباشرة)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                    Text("مثلاً: فئة 200 ريال بعدد 1000 كرت - دون اشتراط أرقام أو رموز", fontSize = 10.5.sp, color = Color(0xFF6EE7B7))
+                                }
+                            }
+                        }
+
+                        // الخيار 2: توليد كروت عبر التطبيق
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = Color(0xFF0F1E33),
@@ -390,11 +454,11 @@ fun CardsScreen(
                             }
                         }
 
-                        // الخيار 2: استيراد دفعة من برنامج آخر
+                        // الخيار 3: استيراد دفعة من برنامج آخر
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF062820),
-                            border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.5f)),
+                            color = Color(0xFF111827),
+                            border = BorderStroke(1.dp, Color(0xFF374151)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -411,15 +475,15 @@ fun CardsScreen(
                                     modifier = Modifier
                                         .size(38.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(ProfitEmerald.copy(alpha = 0.2f)),
+                                        .background(Color(0xFF38BDF8).copy(alpha = 0.15f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.PostAdd, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(22.dp))
+                                    Icon(Icons.Default.PostAdd, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(22.dp))
                                 }
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
-                                    Text("إضافة دفعة من برنامج آخر", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
-                                    Text("استيراد كروت من ميكروتك يوزر مانجر أو إكسل CSV أو كروت مطبوعة", fontSize = 10.5.sp, color = Color(0xFF6EE7B7))
+                                    Text("استيراد كروت من برنامج آخر", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                    Text("استيراد كروت من ميكروتك يوزر مانجر أو ملف إكسل CSV", fontSize = 10.5.sp, color = Color(0xFF9CA3AF))
                                 }
                             }
                         }
@@ -429,6 +493,34 @@ fun CardsScreen(
                 dismissButton = {
                     TextButton(onClick = { showBatchChoiceDialog = false }) {
                         Text("إلغاء")
+                    }
+                }
+            )
+        }
+
+        // نافذة إضافة كروت يدوياً بالعدد فقط (مثلاً 1000 كرت فئة 200 ريال) دون اشتراط أرقام الكروت
+        if (showManualCountDialog) {
+            AddManualCardsCountDialog(
+                packages = cardPackages,
+                retailers = retailers,
+                initialPackage = selectedPackageForManualCount,
+                onDismiss = {
+                    showManualCountDialog = false
+                    selectedPackageForManualCount = null
+                },
+                onConfirm = { catName, qty, retail, wholesale, bName, retId ->
+                    viewModel.addManualCardQuantity(
+                        categoryName = catName,
+                        quantity = qty,
+                        retailPrice = retail,
+                        wholesalePrice = wholesale,
+                        batchName = bName,
+                        targetRetailerId = retId
+                    ) { batchId, count ->
+                        showManualCountDialog = false
+                        selectedPackageForManualCount = null
+                        val destMsg = if (retId != null) "وصرفها للبقالة بنجاح ✓" else "إلى المستودع العام بنجاح ✓"
+                        Toast.makeText(context, "تمت إضافة $count كرت فئة ($catName) $destMsg", Toast.LENGTH_LONG).show()
                     }
                 }
             )
@@ -698,7 +790,8 @@ fun CardsTopNavBar(
     packagesCount: Int,
     cardsCount: Int,
     onExport: (() -> Unit)? = null,
-    onImportExternal: (() -> Unit)? = null
+    onImportExternal: (() -> Unit)? = null,
+    onAddManualQuantity: (() -> Unit)? = null
 ) {
     Surface(
         color = Color(0xFF091424),
@@ -742,6 +835,16 @@ fun CardsTopNavBar(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onAddManualQuantity != null) {
+                    IconButton(onClick = onAddManualQuantity, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.Numbers,
+                            contentDescription = "إضافة كروت بالعدد",
+                            tint = ProfitEmerald,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                }
                 if (onImportExternal != null) {
                     IconButton(onClick = onImportExternal, modifier = Modifier.size(28.dp)) {
                         Icon(

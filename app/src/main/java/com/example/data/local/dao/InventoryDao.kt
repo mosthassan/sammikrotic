@@ -22,6 +22,9 @@ interface InventoryDao {
     @Query("SELECT * FROM inventory_items WHERE id = :id")
     suspend fun getItemById(id: Long): InventoryItemEntity?
 
+    @Query("SELECT * FROM inventory_items WHERE packageName = :packageName LIMIT 1")
+    suspend fun getItemByPackageName(packageName: String): InventoryItemEntity?
+
     @Query("DELETE FROM inventory_items WHERE id = :id")
     suspend fun deleteItem(id: Long)
 }

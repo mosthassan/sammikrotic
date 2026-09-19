@@ -241,6 +241,100 @@ class NetworkRepository(private val db: AppDatabase) {
         batchId
     }
 
+    /**
+     * إضافة رصيد كروت يدوياً بالعدد فقط (مثلاً 1000 كرت فئة 200 ريال)
+     * بدون اشتراط وجود أو إدخال أرقام ورموز الكروت.
+     * يتم تحديث عدد الكروت المتاحة في المخزن، وإنشاء سجل الدفعة،
+     * وتغذية حساب البقالة مباشرة إذا حُددت كوجهة استلام.
+     */
+    suspend fun addManualCardQuantity(
+        categoryName: String,
+        quantity: Int,
+        retailPrice: Double,
+        wholesalePrice: Double,
+        batchName: String = "إضافة يدوية - $categoryName",
+        quotaMb: Long = 0,
+        validityHours: Int = 24,
+        speedLimit: String = "4M/2M",
+        targetRetailerId: Long? = null
+    ): Long = withContext(Dispatchers.IO) {
+        val count = quantity.coerceAtLeast(1)
+        val now = System.currentTimeMillis()
+
+        // 1. إنشاء سجل الدفعة لتوثيق تاريخ وكمية الإضافة
+        val batch = CardBatchEntity(
+            batchName = batchName,
+            categoryName = categoryName,
+            retailPrice = retailPrice,
+            wholesalePrice = wholesalePrice,
+            quotaMb = quotaMb,
+            validityHours = validityHours,
+            speedLimit = speedLimit,
+            totalCount = count,
+            mikrotikProfile = "qty-${retailPrice.toInt()}",
+            prefix = "QTY"
+        )
+        val batchId = db.cardDao().insertBatch(batch)
+
+        val retailer = if (targetRetailerId != null && targetRetailerId > 0) {
+            db.retailerDao().getRetailerById(targetRetailerId)
+        } else null
+
+        // 2. إدراج الكروت الرقمية لتمكين المتابعة والتوزيع وتوليد الفواتير بدون إجبار المستخدم على إدخال أرقام
+        val prefixCode = categoryName.filter { it.isDigit() }.ifEmpty { "C" }
+        val timeCode = (now % 100000).toString()
+        val cards = (1..count).map { i ->
+            CardEntity(
+                batchId = batchId,
+                username = "$prefixCode-$timeCode-${String.format(java.util.Locale.US, "%04d", i)}",
+                password = "", // غير مشروط وجود رمز أو كلمة مرور
+                categoryName = categoryName,
+                retailPrice = retailPrice,
+                wholesalePrice = wholesalePrice,
+                status = if (retailer != null) "DISTRIBUTED" else "AVAILABLE",
+                retailerId = retailer?.id,
+                retailerName = retailer?.name,
+                distributedAt = if (retailer != null) now else null
+            )
+        }
+        db.cardDao().insertCards(cards)
+
+        // 3. تحديث أو إدراج مخزون الكروت في جدول inventory_items
+        val existingItem = db.inventoryDao().getItemByPackageName(categoryName)
+        if (existingItem != null) {
+            val updatedQty = if (retailer != null) {
+                existingItem.quantityAvailable // تم صرفها مباشرة للبقالة
+            } else {
+                existingItem.quantityAvailable + count
+            }
+            db.inventoryDao().updateItem(
+                existingItem.copy(
+                    quantityAvailable = updatedQty,
+                    wholesalePrice = wholesalePrice,
+                    retailPrice = retailPrice
+                )
+            )
+        } else {
+            val initialQty = if (retailer != null) 0 else count
+            db.inventoryDao().insertItem(
+                InventoryItemEntity(
+                    packageName = categoryName,
+                    quantityAvailable = initialQty,
+                    wholesalePrice = wholesalePrice,
+                    retailPrice = retailPrice
+                )
+            )
+        }
+
+        // 4. إذا تم الصرف الفوري لبقالة، نقيد الرصيد والكمية بحساب البقالة
+        if (retailer != null) {
+            val totalWholesaleDebt = wholesalePrice * count
+            db.retailerDao().updateBalanceAndCards(retailer.id, totalWholesaleDebt, count)
+        }
+
+        batchId
+    }
+
     // Inventory Management (مخزن الكروت)
     val allInventoryItems: Flow<List<InventoryItemEntity>> = db.inventoryDao().getAllInventoryItems()
 

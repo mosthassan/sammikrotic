@@ -477,7 +477,7 @@ fun DistributionScreen(
                         Toast.makeText(context, "تم إنشاء سند قبض بمبلغ $amount ريال وتخفيض مديونية البقالة ✓", Toast.LENGTH_LONG).show()
 
                         if (sendWhatsAppReceipt && r.phone.isNotBlank()) {
-                            val dummyVoucher = com.example.data.local.entity.FinancialVoucherEntity(
+                            val savedReceiptVoucher = com.example.data.local.entity.FinancialVoucherEntity(
                                 voucherNumber = voucherNumber,
                                 voucherType = "RECEIPT",
                                 amount = amount,
@@ -488,7 +488,7 @@ fun DistributionScreen(
                                 description = desc,
                                 issuerName = "المهندس حسن"
                             )
-                            val message = WhatsAppHelper.generateVoucherMessage(dummyVoucher)
+                            val message = WhatsAppHelper.generateVoucherMessage(savedReceiptVoucher)
                             WhatsAppHelper.sendWhatsAppMessage(context, r.phone, message)
                         }
                     }

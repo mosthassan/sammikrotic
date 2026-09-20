@@ -855,6 +855,9 @@ class NetworkRepository(private val db: AppDatabase) {
         db.networkAssetDao().deleteAllAssets()
         db.purchaseInvoiceDao().deleteAllInvoices()
         db.inventoryDao().deleteAllItems()
+        db.inventoryMovementDao().deleteAllMovements()
+        db.cardSalesInvoiceDao().deleteAllInvoices()
+        db.cardPackageDao().deleteAllPackages()
 
         // 2. Clear previous demo users
         db.userDao().deleteAllUsers()
@@ -879,6 +882,79 @@ class NetworkRepository(private val db: AppDatabase) {
         }
         val adminId = db.userDao().insertUser(productionAdmin)
         productionAdmin.copy(id = adminId)
+    }
+
+    /**
+     * حذف كافة البيانات الافتراضية والتجريبية التي تم إدراجها سابقاً
+     * مع الإبقاء الكامل على أي بيانات فعلية قام المستخدم بإضافتها أو مزامنتها.
+     */
+    suspend fun purgeDefaultDataOnly() = withContext(Dispatchers.IO) {
+        try {
+            val sqlDb = db.openHelper.writableDatabase
+
+            // 1. حذف الكروت والدفعات الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM cards WHERE username LIKE 'sam2001%' OR username LIKE 'sam5002%' OR batchId IN (SELECT id FROM card_batches WHERE prefix IN ('SAM2', 'SAM5'))
+            """.trimIndent())
+            sqlDb.execSQL("""
+                DELETE FROM card_batches WHERE prefix IN ('SAM2', 'SAM5') OR batchName LIKE '%دفعة الربيع%' OR batchName LIKE '%دفعة VIP%'
+            """.trimIndent())
+
+            // 2. حذف سندات القبض والصرف الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM financial_vouchers WHERE voucherNumber IN ('REC-2026-001', 'REC-2026-002', 'PAY-2026-001', 'PAY-2026-002', 'PAY-2026-003')
+            """.trimIndent())
+
+            // 3. حذف البقالات ونقاط التوزيع الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM retailers WHERE name IN ('بقالة البركة والخير', 'سوبرماركت النخبة', 'كشك الأمل للاتصالات') OR phone IN ('771234567', '777654321', '733889900')
+            """.trimIndent())
+
+            // 4. حذف أجهزة ومعدات الشبكة الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM network_devices WHERE macAddress IN ('D4:CA:6D:11:22:33', 'D4:CA:6D:44:55:66', 'F0:9F:C2:77:88:99', '68:D7:9A:12:34:56', 'CC:2D:E0:98:76:54', 'B4:FB:E4:AA:BB:CC')
+            """.trimIndent())
+
+            // 5. حذف الشركاء وحركات الأرباح الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM partners WHERE name IN ('المهندس سام الشبواني', 'الحاج عبد الرحمن القدسي', 'أ. نبيل صالح الحميري') OR phone IN ('770000001', '771122334', '772233445')
+            """.trimIndent())
+            sqlDb.execSQL("""
+                DELETE FROM partner_transactions WHERE notes LIKE '%توزيع أرباح الربع المالي الماضي%'
+            """.trimIndent())
+
+            // 6. حذف الأصول الرأسمالية الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM network_assets WHERE serialNumber IN ('CCR2004-16G-SN8821', 'TWR-24M-TH', 'GW-SPF3500ES', 'LITH-48100-PRO', 'MIMO-A5C-4SEC', 'FIBER-4C-ARM-1KM', 'GEN-KM-5KVA')
+            """.trimIndent())
+
+            // 7. حذف حركات وأصناف المخزن الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM inventory_movements WHERE referenceNumber IN ('SUP-2026-001', 'SUP-2026-002')
+            """.trimIndent())
+            sqlDb.execSQL("""
+                DELETE FROM inventory_items WHERE packageName IN ('باقة 100 ريال سريعة', 'باقة 200 ريال يومية', 'باقة 500 ريال فايبر', 'باقة 1000 ريال أسبوعية', 'باقة 2500 ريال نصف شهرية')
+            """.trimIndent())
+
+            // 8. حذف فواتير المبيعات الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM card_sales_invoices WHERE invoiceNumber IN ('INV-2026-1042', 'INV-2026-1043')
+            """.trimIndent())
+
+            // 9. حذف المستخدمين التجريبيين الافتراضيين
+            sqlDb.execSQL("""
+                DELETE FROM app_users WHERE username IN ('eng_ayman', 'dist_fahad', 'pos_baraka')
+            """.trimIndent())
+
+            // 10. حذف باقات الكروت الافتراضية
+            sqlDb.execSQL("""
+                DELETE FROM card_packages WHERE notes LIKE '%باقة اقتصادية خفيفة%' OR notes LIKE '%الباقة الأكثر مبيعاً%' OR notes LIKE '%باقة عائلية سريعة%' OR notes LIKE '%باقة 10 جيجا%' OR notes LIKE '%باقة 22 جيجا%' OR notes LIKE '%باقة شهرية 50 جيجابايت%'
+            """.trimIndent())
+
+            android.util.Log.i("NetworkRepository", "All default/dummy records purged from database successfully.")
+        } catch (e: Throwable) {
+            android.util.Log.e("NetworkRepository", "Error during purgeDefaultDataOnly: ${e.message}", e)
+        }
     }
 
     // ==========================================

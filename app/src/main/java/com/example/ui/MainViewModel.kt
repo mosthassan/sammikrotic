@@ -200,7 +200,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("sam_mikrotik_prefs", android.content.Context.MODE_PRIVATE)
 
     private val _isProductionMode = MutableStateFlow(
-        prefs.getBoolean("is_production_mode", false)
+        prefs.getBoolean("is_production_mode", true)
     )
     val isProductionMode: StateFlow<Boolean> = _isProductionMode.asStateFlow()
 
@@ -986,6 +986,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            try {
+                // إزالة كافة البيانات الافتراضية والتجريبية من قاعدة البيانات فورياً والإبقاء على البيانات الفعلية الحقيقية فقط
+                repository.purgeDefaultDataOnly()
+            } catch (e: Throwable) {
+                Log.e("MainViewModel", "Error purging default data: ${e.message}")
+            }
+
             try {
                 // Ensure mosthassan.ye@gmail.com is registered as OWNER in database (Role & Permission only, NOT active session)
                 repository.ensureSuperAdminExists()

@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CardPackageEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.ui.MainViewModel
+import com.example.ui.theme.CairoFontFamily
 import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
@@ -441,88 +442,118 @@ fun PackageCardItem(
     onAddManualQuantity: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // Determine theme accent colors
+    // Determine theme accent colors (2026 Cyber-Fintech AI Palette)
     val (accentGradient, badgeColor, borderGlow) = when (pkg.colorTheme.lowercase()) {
         "emerald", "green" -> Triple(
-            Brush.horizontalGradient(listOf(Color(0xFF064E3B), Color(0xFF065F46))),
+            Brush.horizontalGradient(listOf(Color(0xFF04211A), Color(0xFF07382B), Color(0xFF0A4F3E))),
             ProfitEmerald,
-            Color(0xFF059669)
+            Color(0xFF10B981)
         )
         "gold", "amber" -> Triple(
-            Brush.horizontalGradient(listOf(Color(0xFF78350F), Color(0xFF92400E))),
+            Brush.horizontalGradient(listOf(Color(0xFF241506), Color(0xFF3D2309), Color(0xFF57320D))),
             InvestmentGold,
-            Color(0xFFD97706)
+            Color(0xFFF59E0B)
         )
         "purple", "violet" -> Triple(
-            Brush.horizontalGradient(listOf(Color(0xFF4C1D95), Color(0xFF5B21B6))),
+            Brush.horizontalGradient(listOf(Color(0xFF1B0B33), Color(0xFF2C1252), Color(0xFF431B7C))),
             Color(0xFFA855F7),
-            Color(0xFF7C3AED)
+            Color(0xFF8B5CF6)
         )
         "rose", "red" -> Triple(
-            Brush.horizontalGradient(listOf(Color(0xFF881337), Color(0xFF9F1239))),
-            Color(0xFFF43F5E),
-            Color(0xFFE11D48)
+            Brush.horizontalGradient(listOf(Color(0xFF2E0914), Color(0xFF470E1F), Color(0xFF6B1530))),
+            Color(0xFFFB7185),
+            Color(0xFFF43F5E)
         )
-        else -> Triple( // Default Cyan / Blue
-            Brush.horizontalGradient(listOf(Color(0xFF0C4A6E), Color(0xFF075985))),
+        else -> Triple( // Default Electric Cyan
+            Brush.horizontalGradient(listOf(Color(0xFF06182C), Color(0xFF0B2948), Color(0xFF103E6D))),
             MikroTikCyan,
-            Color(0xFF0284C7)
+            Color(0xFF00E5FF)
         )
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1728)),
-        border = BorderStroke(1.2.dp, borderGlow.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF091222)),
+        border = BorderStroke(1.2.dp, borderGlow.copy(alpha = 0.45f)),
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize()
             .testTag("package_card_${pkg.id}")
     ) {
         Column {
-            // Header Bar with Gradient
+            // Header Bar with Futuristic Cyber Gradient
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(accentGradient)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Color.Black.copy(alpha = 0.35f)
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Black.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f))
                         ) {
                             Text(
                                 text = pkg.mikrotikProfile,
                                 color = badgeColor,
-                                fontSize = 10.sp,
+                                fontSize = 10.5.sp,
+                                fontFamily = CairoFontFamily,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                maxLines = 1
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = pkg.name,
                             color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontFamily = CairoFontFamily,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Action icons
+                    // Action icons (Edit & Delete)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(16.dp))
+                        IconButton(
+                            onClick = onEdit,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.25f))
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "تعديل",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
-                        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color(0xFFF87171), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.25f))
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "حذف",
+                                tint = Color(0xFFF87171),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
@@ -532,15 +563,15 @@ fun PackageCardItem(
             Column(modifier = Modifier.padding(14.dp)) {
                 // 1. Dual-Price Highlight Box (سعر البيع النهائي وسعر الجملة وهامش الربح)
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF07111E),
-                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF050B15),
+                    border = BorderStroke(1.dp, Color(0xFF1B2C4B)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -549,22 +580,34 @@ fun PackageCardItem(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = badgeColor.copy(alpha = 0.2f),
+                                    color = badgeColor.copy(alpha = 0.3f),
                                     modifier = Modifier.size(8.dp)
                                 ) {}
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("سعر البيع النهائي", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                Text(
+                                    text = "سعر البيع النهائي",
+                                    fontSize = 10.sp,
+                                    fontFamily = CairoFontFamily,
+                                    color = Color(0xFF94A3B8)
+                                )
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Row(verticalAlignment = Alignment.Bottom) {
                                 Text(
                                     text = "${pkg.retailPrice.toInt()}",
-                                    fontSize = 20.sp,
+                                    fontSize = 21.sp,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Black,
                                     color = Color.White
                                 )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("ر.ي", fontSize = 11.sp, color = badgeColor, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "ر.ي",
+                                    fontSize = 11.5.sp,
+                                    fontFamily = CairoFontFamily,
+                                    color = badgeColor,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 
@@ -572,23 +615,34 @@ fun PackageCardItem(
                         Box(
                             modifier = Modifier
                                 .width(1.dp)
-                                .height(38.dp)
-                                .background(Color(0xFF1E293B))
+                                .height(40.dp)
+                                .background(Color(0xFF1B2C4B))
                         )
 
                         // سعر الجملة للبقالات
                         Column {
-                            Text("سعر الجملة للبقالة", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                            Text(
+                                text = "سعر الجملة للبقالة",
+                                fontSize = 10.sp,
+                                fontFamily = CairoFontFamily,
+                                color = Color(0xFF94A3B8)
+                            )
                             Spacer(modifier = Modifier.height(2.dp))
                             Row(verticalAlignment = Alignment.Bottom) {
                                 Text(
                                     text = "${pkg.wholesalePrice.toInt()}",
                                     fontSize = 18.sp,
+                                    fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF38BDF8)
                                 )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("ر.ي", fontSize = 10.sp, color = Color(0xFF38BDF8))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "ر.ي",
+                                    fontSize = 10.5.sp,
+                                    fontFamily = CairoFontFamily,
+                                    color = Color(0xFF38BDF8)
+                                )
                             }
                         }
 
@@ -596,32 +650,40 @@ fun PackageCardItem(
                         Box(
                             modifier = Modifier
                                 .width(1.dp)
-                                .height(38.dp)
-                                .background(Color(0xFF1E293B))
+                                .height(40.dp)
+                                .background(Color(0xFF1B2C4B))
                         )
 
                         // ربح المحل للكرت
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("ربح المحل / كرت", fontSize = 10.sp, color = ProfitEmerald)
+                            Text(
+                                text = "ربح المحل / كرت",
+                                fontSize = 10.sp,
+                                fontFamily = CairoFontFamily,
+                                color = ProfitEmerald
+                            )
                             Spacer(modifier = Modifier.height(2.dp))
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = ProfitEmerald.copy(alpha = 0.15f)
+                                shape = RoundedCornerShape(7.dp),
+                                color = ProfitEmerald.copy(alpha = 0.16f),
+                                border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.35f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "+${pkg.profitPerCard.toInt()} ر.ي",
                                         fontSize = 12.sp,
+                                        fontFamily = CairoFontFamily,
                                         fontWeight = FontWeight.Bold,
                                         color = ProfitEmerald
                                     )
-                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "(${String.format(Locale.US, "%.0f", pkg.profitPercentage)}%)",
                                         fontSize = 10.sp,
+                                        fontFamily = CairoFontFamily,
                                         color = ProfitEmerald
                                     )
                                 }
@@ -630,9 +692,9 @@ fun PackageCardItem(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(11.dp))
 
-                // 2. Specifications Pills (السعة، الصلاحية، السرعة، البروفايل)
+                // 2. Specifications Pills (السعة، الصلاحية، السرعة)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -665,67 +727,169 @@ fun PackageCardItem(
                     Text(
                         text = pkg.notes,
                         fontSize = 11.sp,
+                        fontFamily = CairoFontFamily,
                         color = Color(0xFF94A3B8),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-                HorizontalDivider(color = Color(0xFF1E293B))
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = Color(0xFF1B2C4B), thickness = 1.dp)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3. Operational Integration Buttons (إضافة بالعدد، توليد، استيراد خارجي، وفواتير بيع الكروت)
+                // 3. Operational Integration Buttons (2x2 Cyber Action Grid - Spacious & Modern)
+                // Row 1: Operations for Stock Count and Sales Invoice
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // إضافة كروت يدوياً بالعدد دون رموز
-                    Button(
+                    Surface(
                         onClick = onAddManualQuantity,
-                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1.15f)
+                        shape = RoundedCornerShape(10.dp),
+                        color = ProfitEmerald.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
                     ) {
-                        Icon(Icons.Default.Numbers, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("إضافة بالعدد", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // توليد دفعة كروت فورية من هذه الباقة
-                    OutlinedButton(
-                        onClick = onQuickGenerate,
-                        border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(0.9f)
-                    ) {
-                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("توليد", color = Color(0xFF0284C7), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // استيراد كروت من برنامج آخر لهذه الباقة
-                    OutlinedButton(
-                        onClick = onImportExternal,
-                        border = BorderStroke(1.dp, Color(0xFF38BDF8)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(0.9f)
-                    ) {
-                        Icon(Icons.Default.PostAdd, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("استيراد", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Numbers,
+                                contentDescription = null,
+                                tint = ProfitEmerald,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "إضافة بالعدد",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontFamily = CairoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
                     }
 
                     // فاتورة بيع كروت للبقالة
-                    OutlinedButton(
+                    Surface(
                         onClick = onSalesInvoice,
-                        border = BorderStroke(1.dp, Color(0xFFFBBF24)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(0.95f)
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFFBBF24).copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, Color(0xFFFBBF24).copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
                     ) {
-                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("فاتورة", color = Color(0xFFFBBF24), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.ReceiptLong,
+                                contentDescription = null,
+                                tint = Color(0xFFFBBF24),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "فاتورة مبيعات",
+                                color = Color(0xFFFDE68A),
+                                fontSize = 12.sp,
+                                fontFamily = CairoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Row 2: Generator & Import External
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // توليد دفعة كروت فورية من هذه الباقة
+                    Surface(
+                        onClick = onQuickGenerate,
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF0284C7).copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = MikroTikCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "توليد كروت",
+                                color = MikroTikCyan,
+                                fontSize = 12.sp,
+                                fontFamily = CairoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    // استيراد كروت من برنامج آخر لهذه الباقة
+                    Surface(
+                        onClick = onImportExternal,
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFA855F7).copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, Color(0xFFA855F7).copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.PostAdd,
+                                contentDescription = null,
+                                tint = Color(0xFFA855F7),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "استيراد خارجي",
+                                color = Color(0xFFE9D5FF),
+                                fontSize = 12.sp,
+                                fontFamily = CairoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }

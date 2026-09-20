@@ -6,6 +6,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -883,62 +885,74 @@ fun CardsTopNavBar(
     onAddManualQuantity: (() -> Unit)? = null
 ) {
     Surface(
-        color = CyberDarkSurface,
-        border = BorderStroke(1.dp, CyberBorder),
+        color = Color(0xFF070E1A),
+        border = BorderStroke(1.dp, Color(0xFF1E2F52)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 7.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Scrollable futuristic pill navigation
             Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 NavPill(
                     selected = activeMode == 2,
                     icon = Icons.Default.Inventory2,
-                    label = "المخزن بالعدد ($cardsCount)",
+                    label = "المخزن بالعدد",
+                    badge = "$cardsCount",
                     onClick = { onSelectMode(2) }
                 )
                 NavPill(
                     selected = activeMode == 3,
                     icon = Icons.Default.ReceiptLong,
                     label = "فواتير المبيعات",
+                    badge = null,
                     onClick = { onSelectMode(3) }
                 )
                 NavPill(
                     selected = activeMode == 1,
                     icon = Icons.Default.LocalOffer,
-                    label = "باقات الكروت ($packagesCount)",
+                    label = "باقات الكروت",
+                    badge = "$packagesCount",
                     onClick = { onSelectMode(1) }
                 )
                 NavPill(
                     selected = activeMode == 0,
                     icon = Icons.Default.Palette,
                     label = "استوديو A4",
+                    badge = null,
                     onClick = { onSelectMode(0) }
                 )
                 NavPill(
                     selected = activeMode == 5,
                     icon = Icons.Default.ConfirmationNumber,
                     label = "سجل الأرقام",
+                    badge = null,
                     onClick = { onSelectMode(5) }
                 )
             }
 
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Action Quick Tools
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onAddManualQuantity != null) {
                     IconButton(
                         onClick = onAddManualQuantity,
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(32.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(CyberDarkCardElevated)
-                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                            .background(ProfitEmerald.copy(alpha = 0.15f))
+                            .border(1.dp, ProfitEmerald.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                     ) {
                         Icon(
                             Icons.Default.Numbers,
@@ -953,15 +967,15 @@ fun CardsTopNavBar(
                     IconButton(
                         onClick = onImportExternal,
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(32.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(CyberDarkCardElevated)
-                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                            .background(Color(0xFF0284C7).copy(alpha = 0.15f))
+                            .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                     ) {
                         Icon(
                             Icons.Default.PostAdd,
                             contentDescription = "استيراد كروت خارجية",
-                            tint = Color(0xFF38BDF8),
+                            tint = MikroTikCyan,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -971,12 +985,17 @@ fun CardsTopNavBar(
                     IconButton(
                         onClick = onExport,
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(32.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(CyberDarkCardElevated)
-                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                            .background(Color(0xFF1E2F52))
+                            .border(1.dp, Color(0xFF2A4374), RoundedCornerShape(8.dp))
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = "تصدير", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "تصدير",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
@@ -989,28 +1008,29 @@ private fun NavPill(
     selected: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
+    badge: String? = null,
     onClick: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = if (selected) Color(0xFF0284C7).copy(alpha = 0.25f) else CyberDarkCardElevated,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) Color(0xFF0A223E) else Color(0xFF0B1422),
         border = BorderStroke(
-            1.dp,
-            if (selected) Color(0xFF38BDF8).copy(alpha = 0.6f) else CyberBorder
+            1.2.dp,
+            if (selected) Color(0xFF00E5FF).copy(alpha = 0.7f) else Color(0xFF1B2A44)
         ),
         onClick = onClick
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (selected) Color(0xFF38BDF8) else TextSecondaryDark,
-                modifier = Modifier.size(13.dp)
+                tint = if (selected) Color(0xFF00E5FF) else TextSecondaryDark,
+                modifier = Modifier.size(14.dp)
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
                 color = if (selected) Color.White else TextSecondaryDark,
@@ -1018,6 +1038,22 @@ private fun NavPill(
                 fontSize = 11.5.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
             )
+            if (badge != null) {
+                Spacer(modifier = Modifier.width(5.dp))
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (selected) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E2F52).copy(alpha = 0.6f)
+                ) {
+                    Text(
+                        text = badge,
+                        color = if (selected) Color(0xFF00E5FF) else TextSecondaryDark,
+                        fontSize = 10.sp,
+                        fontFamily = CairoFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+            }
         }
     }
 }

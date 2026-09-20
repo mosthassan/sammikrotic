@@ -372,12 +372,12 @@ private fun CategoryStockCard(
     val unitProfit = (item.retailPrice - item.wholesalePrice).coerceAtLeast(0.0)
 
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
-        border = BorderStroke(1.dp, if (isOutOfStock) Color(0xFFEF4444).copy(alpha = 0.5f) else CyberBorder),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF091222)),
+        border = BorderStroke(1.2.dp, if (isOutOfStock) Color(0xFFEF4444).copy(alpha = 0.5f) else Color(0xFF1B2C4B)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             // Top Row: Item Title & Stock Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -387,9 +387,10 @@ private fun CategoryStockCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(stockColor.copy(alpha = 0.15f)),
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(stockColor.copy(alpha = 0.16f))
+                            .border(1.dp, stockColor.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = stockColor, modifier = Modifier.size(20.dp))
@@ -399,14 +400,14 @@ private fun CategoryStockCard(
                         Text(
                             text = item.packageName,
                             fontFamily = CairoFontFamily,
-                            fontSize = 15.sp,
+                            fontSize = 15.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                         Text(
                             text = stockStatusText,
                             fontFamily = CairoFontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = 11.sp,
                             color = stockColor
                         )
                     }
@@ -414,9 +415,9 @@ private fun CategoryStockCard(
 
                 // عدد الكروت الحالي بالمخزن
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = stockColor.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, stockColor.copy(alpha = 0.4f))
+                    shape = RoundedCornerShape(10.dp),
+                    color = stockColor.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, stockColor.copy(alpha = 0.45f))
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -425,50 +426,55 @@ private fun CategoryStockCard(
                         Text(
                             text = "${item.quantityAvailable}",
                             fontFamily = CairoFontFamily,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Black,
                             color = stockColor
                         )
                         Text(
                             text = "كرت متوفر",
                             fontFamily = CairoFontFamily,
-                            fontSize = 9.5.sp,
+                            fontSize = 10.sp,
                             color = stockColor
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Pricing & Valuation Grid
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(CyberDarkCardElevated)
-                    .padding(8.dp),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF050B15))
+                    .border(1.dp, Color(0xFF1B2C4B), RoundedCornerShape(12.dp))
+                    .padding(10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
                     Text("سعر الجملة", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("${item.wholesalePrice.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("${item.wholesalePrice.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
                 }
                 Column {
                     Text("سعر التجزئة", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("${item.retailPrice.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("${item.retailPrice.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
                 Column {
-                    Text("ربح الكرت للبقالة", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("+${unitProfit.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = ProfitEmerald)
+                    Text("ربح الكرت", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("+${unitProfit.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ProfitEmerald)
                 }
                 Column {
-                    Text("إجمالي قيمة الرصيد", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("${totalWholesaleValuation.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
+                    Text("قيمة الرصيد", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("${totalWholesaleValuation.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Action Buttons
             Row(
@@ -476,29 +482,57 @@ private fun CategoryStockCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // توريد رصيد
-                OutlinedButton(
+                Surface(
                     onClick = onAddStock,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, ProfitEmerald),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfitEmerald),
-                    modifier = Modifier.weight(1f)
+                    shape = RoundedCornerShape(10.dp),
+                    color = ProfitEmerald.copy(alpha = 0.16f),
+                    border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("توريد رصيد (+)", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text("توريد رصيد (+)", color = Color.White, fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 // إصدار فاتورة بيع
-                Button(
+                Surface(
                     onClick = onIssueInvoice,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
                     enabled = item.quantityAvailable > 0,
-                    modifier = Modifier.weight(1f)
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (item.quantityAvailable > 0) Color(0xFF0284C7).copy(alpha = 0.2f) else Color(0xFF1E293B).copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, if (item.quantityAvailable > 0) Color(0xFF00E5FF).copy(alpha = 0.5f) else Color(0xFF334155)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
                 ) {
-                    Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("فاتورة بيع (-)", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.ReceiptLong,
+                            contentDescription = null,
+                            tint = if (item.quantityAvailable > 0) MikroTikCyan else TextSecondaryDark,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "فاتورة بيع (-)",
+                            color = if (item.quantityAvailable > 0) MikroTikCyan else TextSecondaryDark,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

@@ -28,6 +28,7 @@ import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.model.CardSalesInvoiceItem
 import com.example.ui.MainViewModel
 import com.example.ui.theme.*
+import com.example.util.InvoicePdfManager
 import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -435,51 +436,127 @@ fun CardSalesInvoiceDetailDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Actions: Share via WhatsApp, Copy, Close
-                Row(
+                // Actions: Share PDF, Print PDF, Quick WhatsApp Text, Copy, Close
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // WhatsApp Share
-                    Button(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, invoiceShareText)
+                    // Row 1: Primary PDF Actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Official PDF Document Share
+                        Button(
+                            onClick = {
+                                InvoicePdfManager.shareInvoicePdf(context, invoice, items)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.2f)
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("مشاركة كـ PDF", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        }
+
+                        // Print / Save to Device via Android Print Manager
+                        OutlinedButton(
+                            onClick = {
+                                InvoicePdfManager.printInvoice(context, invoice, items)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("طباعة / حفظ", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        }
+                    }
+
+                    // Row 2: Secondary Options (Open PDF, WhatsApp Text, Copy, Close)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Open PDF viewer
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
+                            onClick = {
+                                InvoicePdfManager.openInvoicePdf(context, invoice, items)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp), tint = TextSecondaryDark)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("معاينة", fontFamily = CairoFontFamily, fontSize = 11.sp, color = Color.White)
                             }
-                            context.startActivity(Intent.createChooser(intent, "مشاركة فاتورة مبيعات الكروت"))
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.Black)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("مشاركة الفاتورة", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                    }
+                        }
 
-                    // Copy
-                    OutlinedButton(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(invoiceShareText))
-                            Toast.makeText(context, "تم نسخ تفاصيل الفاتورة للحافظة ✓", Toast.LENGTH_SHORT).show()
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(0.7f)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("نسخ", fontFamily = CairoFontFamily, fontSize = 11.5.sp)
-                    }
+                        // Share as plain text
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, invoiceShareText)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "مشاركة تفاصيل الفاتورة كنص"))
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(14.dp), tint = ProfitEmerald)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("نص واتساب", fontFamily = CairoFontFamily, fontSize = 11.sp, color = Color.White)
+                            }
+                        }
 
-                    // Close
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberDarkCardElevated),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(0.6f)
-                    ) {
-                        Text("إغلاق", fontFamily = CairoFontFamily, fontSize = 11.5.sp)
+                        // Copy to clipboard
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = CyberDarkCardElevated,
+                            border = BorderStroke(1.dp, CyberBorder),
+                            onClick = {
+                                clipboard.setText(AnnotatedString(invoiceShareText))
+                                Toast.makeText(context, "تم نسخ تفاصيل الفاتورة للحافظة ✓", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(0.8f)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp), tint = TextSecondaryDark)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("نسخ", fontFamily = CairoFontFamily, fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+
+                        // Dismiss
+                        Button(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberDarkCardElevated),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(0.8f)
+                        ) {
+                            Text("إغلاق", fontFamily = CairoFontFamily, fontSize = 11.sp)
+                        }
                     }
                 }
             }

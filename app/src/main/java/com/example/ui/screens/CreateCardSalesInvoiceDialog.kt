@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,10 +19,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.InventoryItemEntity
@@ -466,13 +470,14 @@ fun CreateCardSalesInvoiceDialog(
                                 Toast.makeText(context, "يرجى تحديد أو إدخال اسم العميل", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            if (invoiceItems.isEmpty() || totalInvoiceCards <= 0) {
-                                Toast.makeText(context, "يجب إضافة صنف واحد على الأقل بكمية صحيحة", Toast.LENGTH_SHORT).show()
+                            val validItems = invoiceItems.filter { it.quantity > 0 }
+                            if (validItems.isEmpty() || totalInvoiceCards <= 0) {
+                                Toast.makeText(context, "يجب إضافة صنف واحد على الأقل بكمية أكبر من صفر", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
                             // Check stock availability
-                            val stockIssue = invoiceItems.firstOrNull { item ->
+                            val stockIssue = validItems.firstOrNull { item ->
                                 val available = inventoryItems.find { it.packageName == item.packageName }?.quantityAvailable ?: 0
                                 item.quantity > available
                             }
@@ -486,7 +491,7 @@ fun CreateCardSalesInvoiceDialog(
                                 customerNameText.trim(),
                                 customerPhoneText.trim(),
                                 selectedRetailer?.id,
-                                invoiceItems,
+                                validItems,
                                 paymentType,
                                 calculatedPaidAmount,
                                 notesText.trim()
@@ -520,6 +525,25 @@ private fun InvoiceLineItemCard(
 ) {
     val currentStock = inventoryItems.find { it.packageName == item.packageName }?.quantityAvailable ?: 0
     val isExceedingStock = item.quantity > currentStock
+
+    var quantityInput by remember(item.id) {
+        mutableStateOf(item.quantity.toString())
+    }
+    var unitPriceInput by remember(item.id) {
+        mutableStateOf(item.unitPrice.toInt().toString())
+    }
+
+    // Keep inputs synced if item changes externally
+    LaunchedEffect(item.quantity) {
+        if (quantityInput.toIntOrNull() != item.quantity && item.quantity > 0) {
+            quantityInput = item.quantity.toString()
+        }
+    }
+    LaunchedEffect(item.unitPrice) {
+        if (unitPriceInput.toIntOrNull() != item.unitPrice.toInt()) {
+            unitPriceInput = item.unitPrice.toInt().toString()
+        }
+    }
 
     Card(
         shape = RoundedCornerShape(10.dp),
@@ -609,79 +633,129 @@ private fun InvoiceLineItemCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Inputs: Quantity, Unit Wholesale Price, Line Subtotal
+            // Inputs: Quantity (Manual typing + Stepper), Unit Wholesale Price, Line Subtotal
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Quantity with Stepper
-                Column(modifier = Modifier.weight(1.3f)) {
-                    Text("العدد (كرت)", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                // Quantity with Editable Input + Steppers
+                Column(modifier = Modifier.weight(1.35f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("العدد (اكتب يدوياً):", fontFamily = CairoFontFamily, fontSize = 9.5.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(CyberDarkCardElevated)
-                            .border(1.dp, CyberBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, if (item.quantity <= 0) Color(0xFFEF4444) else CyberBorder, RoundedCornerShape(8.dp))
                     ) {
                         IconButton(
                             onClick = {
-                                if (item.quantity > 1) {
-                                    val newQ = item.quantity - 10.coerceAtMost(item.quantity - 1)
-                                    onUpdateItem(item.copy(quantity = newQ))
+                                val current = item.quantity
+                                val next = when {
+                                    current > 10 -> current - 5
+                                    current > 1 -> current - 1
+                                    else -> 1
                                 }
+                                quantityInput = next.toString()
+                                onUpdateItem(item.copy(quantity = next))
                             },
                             modifier = Modifier.size(28.dp)
                         ) {
-                            Icon(Icons.Default.Remove, contentDescription = null, tint = TextSecondaryDark, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Remove, contentDescription = "إنقاص", tint = TextSecondaryDark, modifier = Modifier.size(14.dp))
                         }
-                        Text(
-                            text = "${item.quantity}",
-                            fontFamily = CairoFontFamily,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.weight(1f),
-                            color = Color.White
+
+                        // Editable input for direct typing
+                        BasicTextField(
+                            value = quantityInput,
+                            onValueChange = { raw ->
+                                val digitsOnly = raw.filter { it.isDigit() }.take(5)
+                                quantityInput = digitsOnly
+                                val parsed = digitsOnly.toIntOrNull() ?: 0
+                                onUpdateItem(item.copy(quantity = parsed))
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontFamily = CairoFontFamily,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                textAlign = TextAlign.Center
+                            ),
+                            cursorBrush = SolidColor(MikroTikPrimary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 4.dp),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (quantityInput.isEmpty()) {
+                                        Text("0", fontFamily = CairoFontFamily, fontSize = 14.sp, color = TextSecondaryDark, textAlign = TextAlign.Center)
+                                    }
+                                    innerTextField()
+                                }
+                            }
                         )
+
                         IconButton(
                             onClick = {
-                                val newQ = item.quantity + 10
-                                onUpdateItem(item.copy(quantity = newQ))
+                                val current = item.quantity
+                                val next = current + 5
+                                quantityInput = next.toString()
+                                onUpdateItem(item.copy(quantity = next))
                             },
                             modifier = Modifier.size(28.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Add, contentDescription = "زيادة", tint = MikroTikPrimary, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
 
-                // Unit Price (Wholesale)
-                Column(modifier = Modifier.weight(1.1f)) {
-                    Text("سعر الكرت (جملة)", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                // Unit Price (Editable wholesale)
+                Column(modifier = Modifier.weight(1.05f)) {
+                    Text("سعر الكرت (ر.ي):", fontFamily = CairoFontFamily, fontSize = 9.5.sp, color = TextSecondaryDark)
+                    Spacer(modifier = Modifier.height(2.dp))
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = CyberDarkCardElevated,
                         border = BorderStroke(1.dp, CyberBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "${item.unitPrice.toInt()} ر.ي",
-                            fontFamily = CairoFontFamily,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF38BDF8),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.padding(vertical = 6.dp)
+                        BasicTextField(
+                            value = unitPriceInput,
+                            onValueChange = { raw ->
+                                val digits = raw.filter { it.isDigit() }.take(6)
+                                unitPriceInput = digits
+                                val p = digits.toDoubleOrNull() ?: 0.0
+                                onUpdateItem(item.copy(unitPrice = p))
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontFamily = CairoFontFamily,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8),
+                                textAlign = TextAlign.Center
+                            ),
+                            cursorBrush = SolidColor(MikroTikPrimary),
+                            modifier = Modifier.padding(vertical = 7.dp)
                         )
                     }
                 }
 
                 // Subtotal for line (العدد × السعر)
-                Column(modifier = Modifier.weight(1.2f)) {
-                    Text("الإجمالي (ر.ي)", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                Column(modifier = Modifier.weight(1.15f)) {
+                    Text("الإجمالي:", fontFamily = CairoFontFamily, fontSize = 9.5.sp, color = TextSecondaryDark)
+                    Spacer(modifier = Modifier.height(2.dp))
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = MikroTikPrimary.copy(alpha = 0.15f),
@@ -691,11 +765,64 @@ private fun InvoiceLineItemCard(
                         Text(
                             text = "${item.lineTotal.toInt()} ر.ي",
                             fontFamily = CairoFontFamily,
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = ProfitEmerald,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier.padding(vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+
+            // Quick Preset Quantities (أزرار سريعة للعدد)
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf(10, 20, 50, 100).forEach { presetVal ->
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (item.quantity == presetVal) MikroTikPrimary.copy(alpha = 0.3f) else CyberDarkCardElevated,
+                        border = BorderStroke(0.8.dp, if (item.quantity == presetVal) MikroTikPrimary else CyberBorder),
+                        onClick = {
+                            quantityInput = presetVal.toString()
+                            onUpdateItem(item.copy(quantity = presetVal))
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "$presetVal كرت",
+                            fontFamily = CairoFontFamily,
+                            fontSize = 9.sp,
+                            color = if (item.quantity == presetVal) Color(0xFF38BDF8) else TextSecondaryDark,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        )
+                    }
+                }
+
+                if (currentStock > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (item.quantity == currentStock) ProfitEmerald.copy(alpha = 0.2f) else CyberDarkCardElevated,
+                        border = BorderStroke(0.8.dp, if (item.quantity == currentStock) ProfitEmerald else CyberBorder),
+                        onClick = {
+                            quantityInput = currentStock.toString()
+                            onUpdateItem(item.copy(quantity = currentStock))
+                        },
+                        modifier = Modifier.weight(1.3f)
+                    ) {
+                        Text(
+                            text = "كامل المخزن",
+                            fontFamily = CairoFontFamily,
+                            fontSize = 9.sp,
+                            color = ProfitEmerald,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 3.dp)
                         )
                     }
                 }

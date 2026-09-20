@@ -24,11 +24,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CardSalesInvoiceEntity
+import com.example.data.model.CardSalesInvoiceItem
 import com.example.ui.MainViewModel
 import com.example.ui.theme.*
+import com.example.util.InvoicePdfManager
+import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 /**
  * شاشة وتبويب فواتير مبيعات الكروت
@@ -268,6 +272,7 @@ private fun CardSalesInvoiceRow(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = LocalContext.current
     val dateFormatted = remember(invoice.invoiceDateMillis) {
         val sdf = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
         sdf.format(Date(invoice.invoiceDateMillis))
@@ -295,7 +300,7 @@ private fun CardSalesInvoiceRow(
             .clickable { onClick() }
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Header Row: Number, Date, Payment Badge
+            // Header Row: Number, Date, Payment Badge, PDF Action
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -329,19 +334,57 @@ private fun CardSalesInvoiceRow(
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = badgeColor.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f))
-                ) {
-                    Text(
-                        text = paymentTitle,
-                        fontFamily = CairoFontFamily,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeColor,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Quick PDF Share
+                    IconButton(
+                        onClick = {
+                            val itemsList = try {
+                                val arr = JSONArray(invoice.itemsJson)
+                                val list = mutableListOf<CardSalesInvoiceItem>()
+                                for (i in 0 until arr.length()) {
+                                    val obj = arr.getJSONObject(i)
+                                    list.add(
+                                        CardSalesInvoiceItem(
+                                            id = obj.optString("id", UUID.randomUUID().toString()),
+                                            packageName = obj.optString("packageName", ""),
+                                            quantity = obj.optInt("quantity", 1),
+                                            unitPrice = obj.optDouble("unitPrice", 0.0),
+                                            retailPrice = obj.optDouble("retailPrice", 0.0)
+                                        )
+                                    )
+                                }
+                                list
+                            } catch (e: Exception) {
+                                emptyList()
+                            }
+                            InvoicePdfManager.shareInvoicePdf(context, invoice, itemsList)
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PictureAsPdf,
+                            contentDescription = "مشاركة كـ PDF",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = badgeColor.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f))
+                    ) {
+                        Text(
+                            text = paymentTitle,
+                            fontFamily = CairoFontFamily,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
                 }
             }
 

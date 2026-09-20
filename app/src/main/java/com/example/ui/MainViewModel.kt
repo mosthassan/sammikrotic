@@ -192,6 +192,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun signInWithEmail(email: String, pass: String, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            _googleSignInState.value = _googleSignInState.value.copy(
+                isLoading = true,
+                errorMessage = null,
+                successMessage = null
+            )
+            val result = authManager.signInWithEmailAndPassword(email, pass)
+            if (result.success && !result.email.isNullOrBlank()) {
+                val registeredUser = repository.registerOrUpdateGoogleUser(
+                    email = result.email,
+                    displayName = result.displayName ?: result.email.substringBefore("@"),
+                    photoUrl = ""
+                )
+                _currentUser.value = registeredUser
+                _googleSignInState.value = GoogleSignInUiState(
+                    isLoading = false,
+                    successMessage = "تم تسجيل الدخول بنجاح عبر Firebase (${result.email})",
+                    activeFirebaseEmail = result.email,
+                    activeFirebaseUid = result.uid,
+                    activeAuthProvider = "password"
+                )
+                triggerCloudSync()
+                onComplete(true)
+            } else {
+                _googleSignInState.value = _googleSignInState.value.copy(
+                    isLoading = false,
+                    errorMessage = result.errorMessage ?: "تعذر تسجيل الدخول بالبريد"
+                )
+                onComplete(false)
+            }
+        }
+    }
+
+    fun signUpWithEmail(email: String, pass: String, name: String, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            _googleSignInState.value = _googleSignInState.value.copy(
+                isLoading = true,
+                errorMessage = null,
+                successMessage = null
+            )
+            val result = authManager.signUpWithEmailAndPassword(email, pass, name)
+            if (result.success && !result.email.isNullOrBlank()) {
+                val registeredUser = repository.registerOrUpdateGoogleUser(
+                    email = result.email,
+                    displayName = result.displayName ?: name,
+                    photoUrl = ""
+                )
+                _currentUser.value = registeredUser
+                _googleSignInState.value = GoogleSignInUiState(
+                    isLoading = false,
+                    successMessage = "تم إنشاء الحساب وتسجيل الدخول في Firebase: ${result.email}",
+                    activeFirebaseEmail = result.email,
+                    activeFirebaseUid = result.uid,
+                    activeAuthProvider = "password"
+                )
+                triggerCloudSync()
+                onComplete(true)
+            } else {
+                _googleSignInState.value = _googleSignInState.value.copy(
+                    isLoading = false,
+                    errorMessage = result.errorMessage ?: "تعذر إنشاء الحساب"
+                )
+                onComplete(false)
+            }
+        }
+    }
+
     fun dismissGoogleMessage() {
         _googleSignInState.value = _googleSignInState.value.copy(errorMessage = null, successMessage = null)
     }

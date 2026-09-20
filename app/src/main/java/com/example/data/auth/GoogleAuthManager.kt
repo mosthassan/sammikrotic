@@ -14,6 +14,7 @@ import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
@@ -128,24 +129,39 @@ class GoogleAuthManager(private val context: Context) {
                 )
             }
 
-            // Build official Google ID Option
+            // 1. Build the official Google Sign-In button option (GetSignInWithGoogleOption)
+            // This is specifically designed for explicit button clicks and initiates the native Google account chooser dialog.
+            val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = resolvedClientId)
+                .build()
+
+            // 2. Also prepare GetGoogleIdOption as fallback
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setServerClientId(resolvedClientId)
                 .setAutoSelectEnabled(false)
                 .setFilterByAuthorizedAccounts(false)
                 .build()
 
-            val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build()
-
             val invocationContext: Context = activity ?: context
 
-            // Launch official Android Credential Manager UI
-            val result = credentialManager.getCredential(
-                request = request,
-                context = invocationContext
-            )
+            // Execute via Credential Manager (trying GetSignInWithGoogleOption first, then fallback)
+            val result = try {
+                val primaryRequest = GetCredentialRequest.Builder()
+                    .addCredentialOption(signInOption)
+                    .build()
+                credentialManager.getCredential(
+                    request = primaryRequest,
+                    context = invocationContext
+                )
+            } catch (noCred: NoCredentialException) {
+                Log.w(tag, "GetSignInWithGoogleOption returned NoCredentialException, trying GetGoogleIdOption: ${noCred.message}")
+                val fallbackRequest = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+                credentialManager.getCredential(
+                    request = fallbackRequest,
+                    context = invocationContext
+                )
+            }
 
             val credential = result.credential
             if (credential is CustomCredential &&
@@ -193,17 +209,17 @@ class GoogleAuthManager(private val context: Context) {
                 errorMessage = "تم إلغاء عملية تسجيل الدخول من قبل المستخدم"
             )
         } catch (e: NoCredentialException) {
-            Log.w(tag, "No Google credentials found: ${e.message}")
+            Log.w(tag, "No Google credentials found on device: ${e.message}")
             GoogleAuthResult(
                 success = false,
-                errorMessage = "لا يوجد حساب Google متاح أو مسجل في هذا الجهاز/المحاكي"
+                errorMessage = "تعذر استرداد حساب Google من خدمات Google Play على جهازك. يرجى التأكد من تسجيل الدخول في حساب Google بالجهاز أو استخدام خيار الدخول المباشر بالبريد وكلمة المرور أدناه."
             )
         } catch (e: GetCredentialProviderConfigurationException) {
             Log.e(tag, "Provider configuration error: ${e.message}")
             GoogleAuthResult(
                 success = false,
                 isMissingClientId = true,
-                errorMessage = "خطأ في تكوين مزود Google: تأكد من صحة Web Client ID وربط بصمة SHA-1 في Firebase"
+                errorMessage = "خطأ في تكوين مزود Google: يرجى التحقق من بصمة SHA-1 ومعرف Web Client ID في Firebase Console."
             )
         } catch (e: GetCredentialException) {
             Log.e(tag, "Credential Manager error: ${e.message}")
@@ -211,7 +227,7 @@ class GoogleAuthManager(private val context: Context) {
             GoogleAuthResult(
                 success = false,
                 errorMessage = if (msg.contains("10") || msg.contains("DEVELOPER_ERROR")) {
-                    "خطأ مطور Google (10: DEVELOPER_ERROR): تأكد من صحة Web Client ID وبصمة SHA-1 للـ debug.keystore في Firebase Console"
+                    "خطأ مطور Google (10: DEVELOPER_ERROR): يلزم إضافة بصمة SHA-1 للتطبيق (com.samtecai.sammikrotic) في Firebase Console أسفل إعدادات المشروع."
                 } else {
                     "خطأ في خدمات Google Play: $msg"
                 }
@@ -347,5 +363,13 @@ class GoogleAuthManager(private val context: Context) {
             raw.contains("operation-not-allowed", ignoreCase = true) -> "طريقة تسجيل الدخول هذه غير مفعلة في Firebase Console (Authentication -> Sign-in method)"
             else -> raw
         }
+    }
+
+    fun getPackageName(): String = context.packageName
+
+    companion object {
+        const val SHA1_DEBUG = "64:FB:BF:3E:DD:50:75:13:D3:B8:A7:F5:B7:F2:52:23:19:E1:B9:EF"
+        const val SHA256_DEBUG = "D5:E9:39:11:E1:C1:FF:A3:A1:D1:DC:5E:18:24:0D:A5:4E:02:A8:21:6E:E0:7D:FD:8B:1A:CA:E6:51:28:A9:46"
+        const val DEFAULT_WEB_CLIENT_ID = "668455931031-burt9863pi64rshdlmgenejnj27ep0d0.apps.googleusercontent.com"
     }
 }

@@ -26,13 +26,17 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.ConfirmationNumber
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.LocalAtm
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.RocketLaunch
@@ -42,7 +46,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TwoWheeler
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,18 +58,27 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -126,6 +142,8 @@ fun DashboardScreen(
     val isProductionMode by viewModel.isProductionMode.collectAsState()
 
     var selectedDashboardTab by remember { mutableIntStateOf(0) }
+    var showEmailAuthDialog by remember { mutableStateOf(false) }
+    var showFirebaseConfigDialog by remember { mutableStateOf(false) }
 
     val totalDebt = retailers.sumOf { it.balanceOwed }
     val onlineDevicesCount = devices.count { it.status == "ONLINE" }
@@ -466,6 +484,60 @@ fun DashboardScreen(
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Alternative Sign-in & Setup Options
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showEmailAuthDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MikroTikCyan.copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MikroTikCyan),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .testTag("btn_direct_email_auth")
+                            ) {
+                                Icon(
+                                    Icons.Default.Email,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "الدخول بالبريد",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = CairoFontFamily
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = { showFirebaseConfigDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF64748B)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFCBD5E1)),
+                                modifier = Modifier
+                                    .height(42.dp)
+                                    .testTag("btn_firebase_config_info")
+                            ) {
+                                Icon(
+                                    Icons.Default.Settings,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "بيانات SHA-1",
+                                    fontSize = 11.5.sp,
+                                    fontFamily = CairoFontFamily
                                 )
                             }
                         }
@@ -1230,6 +1302,19 @@ fun DashboardScreen(
         }
     }
     }
+
+    if (showEmailAuthDialog) {
+        EmailAuthDialog(
+            viewModel = viewModel,
+            onDismiss = { showEmailAuthDialog = false }
+        )
+    }
+
+    if (showFirebaseConfigDialog) {
+        FirebaseConfigDialog(
+            onDismiss = { showFirebaseConfigDialog = false }
+        )
+    }
     }
 }
 
@@ -1333,4 +1418,282 @@ fun QuickActionButton(
             )
         }
     }
+}
+
+@Composable
+fun EmailAuthDialog(
+    viewModel: MainViewModel,
+    onDismiss: () -> Unit
+) {
+    var isSignUp by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("mosthassan.ye2@gmail.com") }
+    var password by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    val googleSignInState by viewModel.googleSignInState.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Email,
+                    contentDescription = null,
+                    tint = MikroTikCyan,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isSignUp) "إنشاء حساب سحابي (Firebase)" else "تسجيل الدخول بالبريد (Firebase)",
+                    fontFamily = CairoFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.White
+                )
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "مصادقة حقيقية عبر Firebase Authentication لتأمين ومزامنة شبكتك سحابياً.",
+                    fontFamily = CairoFontFamily,
+                    fontSize = 11.5.sp,
+                    color = TextSecondaryDark,
+                    lineHeight = 16.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Toggle between Sign In and Sign Up
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(CyberDarkCardElevated)
+                        .padding(4.dp)
+                ) {
+                    Button(
+                        onClick = { isSignUp = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (!isSignUp) MikroTikPrimary else Color.Transparent,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("تسجيل دخول", fontSize = 12.sp, fontFamily = CairoFontFamily)
+                    }
+
+                    Button(
+                        onClick = { isSignUp = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSignUp) MikroTikPrimary else Color.Transparent,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("حساب جديد", fontSize = 12.sp, fontFamily = CairoFontFamily)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isSignUp) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("الاسم الكامل", fontFamily = CairoFontFamily, fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = MikroTikCyan) }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("البريد الإلكتروني", fontFamily = CairoFontFamily, fontSize = 12.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = MikroTikCyan) }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("كلمة المرور (6 أحرف أو أكثر)", fontFamily = CairoFontFamily, fontSize = 12.sp) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = MikroTikCyan) },
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = null,
+                                tint = Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                )
+
+                if (googleSignInState.isLoading) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MikroTikCyan)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("جاري التحقق عبر Firebase...", color = MikroTikCyan, fontSize = 12.sp, fontFamily = CairoFontFamily)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (isSignUp) {
+                        viewModel.signUpWithEmail(email, password, name) { success ->
+                            if (success) onDismiss()
+                        }
+                    } else {
+                        viewModel.signInWithEmail(email, password) { success ->
+                            if (success) onDismiss()
+                        }
+                    }
+                },
+                enabled = !googleSignInState.isLoading && email.isNotBlank() && password.length >= 6,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = if (isSignUp) "إنشاء الحساب والمزامنة" else "تسجيل الدخول",
+                    fontFamily = CairoFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء", color = Color(0xFF94A3B8), fontFamily = CairoFontFamily)
+            }
+        },
+        containerColor = CyberDarkSurface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+fun FirebaseConfigDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val packageName = "com.samtecai.sammikrotic"
+    val sha1 = "64:FB:BF:3E:DD:50:75:13:D3:B8:A7:F5:B7:F2:52:23:19:E1:B9:EF"
+    val sha256 = "D5:E9:39:11:E1:C1:FF:A3:A1:D1:DC:5E:18:24:0D:A5:4E:02:A8:21:6E:E0:7D:FD:8B:1A:CA:E6:51:28:A9:46"
+    val webClientId = "668455931031-burt9863pi64rshdlmgenejnj27ep0d0.apps.googleusercontent.com"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    tint = MikroTikCyan,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "بيانات ربط Firebase و Google",
+                    fontFamily = CairoFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color.White
+                )
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "لضمان عمل تسجيل الدخول بنقرة واحدة من Google على الأجهزة الحقيقية، يجب إضافة بصمة SHA-1 أدناه في إعدادات تطبيق Android في Firebase Console.",
+                    fontFamily = CairoFontFamily,
+                    fontSize = 11.5.sp,
+                    color = TextSecondaryDark,
+                    lineHeight = 16.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Package Name
+                Text("اسم الحزمة (Package Name):", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = CairoFontFamily)
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = CyberDarkCardElevated,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Text(packageName, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp))
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // SHA-1 Fingerprint with copy button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("بصمة الشهادة (SHA-1):", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = CairoFontFamily)
+                    TextButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(sha1))
+                            Toast.makeText(context, "تم نسخ SHA-1 إلى الحافظة", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("نسخ", color = MikroTikCyan, fontSize = 11.sp, fontFamily = CairoFontFamily)
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = CyberDarkCardElevated,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                ) {
+                    Text(sha1, color = Color(0xFFA7F3D0), fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp))
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Web Client ID
+                Text("معرّف Web Client ID:", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = CairoFontFamily)
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = CyberDarkCardElevated,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Text(webClientId, color = Color(0xFFE2E8F0), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("إغلاق", fontFamily = CairoFontFamily, fontSize = 12.sp)
+            }
+        },
+        containerColor = CyberDarkSurface,
+        shape = RoundedCornerShape(16.dp)
+    )
 }

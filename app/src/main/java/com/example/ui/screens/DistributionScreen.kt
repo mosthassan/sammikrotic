@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
@@ -64,6 +65,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -85,6 +87,7 @@ import com.example.ui.theme.CyberDarkSurface
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
+import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.ReceiptGreen
 import com.example.ui.theme.StatusOffline
 import com.example.ui.theme.StatusOnline
@@ -113,6 +116,10 @@ fun DistributionScreen(
     var retailerToDelete by remember { mutableStateOf<RetailerEntity?>(null) }
     var retailerForWhatsAppMenu by remember { mutableStateOf<RetailerEntity?>(null) }
 
+    var distributionSubTab by remember { mutableIntStateOf(0) } // 0: نقاط البيع والديون, 1: فواتير المبيعات, 2: مخزن الأصناف بالعدد
+    var showCreateInvoiceDialog by remember { mutableStateOf(false) }
+    var selectedRetailerForInvoice by remember { mutableStateOf<RetailerEntity?>(null) }
+
     val totalDebt = retailers.sumOf { it.balanceOwed }
     val totalActiveCardsWithRetailers = retailers.sumOf { it.activeCardsCount }
 
@@ -126,159 +133,265 @@ fun DistributionScreen(
             ) {
                 Column {
                     Text(
-                        text = "توزيع الكروت للمحلات والبقالات",
+                        text = "المبيعات وتوزيع الكروت للمحلات",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = "متابعة نقاط البيع، تسليم الدفعات، وأرصدة المديونية",
+                        text = "فواتير احترافية، متابعة نقاط البيع، وتسليم الدفعات",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Button(
-                    onClick = {
-                        selectedRetailerForDistribution = retailers.firstOrNull()
-                        showDistributeDialog = true
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
-                    shape = RoundedCornerShape(8.dp),
-                    enabled = retailers.isNotEmpty() && inventoryItems.isNotEmpty()
-                ) {
-                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("تسليم كروت", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = {
+                            selectedRetailerForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.Black)
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("فاتورة مبيعات", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+
+                    Button(
+                        onClick = {
+                            selectedRetailerForDistribution = retailers.firstOrNull()
+                            showDistributeDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = retailers.isNotEmpty() && inventoryItems.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("تسليم كروت", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Debt & Cards Banner
+            // Sub Navigation Tabs Bar
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
-                    border = BorderStroke(1.dp, StatusWarning.copy(alpha = 0.35f)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (distributionSubTab == 0) MikroTikPrimary else CyberDarkSurface,
+                    border = BorderStroke(1.dp, if (distributionSubTab == 0) MikroTikPrimary else CyberBorder),
+                    onClick = { distributionSubTab = 0 },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "إجمالي ديون المحلات",
-                            fontFamily = CairoFontFamily,
-                            fontSize = 11.5.sp,
-                            color = TextSecondaryDark
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${totalDebt.toInt()} ريال",
-                            fontFamily = CairoFontFamily,
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = StatusWarning
-                        )
+                    Row(
+                        modifier = Modifier.padding(vertical = 7.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Store, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (distributionSubTab == 0) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text("نقاط البيع (${retailers.size})", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 0) Color.White else TextSecondaryDark)
                     }
                 }
 
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
-                    border = BorderStroke(1.dp, CyberBorder),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (distributionSubTab == 1) MikroTikPrimary else CyberDarkSurface,
+                    border = BorderStroke(1.dp, if (distributionSubTab == 1) MikroTikPrimary else CyberBorder),
+                    onClick = { distributionSubTab = 1 },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "كروت بحوزة البقالات",
-                            fontFamily = CairoFontFamily,
-                            fontSize = 11.5.sp,
-                            color = TextSecondaryDark
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "$totalActiveCardsWithRetailers كرت",
-                            fontFamily = CairoFontFamily,
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF38BDF8)
-                        )
+                    Row(
+                        modifier = Modifier.padding(vertical = 7.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (distributionSubTab == 1) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text("فواتير المبيعات", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 1) Color.White else TextSecondaryDark)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (distributionSubTab == 2) MikroTikPrimary else CyberDarkSurface,
+                    border = BorderStroke(1.dp, if (distributionSubTab == 2) MikroTikPrimary else CyberBorder),
+                    onClick = { distributionSubTab = 2 },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 7.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (distributionSubTab == 2) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text("المخزن بالعدد", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 2) Color.White else TextSecondaryDark)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Retailers List
-            if (retailers.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = "لا توجد بقالات مسجلة بعد. اضغط إضافة بقالة للبدء.", color = Color.Gray)
+            when (distributionSubTab) {
+                1 -> {
+                    // تبويب فواتير مبيعات الكروت
+                    CardSalesInvoicesSubScreen(
+                        viewModel = viewModel,
+                        onOpenCreateInvoice = {
+                            selectedRetailerForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    items(retailers, key = { it.id }) { retailer ->
-                        RetailerCard(
-                            retailer = retailer,
-                            onCall = {
-                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${retailer.phone}"))
-                                context.startActivity(intent)
-                            },
-                            onWhatsApp = {
-                                if (retailer.phone.isBlank()) {
-                                    Toast.makeText(context, "يرجى إضافة رقم الهاتف للبقالة أولاً لتفعيل الواتساب", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    retailerForWhatsAppMenu = retailer
-                                }
-                            },
-                            onEdit = {
-                                retailerToEdit = retailer
-                            },
-                            onDistribute = {
-                                selectedRetailerForDistribution = retailer
-                                showDistributeDialog = true
-                            },
-                            onQuickPay = {
-                                showQuickPayDialog = retailer
-                            },
-                            onDelete = {
-                                retailerToDelete = retailer
+                2 -> {
+                    // تبويب مخزن الأصناف بالعدد
+                    CardStockCategoryTab(
+                        viewModel = viewModel,
+                        onIssueInvoiceForPackage = { pkgName ->
+                            selectedRetailerForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                else -> {
+                    // تبويب نقاط البيع والديون
+                    // Debt & Cards Banner
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                            border = BorderStroke(1.dp, StatusWarning.copy(alpha = 0.35f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "إجمالي ديون المحلات",
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 11.5.sp,
+                                    color = TextSecondaryDark
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${totalDebt.toInt()} ريال",
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusWarning
+                                )
                             }
-                        )
+                        }
+
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                            border = BorderStroke(1.dp, CyberBorder),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "كروت بحوزة البقالات",
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 11.5.sp,
+                                    color = TextSecondaryDark
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "$totalActiveCardsWithRetailers كرت",
+                                    fontFamily = CairoFontFamily,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8)
+                                )
+                            }
+                        }
                     }
-                    item {
-                        Spacer(modifier = Modifier.height(72.dp))
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Retailers List
+                    if (retailers.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "لا توجد بقالات مسجلة بعد. اضغط إضافة بقالة للبدء.", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(retailers, key = { it.id }) { retailer ->
+                                RetailerCard(
+                                    retailer = retailer,
+                                    onCall = {
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${retailer.phone}"))
+                                        context.startActivity(intent)
+                                    },
+                                    onWhatsApp = {
+                                        if (retailer.phone.isBlank()) {
+                                            Toast.makeText(context, "يرجى إضافة رقم الهاتف للبقالة أولاً لتفعيل الواتساب", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            retailerForWhatsAppMenu = retailer
+                                        }
+                                    },
+                                    onEdit = {
+                                        retailerToEdit = retailer
+                                    },
+                                    onDistribute = {
+                                        selectedRetailerForDistribution = retailer
+                                        showDistributeDialog = true
+                                    },
+                                    onQuickPay = {
+                                        showQuickPayDialog = retailer
+                                    },
+                                    onDelete = {
+                                        retailerToDelete = retailer
+                                    }
+                                )
+                            }
+                            item {
+                                Spacer(modifier = Modifier.height(72.dp))
+                            }
+                        }
                     }
                 }
             }
         }
 
         // FAB to Add Retailer
-        FloatingActionButton(
-            onClick = { showAddRetailerDialog = true },
-            containerColor = MikroTikPrimary,
-            contentColor = Color.White,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp)
-                .testTag("add_retailer_fab")
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 16.dp)
+        if (distributionSubTab == 0) {
+            FloatingActionButton(
+                onClick = { showAddRetailerDialog = true },
+                containerColor = MikroTikPrimary,
+                contentColor = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(20.dp)
+                    .testTag("add_retailer_fab")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "إضافة بقالة")
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("إضافة بقالة", fontWeight = FontWeight.Bold)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "إضافة بقالة")
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("إضافة بقالة", fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -489,6 +602,34 @@ fun DistributionScreen(
                 dismissButton = {
                     TextButton(onClick = { retailerToDelete = null }) {
                         Text("إلغاء")
+                    }
+                }
+            )
+        }
+
+        // نافذة إصدار فاتورة مبيعات كروت احترافية
+        if (showCreateInvoiceDialog) {
+            CreateCardSalesInvoiceDialog(
+                inventoryItems = inventoryItems,
+                retailers = retailers,
+                preSelectedPackageName = null,
+                onDismiss = {
+                    showCreateInvoiceDialog = false
+                    selectedRetailerForInvoice = null
+                },
+                onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes ->
+                    viewModel.issueMultiItemSalesInvoice(
+                        customerName = customerName,
+                        customerPhone = customerPhone,
+                        retailerId = retailerId,
+                        items = items,
+                        paymentType = paymentType,
+                        paidAmount = paidAmount,
+                        notes = notes
+                    ) { invoiceId ->
+                        showCreateInvoiceDialog = false
+                        selectedRetailerForInvoice = null
+                        Toast.makeText(context, "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓", Toast.LENGTH_LONG).show()
                     }
                 }
             )

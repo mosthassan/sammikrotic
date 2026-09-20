@@ -3,7 +3,10 @@ package com.example.data.local
 import com.example.data.local.entity.CardBatchEntity
 import com.example.data.local.entity.CardEntity
 import com.example.data.local.entity.CardPackageEntity
+import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.FinancialVoucherEntity
+import com.example.data.local.entity.InventoryItemEntity
+import com.example.data.local.entity.InventoryMovementEntity
 import com.example.data.local.entity.NetworkAssetEntity
 import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
@@ -577,6 +580,115 @@ object InitialDataSeeder {
             )
         )
         partnerTxs.forEach { db.partnerDao().insertPartnerTransaction(it) }
+
+        // 9. Seed Warehouse Card Stock by Quantity (مخزون الكروت بالعدد والأصناف بدون أرقام تسلسلية)
+        val inv1 = db.inventoryDao().insertItem(
+            InventoryItemEntity(
+                packageName = "باقة 100 ريال سريعة",
+                quantityAvailable = 450,
+                wholesalePrice = 90.0,
+                retailPrice = 100.0
+            )
+        )
+        val inv2 = db.inventoryDao().insertItem(
+            InventoryItemEntity(
+                packageName = "باقة 200 ريال يومية",
+                quantityAvailable = 1200,
+                wholesalePrice = 180.0,
+                retailPrice = 200.0
+            )
+        )
+        val inv3 = db.inventoryDao().insertItem(
+            InventoryItemEntity(
+                packageName = "باقة 500 ريال فايبر",
+                quantityAvailable = 850,
+                wholesalePrice = 450.0,
+                retailPrice = 500.0
+            )
+        )
+        val inv4 = db.inventoryDao().insertItem(
+            InventoryItemEntity(
+                packageName = "باقة 1000 ريال أسبوعية",
+                quantityAvailable = 320,
+                wholesalePrice = 900.0,
+                retailPrice = 1000.0
+            )
+        )
+        val inv5 = db.inventoryDao().insertItem(
+            InventoryItemEntity(
+                packageName = "باقة 2500 ريال نصف شهرية",
+                quantityAvailable = 140,
+                wholesalePrice = 2250.0,
+                retailPrice = 2500.0
+            )
+        )
+
+        // Seed initial supply movements
+        db.inventoryMovementDao().insertMovement(
+            InventoryMovementEntity(
+                packageName = "باقة 200 ريال يومية",
+                movementType = "SUPPLY",
+                quantityChange = 1200,
+                resultingBalance = 1200,
+                referenceNumber = "SUP-2026-001",
+                customerOrSupplier = "المستودع المركزي",
+                unitPrice = 180.0,
+                notes = "توريد رصيد افتتاحي للمخزن بالعدد"
+            )
+        )
+        db.inventoryMovementDao().insertMovement(
+            InventoryMovementEntity(
+                packageName = "باقة 500 ريال فايبر",
+                movementType = "SUPPLY",
+                quantityChange = 850,
+                resultingBalance = 850,
+                referenceNumber = "SUP-2026-002",
+                customerOrSupplier = "المستودع المركزي",
+                unitPrice = 450.0,
+                notes = "توريد رصيد افتتاحي للمخزن بالعدد"
+            )
+        )
+
+        // 10. Seed Sample Professional Multi-Item Card Sales Invoices (فواتير مبيعات كروت محاسبية)
+        val sampleInvoice1 = CardSalesInvoiceEntity(
+            invoiceNumber = "INV-2026-1042",
+            customerName = "بقالة البركة والخير",
+            customerPhone = "771234567",
+            retailerId = r1,
+            invoiceDateMillis = System.currentTimeMillis() - 86400000L * 2,
+            paymentType = "CASH",
+            totalAmount = 18000.0,
+            paidAmount = 18000.0,
+            remainingAmount = 0.0,
+            totalCardsCount = 70,
+            itemsCount = 2,
+            itemsSummary = "50 كرت [باقة 200 ريال يومية] + 20 كرت [باقة 500 ريال فايبر]",
+            itemsJson = """[{"id":"1","packageName":"باقة 200 ريال يومية","quantity":50,"unitPrice":180.0,"retailPrice":200.0,"lineTotal":9000.0},{"id":"2","packageName":"باقة 500 ريال فايبر","quantity":20,"unitPrice":450.0,"retailPrice":500.0,"lineTotal":9000.0}]""",
+            notes = "تم التسليم يداً بيد والدفع نقداً بالكامل",
+            issuerName = "المهندس حسن",
+            status = "PAID"
+        )
+        db.cardSalesInvoiceDao().insertInvoice(sampleInvoice1)
+
+        val sampleInvoice2 = CardSalesInvoiceEntity(
+            invoiceNumber = "INV-2026-1043",
+            customerName = "سوبرماركت النخبة",
+            customerPhone = "777654321",
+            retailerId = r2,
+            invoiceDateMillis = System.currentTimeMillis() - 86400000L,
+            paymentType = "PARTIAL",
+            totalAmount = 45000.0,
+            paidAmount = 30000.0,
+            remainingAmount = 15000.0,
+            totalCardsCount = 60,
+            itemsCount = 2,
+            itemsSummary = "50 كرت [باقة 500 ريال فايبر] + 10 كرت [باقة 1000 ريال أسبوعية]",
+            itemsJson = """[{"id":"3","packageName":"باقة 500 ريال فايبر","quantity":50,"unitPrice":450.0,"retailPrice":500.0,"lineTotal":22500.0},{"id":"4","packageName":"باقة 1000 ريال أسبوعية","quantity":10,"unitPrice":900.0,"retailPrice":1000.0,"lineTotal":9000.0}]""",
+            notes = "دفعة مقدمة 30,000 ريال والمتبقي 15,000 ريال يُسدد نهاية الأسبوع",
+            issuerName = "فهد القدسي",
+            status = "PARTIAL"
+        )
+        db.cardSalesInvoiceDao().insertInvoice(sampleInvoice2)
         } catch (e: Throwable) {
             android.util.Log.e("InitialDataSeeder", "Error while seeding initial data: ${e.message}", e)
         }

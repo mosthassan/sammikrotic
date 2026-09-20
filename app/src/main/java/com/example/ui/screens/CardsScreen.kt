@@ -27,11 +27,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.UploadFile
@@ -99,13 +101,14 @@ fun CardsScreen(
     val availableCount by viewModel.availableCardsCount.collectAsState()
     val distributedCount by viewModel.distributedCardsCount.collectAsState()
     val soldCount by viewModel.soldCardsCount.collectAsState()
+    val inventoryItems by viewModel.inventoryItems.collectAsState()
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
     var selectedStatusFilter by remember { mutableStateOf("الكل") }
-    // 0: استوديو وتصميم الكروت A4, 1: باقات وفئات الكروت, 2: سجل ودفعات المخزن, 3: المخزن الفعلي للأجهزة
-    var screenViewMode by remember { mutableIntStateOf(1) } // الباقات افتراضياً أو الاستوديو
+    // 2: مخزن الأصناف بالعدد, 3: فواتير مبيعات الكروت, 1: باقات الكروت, 0: استوديو A4, 5: سجل أرقام الكروت
+    var screenViewMode by remember { mutableIntStateOf(2) } // المخزن بالعدد افتراضياً بناء على طلب المستخدم
     var showGenerateDialog by remember { mutableStateOf(false) }
     var selectedPackageForBatch by remember { mutableStateOf<CardPackageEntity?>(null) }
     var showImportExternalDialog by remember { mutableStateOf(false) }
@@ -116,6 +119,9 @@ fun CardsScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showStudioDialog by remember { mutableStateOf(false) }
     var selectedCardForStudio by remember { mutableStateOf<CardEntity?>(null) }
+
+    var showCreateInvoiceDialog by remember { mutableStateOf(false) }
+    var preselectedPackageForInvoice by remember { mutableStateOf<String?>(null) }
 
     val statusFilters = listOf("الكل", "المتاحة بالمستودع", "الموزعة للمحلات", "المباعة")
 
@@ -184,7 +190,55 @@ fun CardsScreen(
                 }
             }
             2 -> {
-                // 2: نمط جدول وسجل كروت المخزن
+                // 2: تبويب مخزن الأصناف بالعدد (وينقص تلقائياً في كل عملية بيع ويزداد في حال الإضافة)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    CardsTopNavBar(
+                        activeMode = screenViewMode,
+                        onSelectMode = { screenViewMode = it },
+                        packagesCount = cardPackages.size,
+                        cardsCount = inventoryItems.sumOf { it.quantityAvailable },
+                        onAddManualQuantity = {
+                            selectedPackageForManualCount = cardPackages.firstOrNull()
+                            showManualCountDialog = true
+                        }
+                    )
+
+                    CardStockCategoryTab(
+                        viewModel = viewModel,
+                        onIssueInvoiceForPackage = { pkgName ->
+                            preselectedPackageForInvoice = pkgName
+                            showCreateInvoiceDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            3 -> {
+                // 3: تبويب فواتير مبيعات الكروت المحاسبية الاحترافية
+                Column(modifier = Modifier.fillMaxSize()) {
+                    CardsTopNavBar(
+                        activeMode = screenViewMode,
+                        onSelectMode = { screenViewMode = it },
+                        packagesCount = cardPackages.size,
+                        cardsCount = inventoryItems.sumOf { it.quantityAvailable },
+                        onAddManualQuantity = {
+                            selectedPackageForManualCount = cardPackages.firstOrNull()
+                            showManualCountDialog = true
+                        }
+                    )
+
+                    CardSalesInvoicesSubScreen(
+                        viewModel = viewModel,
+                        onOpenCreateInvoice = {
+                            preselectedPackageForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            5 -> {
+                // 5: نمط جدول وسجل كروت المخزن بالتسلسلات
                 Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
                     CardsTopNavBar(
                         activeMode = screenViewMode,
@@ -365,11 +419,11 @@ fun CardsScreen(
                 }
             }
         }
-        3 -> {
+        4 -> {
             InventoryScreen(
                 viewModel = viewModel,
                 onNavigateToStudio = { screenViewMode = 0 },
-                onNavigateToBatches = { screenViewMode = 2 }
+                onNavigateToBatches = { screenViewMode = 5 }
             )
         }
     }
@@ -651,6 +705,34 @@ fun CardsScreen(
                 }
             )
         }
+
+        // نافذة إصدار فاتورة مبيعات كروت احترافية متعددة الأصناف
+        if (showCreateInvoiceDialog) {
+            CreateCardSalesInvoiceDialog(
+                inventoryItems = inventoryItems,
+                retailers = retailers,
+                preSelectedPackageName = preselectedPackageForInvoice,
+                onDismiss = {
+                    showCreateInvoiceDialog = false
+                    preselectedPackageForInvoice = null
+                },
+                onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes ->
+                    viewModel.issueMultiItemSalesInvoice(
+                        customerName = customerName,
+                        customerPhone = customerPhone,
+                        retailerId = retailerId,
+                        items = items,
+                        paymentType = paymentType,
+                        paidAmount = paidAmount,
+                        notes = notes
+                    ) { invoiceId ->
+                        showCreateInvoiceDialog = false
+                        preselectedPackageForInvoice = null
+                        Toast.makeText(context, "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -817,6 +899,18 @@ fun CardsTopNavBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 NavPill(
+                    selected = activeMode == 2,
+                    icon = Icons.Default.Inventory2,
+                    label = "المخزن بالعدد ($cardsCount)",
+                    onClick = { onSelectMode(2) }
+                )
+                NavPill(
+                    selected = activeMode == 3,
+                    icon = Icons.Default.ReceiptLong,
+                    label = "فواتير المبيعات",
+                    onClick = { onSelectMode(3) }
+                )
+                NavPill(
                     selected = activeMode == 1,
                     icon = Icons.Default.LocalOffer,
                     label = "باقات الكروت ($packagesCount)",
@@ -829,16 +923,10 @@ fun CardsTopNavBar(
                     onClick = { onSelectMode(0) }
                 )
                 NavPill(
-                    selected = activeMode == 2,
+                    selected = activeMode == 5,
                     icon = Icons.Default.ConfirmationNumber,
-                    label = "المخزن ($cardsCount)",
-                    onClick = { onSelectMode(2) }
-                )
-                NavPill(
-                    selected = activeMode == 3,
-                    icon = Icons.Default.Store,
-                    label = "الأجهزة",
-                    onClick = { onSelectMode(3) }
+                    label = "سجل الأرقام",
+                    onClick = { onSelectMode(5) }
                 )
             }
 

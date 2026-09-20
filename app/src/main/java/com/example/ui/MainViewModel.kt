@@ -13,8 +13,10 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.entity.CardBatchEntity
 import com.example.data.local.entity.CardEntity
 import com.example.data.local.entity.CardPackageEntity
+import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.InventoryItemEntity
+import com.example.data.local.entity.InventoryMovementEntity
 import com.example.data.local.entity.NetworkAssetEntity
 import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
@@ -23,6 +25,7 @@ import com.example.data.local.entity.PartnerTransactionEntity
 import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
+import com.example.data.model.CardSalesInvoiceItem
 import com.example.data.model.InvoiceItem
 import com.example.data.model.ParsedInvoiceData
 import com.example.data.repository.NetworkRepository
@@ -354,9 +357,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Inventory Management (مخزن الكروت الفيزيائية)
+    // Inventory Management (مخزن الكروت بالعدد والأصناف)
     val inventoryItems: StateFlow<List<InventoryItemEntity>> = repository.allInventoryItems
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val inventoryMovements: StateFlow<List<InventoryMovementEntity>> = repository.allInventoryMovements
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * إضافة أو توريد كروت للمخزن بالعدد فقط بدون إنشاء أو توليد أرقام كروت
+     */
+    fun addStockToInventory(
+        packageName: String,
+        quantity: Int,
+        wholesalePrice: Double = 0.0,
+        retailPrice: Double = 0.0,
+        notes: String = "",
+        onComplete: (Long) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val newBalance = repository.addStockToInventory(
+                packageName = packageName,
+                quantity = quantity,
+                wholesalePrice = wholesalePrice,
+                retailPrice = retailPrice,
+                notes = notes
+            )
+            onComplete(newBalance)
+        }
+    }
 
     fun saveInventoryItem(
         packageName: String,
@@ -376,6 +405,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteInventoryItem(id: Long) {
+        viewModelScope.launch {
+            repository.deleteInventoryItem(id)
+        }
+    }
+
     fun distributeFromInventory(
         inventoryId: Long,
         retailerId: Long,
@@ -385,6 +420,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val success = repository.distributeFromInventory(inventoryId, retailerId, quantity)
             onResult(success)
+        }
+    }
+
+    // Card Sales Invoices (فواتير مبيعات الكروت متعددة الأصناف)
+    val salesInvoices: StateFlow<List<CardSalesInvoiceEntity>> = repository.allSalesInvoices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalSalesAmount: StateFlow<Double?> = repository.totalSalesAmount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val totalSoldCardsCount: StateFlow<Int?> = repository.totalSoldCardsCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val totalCreditRemaining: StateFlow<Double?> = repository.totalCreditRemaining
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    /**
+     * إصدار فاتورة مبيعات كروت متعددة الأصناف مع الخصم التلقائي من المخزن
+     */
+    fun issueMultiItemSalesInvoice(
+        customerName: String,
+        customerPhone: String = "",
+        retailerId: Long? = null,
+        items: List<CardSalesInvoiceItem>,
+        paymentType: String = "CASH",
+        paidAmount: Double = 0.0,
+        notes: String = "",
+        onComplete: (Long) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+            val invoiceId = repository.issueMultiItemSalesInvoice(
+                customerName = customerName,
+                customerPhone = customerPhone,
+                retailerId = retailerId,
+                items = items,
+                paymentType = paymentType,
+                paidAmount = paidAmount,
+                notes = notes,
+                issuerName = issuer
+            )
+            onComplete(invoiceId)
+        }
+    }
+
+    fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity) {
+        viewModelScope.launch {
+            repository.deleteSalesInvoice(invoice)
+        }
+    }
+
+    /**
+     * تدقيق وتحليل ذكي للفاتورة بواسطة Gemini AI
+     */
+    fun analyzeInvoiceWithAi(
+        invoice: CardSalesInvoiceEntity,
+        items: List<CardSalesInvoiceItem>,
+        onResult: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val prompt = """
+                    أنت مستشار مالي وخبير أنظمة شبكات ميكروتك ومحاسبة نقاط البيع.
+                    قم بتحليل فاتورة مبيعات الكروت التالية وقدم ملخصاً احترافياً موجزاً (3-4 أسطر فقط باللغة العربية):
+                    - رقم الفاتورة: ${invoice.invoiceNumber}
+                    - العميل: ${invoice.customerName}
+                    - نوع الفاتورة: ${invoice.paymentType}
+                    - إجمالي المبلغ: ${invoice.totalAmount} ريال
+                    - المبلغ المدفوع: ${invoice.paidAmount} ريال
+                    - المتبقي (الآجل): ${invoice.remainingAmount} ريال
+                    - إجمالي عدد الكروت المباعة: ${invoice.totalCardsCount} كرت
+                    - تفاصيل الأصناف: ${items.joinToString { "${it.packageName}: ${it.quantity} كرت بسعر جملة ${it.unitPrice} ر.ي (تجزئة ${it.retailPrice} ر.ي)" }}
+                    
+                    اذكر باختصار:
+                    1. هامش ربح البقالة/العميل الإجمالي المتوقع
+                    2. سرعة دوران الأصناف الأكثر سحباً
+                    3. نصيحة لإدارة الائتمان وسداد المبلغ المتبقي إن وجد
+                """.trimIndent()
+                val response = aiService.generateText(prompt)
+                onResult(response)
+            } catch (e: Exception) {
+                onResult("تعذر الاتصال بالمساعد الذكي: ${e.message}")
+            }
         }
     }
 

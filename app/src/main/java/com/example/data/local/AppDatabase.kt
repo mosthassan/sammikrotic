@@ -29,6 +29,10 @@ import com.example.data.local.entity.PartnerTransactionEntity
 import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
+import com.example.data.local.dao.CardSalesInvoiceDao
+import com.example.data.local.dao.InventoryMovementDao
+import com.example.data.local.entity.CardSalesInvoiceEntity
+import com.example.data.local.entity.InventoryMovementEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,9 +52,11 @@ import kotlinx.coroutines.launch
         NetworkAssetEntity::class,
         PartnerTransactionEntity::class,
         InventoryItemEntity::class,
-        PurchaseInvoiceEntity::class
+        PurchaseInvoiceEntity::class,
+        CardSalesInvoiceEntity::class,
+        InventoryMovementEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -65,6 +71,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun networkAssetDao(): NetworkAssetDao
     abstract fun inventoryDao(): InventoryDao
     abstract fun purchaseInvoiceDao(): PurchaseInvoiceDao
+    abstract fun cardSalesInvoiceDao(): CardSalesInvoiceDao
+    abstract fun inventoryMovementDao(): InventoryMovementDao
 
     companion object {
         @Volatile

@@ -14,6 +14,11 @@ import com.example.data.local.entity.PartnerTransactionEntity
 import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
+import com.example.data.local.entity.CardSalesInvoiceEntity
+import com.example.data.local.entity.InventoryMovementEntity
+import com.example.data.model.CardSalesInvoiceItem
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -336,8 +341,9 @@ class NetworkRepository(private val db: AppDatabase) {
         batchId
     }
 
-    // Inventory Management (مخزن الكروت)
+    // Inventory Management (مخزن الكروت بالعدد)
     val allInventoryItems: Flow<List<InventoryItemEntity>> = db.inventoryDao().getAllInventoryItems()
+    val allInventoryMovements: Flow<List<InventoryMovementEntity>> = db.inventoryMovementDao().getAllMovements()
 
     suspend fun saveInventoryItem(item: InventoryItemEntity): Long = withContext(Dispatchers.IO) {
         if (item.id == 0L) {
@@ -350,6 +356,198 @@ class NetworkRepository(private val db: AppDatabase) {
 
     suspend fun deleteInventoryItem(id: Long) = withContext(Dispatchers.IO) {
         db.inventoryDao().deleteItem(id)
+    }
+
+    /**
+     * توريد أو إضافة كمية للمخزن بالعدد فقط بدون إنشاء أو توليد أرقام كروت
+     * يزداد الرصيد المتاح لهذا الصنف تلقائياً ويوثق في سجل حركات المخزن
+     */
+    suspend fun addStockToInventory(
+        packageName: String,
+        quantity: Int,
+        wholesalePrice: Double = 0.0,
+        retailPrice: Double = 0.0,
+        notes: String = ""
+    ): Long = withContext(Dispatchers.IO) {
+        val count = quantity.coerceAtLeast(1)
+        val existingItem = db.inventoryDao().getItemByPackageName(packageName)
+        val finalWholesale = if (wholesalePrice > 0) wholesalePrice else (existingItem?.wholesalePrice ?: 0.0)
+        val finalRetail = if (retailPrice > 0) retailPrice else (existingItem?.retailPrice ?: 0.0)
+
+        val newBalance = if (existingItem != null) {
+            val updatedQty = existingItem.quantityAvailable + count
+            db.inventoryDao().updateItem(
+                existingItem.copy(
+                    quantityAvailable = updatedQty,
+                    wholesalePrice = finalWholesale,
+                    retailPrice = finalRetail
+                )
+            )
+            updatedQty
+        } else {
+            db.inventoryDao().insertItem(
+                InventoryItemEntity(
+                    packageName = packageName,
+                    quantityAvailable = count,
+                    wholesalePrice = finalWholesale,
+                    retailPrice = finalRetail
+                )
+            )
+            count
+        }
+
+        // تسجيل حركة مخزنية رسمية
+        val movement = InventoryMovementEntity(
+            packageName = packageName,
+            movementType = "SUPPLY",
+            quantityChange = count,
+            resultingBalance = newBalance,
+            referenceNumber = "SUP-${System.currentTimeMillis() % 100000}",
+            customerOrSupplier = "المستودع الرئيسي",
+            unitPrice = finalWholesale,
+            notes = notes.ifBlank { "توريد كمية كروت للمخزن (+$count كرت)" }
+        )
+        db.inventoryMovementDao().insertMovement(movement)
+
+        newBalance.toLong()
+    }
+
+    // Card Sales Invoices (فواتير مبيعات الكروت متعددة الأصناف)
+    val allSalesInvoices: Flow<List<CardSalesInvoiceEntity>> = db.cardSalesInvoiceDao().getAllSalesInvoices()
+    val totalSalesAmount: Flow<Double?> = db.cardSalesInvoiceDao().getTotalSalesAmount()
+    val totalSoldCardsCount: Flow<Int?> = db.cardSalesInvoiceDao().getTotalSoldCardsCount()
+    val totalCreditRemaining: Flow<Double?> = db.cardSalesInvoiceDao().getTotalCreditRemaining()
+
+    /**
+     * إصدار فاتورة مبيعات كروت متعددة الأصناف احترافية وفق المعايير المحاسبية
+     * وينقص العدد تلقائياً من كل صنف بالمخزن، مع حساب الإجمالي والمدفوع والمتبقي
+     */
+    suspend fun issueMultiItemSalesInvoice(
+        customerName: String,
+        customerPhone: String = "",
+        retailerId: Long? = null,
+        items: List<CardSalesInvoiceItem>,
+        paymentType: String = "CASH", // "CASH", "CREDIT", "PARTIAL"
+        paidAmount: Double = 0.0,
+        notes: String = "",
+        issuerName: String = "المهندس حسن"
+    ): Long = withContext(Dispatchers.IO) {
+        val totalAmount = items.sumOf { it.lineTotal }
+        val totalCards = items.sumOf { it.quantity }
+
+        val actualPaid = when (paymentType) {
+            "CASH" -> totalAmount
+            "CREDIT" -> 0.0
+            "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
+            else -> paidAmount
+        }
+        val remainingAmount = (totalAmount - actualPaid).coerceAtLeast(0.0)
+        val status = when {
+            remainingAmount <= 0.0 -> "PAID"
+            actualPaid <= 0.0 -> "CREDIT"
+            else -> "PARTIAL"
+        }
+
+        val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
+        val itemsSummary = items.joinToString(" + ") { "${it.quantity} كرت [${it.packageName}]" }
+
+        // JSON serialization of items
+        val jsonArray = JSONArray()
+        items.forEach { item ->
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("packageName", item.packageName)
+                put("quantity", item.quantity)
+                put("unitPrice", item.unitPrice)
+                put("retailPrice", item.retailPrice)
+                put("lineTotal", item.lineTotal)
+            }
+            jsonArray.put(obj)
+        }
+
+        val invoiceEntity = CardSalesInvoiceEntity(
+            invoiceNumber = invoiceNumber,
+            customerName = customerName.ifBlank { "عميل نقدي" },
+            customerPhone = customerPhone,
+            retailerId = retailerId,
+            paymentType = paymentType,
+            totalAmount = totalAmount,
+            paidAmount = actualPaid,
+            remainingAmount = remainingAmount,
+            totalCardsCount = totalCards,
+            itemsCount = items.size,
+            itemsSummary = itemsSummary,
+            itemsJson = jsonArray.toString(),
+            notes = notes,
+            issuerName = issuerName,
+            status = status
+        )
+        val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
+        // خصم الكميات من المخزن لكل صنف وتسجيل حركات الصرف
+        items.forEach { item ->
+            val existing = db.inventoryDao().getItemByPackageName(item.packageName)
+            val newQty = if (existing != null) {
+                val updated = (existing.quantityAvailable - item.quantity).coerceAtLeast(0)
+                db.inventoryDao().updateItem(existing.copy(quantityAvailable = updated))
+                updated
+            } else {
+                db.inventoryDao().insertItem(
+                    InventoryItemEntity(
+                        packageName = item.packageName,
+                        quantityAvailable = 0,
+                        wholesalePrice = item.unitPrice,
+                        retailPrice = item.retailPrice
+                    )
+                )
+                0
+            }
+
+            // قيد حركة مخزنية خارجة (خصم مبيعات)
+            db.inventoryMovementDao().insertMovement(
+                InventoryMovementEntity(
+                    packageName = item.packageName,
+                    movementType = "SALE",
+                    quantityChange = -item.quantity,
+                    resultingBalance = newQty,
+                    referenceNumber = invoiceNumber,
+                    customerOrSupplier = customerName.ifBlank { "عميل نقدي" },
+                    unitPrice = item.unitPrice,
+                    notes = "خصم مبيعات فاتورة رقم $invoiceNumber ($paymentType)"
+                )
+            )
+        }
+
+        // إذا كانت مرتبطة ببقالة، نقيد المديونية المتبقية
+        if (retailerId != null && retailerId > 0) {
+            val retailer = db.retailerDao().getRetailerById(retailerId)
+            if (retailer != null) {
+                db.retailerDao().updateBalanceAndCards(retailerId, remainingAmount, totalCards)
+            }
+        }
+
+        // إذا كان هناك مبلغ مدفوع، ننشئ سند قبض مالي رسمي لضبط الخزينة
+        if (actualPaid > 0) {
+            val voucher = FinancialVoucherEntity(
+                voucherNumber = "REC-2026-${Random.nextInt(1000, 9999)}",
+                voucherType = "RECEIPT",
+                amount = actualPaid,
+                partyName = customerName.ifBlank { "مبيعات كروت نقدية" },
+                retailerId = retailerId,
+                category = "مبيعات كروت",
+                paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
+                description = "متحصلات من فاتورة مبيعات كروت $invoiceNumber - $itemsSummary",
+                issuerName = issuerName,
+                notes = notes
+            )
+            db.financialVoucherDao().insertVoucher(voucher)
+        }
+
+        invoiceId
+    }
+
+    suspend fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity) = withContext(Dispatchers.IO) {
+        db.cardSalesInvoiceDao().deleteInvoice(invoice)
     }
 
     suspend fun distributeFromInventory(

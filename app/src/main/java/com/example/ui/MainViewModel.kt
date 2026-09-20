@@ -1033,20 +1033,82 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _syncStatus = MutableStateFlow("متزامن سحابياً ومحلياً مع Firebase (sam-mikrotic) ☁️⚡")
     val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
 
+    /**
+     * سحب واستعادة البيانات من Firebase إلى قاعدة البيانات المحلية
+     */
+    fun pullDataFromCloud(onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() } ?: authManager.getActiveEmail()
+            val targetLabel = if (!userEmail.isNullOrBlank()) "حساب $userEmail" else "المشروع السحابي"
+            _syncStatus.value = "جارٍ استيراد وتحديث البيانات من السحابة ($targetLabel)..."
+
+            try {
+                val cloudData = firebaseService.pullFromCloud(userEmail)
+                repository.restoreFromCloudData(cloudData)
+                val totalItems = cloudData.devices.size + cloudData.retailers.size + cloudData.vouchers.size +
+                        cloudData.cardPackages.size + cloudData.inventoryItems.size + cloudData.salesInvoices.size
+                if (totalItems > 0) {
+                    _syncStatus.value = "تم استيراد $totalItems سجل بنجاح من السحابة (${cloudData.devices.size} جهاز، ${cloudData.retailers.size} بقالة، ${cloudData.vouchers.size} سند، ${cloudData.cardPackages.size} باقة، ${cloudData.inventoryItems.size} صنف مخزن، ${cloudData.salesInvoices.size} فاتورة) ✓"
+                } else {
+                    _syncStatus.value = "لا توجد بيانات سابقة في السحابة لهذا الحساب ($targetLabel)"
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error pulling data from cloud", e)
+                _syncStatus.value = "تعذر سحب البيانات السحابية: ${e.message}"
+            }
+            onDone()
+        }
+    }
+
+    /**
+     * مزامنة ثنائية كاملة: سحب أحدث بيانات من السحابة ودمجها محلياً، ثم رفع أي بيانات محلية جديدة للسحابة
+     */
     fun triggerCloudSync(onDone: () -> Unit = {}) {
         viewModelScope.launch {
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() } ?: authManager.getActiveEmail()
             val targetLabel = if (!userEmail.isNullOrBlank()) "حساب $userEmail" else "المشروع sam-mikrotic"
-            _syncStatus.value = "جارٍ الاتصال بقاعدة بيانات Firebase ($targetLabel)..."
-            val devList = devices.value
-            val retList = retailers.value
-            val vouchList = vouchers.value
-            val identity = networkIdentity.value
-            val result = firebaseService.syncAllToCloud(devList, retList, vouchList, userEmail, identity)
-            if (result.success) {
-                _syncStatus.value = "تمت المزامنة بنجاح ($targetLabel): ${result.syncedDevicesCount} جهاز، ${result.syncedRetailersCount} بقالة، ${result.syncedVouchersCount} سند، وهوية الشبكة ✓"
-            } else {
-                _syncStatus.value = result.message
+            _syncStatus.value = "جارٍ المزامنة التفاعلية مع السحابة ($targetLabel)..."
+
+            try {
+                // الخطوة 1: سحب أي بيانات مخزنة بالسحابة (مهم جداً للهواتف الجديدة أو الأجهزة المتعددة)
+                val cloudData = firebaseService.pullFromCloud(userEmail)
+                repository.restoreFromCloudData(cloudData)
+
+                // الخطوة 2: رفع كافة البيانات المحلية إلى السحابة
+                val devList = devices.value
+                val retList = retailers.value
+                val vouchList = vouchers.value
+                val pkgList = cardPackages.value
+                val invList = inventoryItems.value
+                val invSalesList = salesInvoices.value
+                val identity = networkIdentity.value
+
+                val result = firebaseService.syncAllToCloud(
+                    devices = devList,
+                    retailers = retList,
+                    vouchers = vouchList,
+                    userEmail = userEmail,
+                    networkIdentity = identity,
+                    cardPackages = pkgList,
+                    inventoryItems = invList,
+                    salesInvoices = invSalesList
+                )
+
+                if (result.success) {
+                    val pulledCount = cloudData.devices.size + cloudData.retailers.size + cloudData.vouchers.size +
+                            cloudData.cardPackages.size + cloudData.inventoryItems.size + cloudData.salesInvoices.size
+                    val msg = if (pulledCount > 0) {
+                        "تمت المزامنة الثنائية بنجاح 🔄 (سحب $pulledCount سجل من السحابة ومزامنة كافة الأجهزة والبقالات والفواتير)"
+                    } else {
+                        "تمت المزامنة بنجاح ($targetLabel): ${result.syncedDevicesCount} جهاز، ${result.syncedRetailersCount} بقالة، ${result.syncedVouchersCount} سند، وهوية الشبكة ✓"
+                    }
+                    _syncStatus.value = msg
+                } else {
+                    _syncStatus.value = result.message
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error during cloud sync", e)
+                _syncStatus.value = "خطأ في المزامنة: ${e.message}"
             }
             onDone()
         }
@@ -1055,7 +1117,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             try {
-                // إزالة كافة البيانات الافتراضية والتجريبية من قاعدة البيانات فورياً والإبقاء على البيانات الفعلية الحقيقية فقط
+                // إزالة البيانات الافتراضية التجريبية المؤقتة فقط
                 repository.purgeDefaultDataOnly()
             } catch (e: Throwable) {
                 Log.e("MainViewModel", "Error purging default data: ${e.message}")
@@ -1068,14 +1130,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("MainViewModel", "Error ensuring super admin: ${e.message}")
             }
 
+            // سحب تلقائي للبيانات السحابية إذا كان المستخدم مسجل دخوله مسبقاً
+            val activeEmail = authManager.getActiveEmail()?.trim()?.lowercase()
+            if (!activeEmail.isNullOrBlank()) {
+                try {
+                    val cloudData = firebaseService.pullFromCloud(activeEmail)
+                    if (cloudData.devices.isNotEmpty() || cloudData.retailers.isNotEmpty() || cloudData.vouchers.isNotEmpty()) {
+                        repository.restoreFromCloudData(cloudData)
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "Auto cloud pull note: ${e.message}")
+                }
+            }
+
             repository.allUsers.collect { list ->
                 if (list.isNotEmpty()) {
-                    val activeEmail = authManager.getActiveEmail()?.trim()?.lowercase()
+                    val currentActiveEmail = authManager.getActiveEmail()?.trim()?.lowercase()
                     val current = _currentUser.value
                     if (current == null) {
                         // Only log in if there is a genuinely active authenticated Google session
-                        if (!activeEmail.isNullOrBlank()) {
-                            val matchedLoggedIn = list.find { it.email.trim().lowercase() == activeEmail }
+                        if (!currentActiveEmail.isNullOrBlank()) {
+                            val matchedLoggedIn = list.find { it.email.trim().lowercase() == currentActiveEmail }
                             if (matchedLoggedIn != null) {
                                 _currentUser.value = matchedLoggedIn
                             }

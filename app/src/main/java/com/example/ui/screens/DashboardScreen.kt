@@ -140,6 +140,7 @@ fun DashboardScreen(
     val totalPayments by viewModel.totalPayments.collectAsState()
     val distributors by viewModel.distributors.collectAsState()
     val isProductionMode by viewModel.isProductionMode.collectAsState()
+    val syncStatus by viewModel.syncStatus.collectAsState()
 
     var selectedDashboardTab by remember { mutableIntStateOf(0) }
     var showEmailAuthDialog by remember { mutableStateOf(false) }
@@ -577,7 +578,36 @@ fun DashboardScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Sync Status Message Box
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = CyberDarkCardElevated.copy(alpha = 0.7f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CloudQueue,
+                                    contentDescription = null,
+                                    tint = MikroTikCyan,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = syncStatus,
+                                    color = Color(0xFFE2E8F0),
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -597,9 +627,23 @@ fun DashboardScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "مزامنة سحابية الآن",
+                                    text = "مزامنة ثنائية (رفع وسحب)",
                                     color = Color.White,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Button(
+                                onClick = { viewModel.pullDataFromCloud() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MikroTikCyan.copy(alpha = 0.2f)),
+                                border = BorderStroke(1.dp, MikroTikCyan),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(
+                                    text = "سحب السحابة ⬇️",
+                                    color = MikroTikCyan,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -610,7 +654,7 @@ fun DashboardScreen(
                                 border = BorderStroke(1.dp, Color(0xFFF87171)),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text("تسجيل الخروج", fontSize = 11.5.sp)
+                                Text("خروج", fontSize = 11.sp)
                             }
                         }
                     }

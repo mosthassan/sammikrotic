@@ -1037,5 +1037,119 @@ class NetworkRepository(private val db: AppDatabase) {
     suspend fun deleteInvoice(invoice: PurchaseInvoiceEntity) = withContext(Dispatchers.IO) {
         db.purchaseInvoiceDao().deleteInvoice(invoice)
     }
+
+    /**
+     * Integrates all cloud-restored data into the local Room database.
+     * Prevents duplication by matching IP/Names/Numbers and updating existing entities or inserting new ones.
+     */
+    suspend fun restoreFromCloudData(cloudData: com.example.data.firebase.CloudPullData) = withContext(Dispatchers.IO) {
+        // 1. Restore Network Identity
+        cloudData.networkIdentity?.let { idEntity ->
+            db.networkIdentityDao().insertOrUpdate(idEntity.copy(id = 1L))
+        }
+
+        // 2. Restore Devices
+        val existingDevices = db.networkDeviceDao().getAllDevices().first()
+        val existingIps = existingDevices.associateBy { it.ipAddress.trim() }
+        val existingDevNames = existingDevices.associateBy { it.name.trim() }
+
+        for (device in cloudData.devices) {
+            val match = existingIps[device.ipAddress.trim()] ?: existingDevNames[device.name.trim()]
+            if (match != null) {
+                db.networkDeviceDao().updateDevice(
+                    device.copy(id = match.id)
+                )
+            } else {
+                db.networkDeviceDao().insertDevice(
+                    device.copy(id = 0L)
+                )
+            }
+        }
+
+        // 3. Restore Retailers
+        val existingRetailers = db.retailerDao().getAllRetailers().first()
+        val existingRetNames = existingRetailers.associateBy { it.name.trim() }
+
+        for (retailer in cloudData.retailers) {
+            val match = existingRetNames[retailer.name.trim()]
+            if (match != null) {
+                db.retailerDao().updateRetailer(
+                    retailer.copy(id = match.id)
+                )
+            } else {
+                db.retailerDao().insertRetailer(
+                    retailer.copy(id = 0L)
+                )
+            }
+        }
+
+        // 4. Restore Financial Vouchers
+        val existingVouchers = db.financialVoucherDao().getAllVouchers().first()
+        val existingVouchNums = existingVouchers.associateBy { it.voucherNumber.trim() }
+
+        for (voucher in cloudData.vouchers) {
+            val match = existingVouchNums[voucher.voucherNumber.trim()]
+            if (match != null) {
+                db.financialVoucherDao().updateVoucher(
+                    voucher.copy(id = match.id)
+                )
+            } else {
+                db.financialVoucherDao().insertVoucher(
+                    voucher.copy(id = 0L)
+                )
+            }
+        }
+
+        // 5. Restore Card Packages
+        val existingPackages = db.cardPackageDao().getAllPackages().first()
+        val existingPkgNames = existingPackages.associateBy { it.name.trim() }
+
+        for (pkg in cloudData.cardPackages) {
+            val match = existingPkgNames[pkg.name.trim()]
+            if (match != null) {
+                db.cardPackageDao().updatePackage(
+                    pkg.copy(id = match.id)
+                )
+            } else {
+                db.cardPackageDao().insertPackage(
+                    pkg.copy(id = 0L)
+                )
+            }
+        }
+
+        // 6. Restore Inventory Items
+        val existingInventory = db.inventoryDao().getAllInventoryItems().first()
+        val existingInvNames = existingInventory.associateBy { it.packageName.trim() }
+
+        for (item in cloudData.inventoryItems) {
+            val match = existingInvNames[item.packageName.trim()]
+            if (match != null) {
+                db.inventoryDao().updateItem(
+                    item.copy(id = match.id)
+                )
+            } else {
+                db.inventoryDao().insertItem(
+                    item.copy(id = 0L)
+                )
+            }
+        }
+
+        // 7. Restore Card Sales Invoices
+        val existingInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+        val existingInvNums = existingInvoices.associateBy { it.invoiceNumber.trim() }
+
+        for (inv in cloudData.salesInvoices) {
+            val match = existingInvNums[inv.invoiceNumber.trim()]
+            if (match != null) {
+                db.cardSalesInvoiceDao().updateInvoice(
+                    inv.copy(id = match.id)
+                )
+            } else {
+                db.cardSalesInvoiceDao().insertInvoice(
+                    inv.copy(id = 0L)
+                )
+            }
+        }
+    }
 }
 

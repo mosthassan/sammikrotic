@@ -1,7 +1,10 @@
 package com.example.data.firebase
 
 import android.util.Log
+import com.example.data.local.entity.CardPackageEntity
+import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.FinancialVoucherEntity
+import com.example.data.local.entity.InventoryItemEntity
 import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
 import com.example.data.local.entity.RetailerEntity
@@ -9,6 +12,7 @@ import com.example.data.local.entity.UserEntity
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -21,7 +25,23 @@ data class CloudSyncResult(
     val userPartition: String = "",
     val syncedDevicesCount: Int = 0,
     val syncedRetailersCount: Int = 0,
-    val syncedVouchersCount: Int = 0
+    val syncedVouchersCount: Int = 0,
+    val pulledDevicesCount: Int = 0,
+    val pulledRetailersCount: Int = 0,
+    val pulledVouchersCount: Int = 0,
+    val pulledPackagesCount: Int = 0,
+    val pulledInventoryCount: Int = 0,
+    val pulledInvoicesCount: Int = 0
+)
+
+data class CloudPullData(
+    val devices: List<NetworkDeviceEntity> = emptyList(),
+    val retailers: List<RetailerEntity> = emptyList(),
+    val vouchers: List<FinancialVoucherEntity> = emptyList(),
+    val cardPackages: List<CardPackageEntity> = emptyList(),
+    val inventoryItems: List<InventoryItemEntity> = emptyList(),
+    val salesInvoices: List<CardSalesInvoiceEntity> = emptyList(),
+    val networkIdentity: NetworkIdentityEntity? = null
 )
 
 class FirebaseDbService {
@@ -78,6 +98,36 @@ class FirebaseDbService {
         }
     }
 
+    private fun getCardPackagesRef(userEmail: String?): CollectionReference? {
+        val fs = firestore ?: return null
+        return if (!userEmail.isNullOrBlank()) {
+            val userKey = sanitizeEmail(userEmail)
+            fs.collection("users").document(userKey).collection("card_packages")
+        } else {
+            fs.collection("card_packages")
+        }
+    }
+
+    private fun getInventoryItemsRef(userEmail: String?): CollectionReference? {
+        val fs = firestore ?: return null
+        return if (!userEmail.isNullOrBlank()) {
+            val userKey = sanitizeEmail(userEmail)
+            fs.collection("users").document(userKey).collection("inventory_items")
+        } else {
+            fs.collection("inventory_items")
+        }
+    }
+
+    private fun getSalesInvoicesRef(userEmail: String?): CollectionReference? {
+        val fs = firestore ?: return null
+        return if (!userEmail.isNullOrBlank()) {
+            val userKey = sanitizeEmail(userEmail)
+            fs.collection("users").document(userKey).collection("card_sales_invoices")
+        } else {
+            fs.collection("card_sales_invoices")
+        }
+    }
+
     private fun getNetworkIdentityDocRef(userEmail: String?): DocumentReference? {
         val fs = firestore ?: return null
         return if (!userEmail.isNullOrBlank()) {
@@ -124,7 +174,10 @@ class FirebaseDbService {
         retailers: List<RetailerEntity>,
         vouchers: List<FinancialVoucherEntity>,
         userEmail: String? = null,
-        networkIdentity: NetworkIdentityEntity? = null
+        networkIdentity: NetworkIdentityEntity? = null,
+        cardPackages: List<CardPackageEntity> = emptyList(),
+        inventoryItems: List<InventoryItemEntity> = emptyList(),
+        salesInvoices: List<CardSalesInvoiceEntity> = emptyList()
     ): CloudSyncResult = withContext(Dispatchers.IO) {
         val fs = firestore ?: return@withContext CloudSyncResult(
             success = false,
@@ -134,6 +187,9 @@ class FirebaseDbService {
             var syncedDevices = 0
             var syncedRetailers = 0
             var syncedVouchers = 0
+            var syncedPackages = 0
+            var syncedInventory = 0
+            var syncedInvoices = 0
 
             // Upload network identity if provided
             if (networkIdentity != null) {
@@ -143,6 +199,9 @@ class FirebaseDbService {
             val devRef = getDevicesRef(userEmail)
             val retRef = getRetailersRef(userEmail)
             val vouchRef = getVouchersRef(userEmail)
+            val pkgRef = getCardPackagesRef(userEmail)
+            val invRef = getInventoryItemsRef(userEmail)
+            val invSalesRef = getSalesInvoicesRef(userEmail)
 
             // Upload user profile meta if email exists
             if (!userEmail.isNullOrBlank()) {
@@ -155,7 +214,10 @@ class FirebaseDbService {
                         "updatedAt" to System.currentTimeMillis(),
                         "devicesCount" to devices.size,
                         "retailersCount" to retailers.size,
-                        "vouchersCount" to vouchers.size
+                        "vouchersCount" to vouchers.size,
+                        "packagesCount" to cardPackages.size,
+                        "inventoryCount" to inventoryItems.size,
+                        "salesInvoicesCount" to salesInvoices.size
                     )
                 )
             }
@@ -163,7 +225,8 @@ class FirebaseDbService {
             // Upload devices
             if (devRef != null) {
                 for (device in devices) {
-                    val docRef = devRef.document(device.id.toString())
+                    val docId = if (device.id > 0) device.id.toString() else (device.ipAddress.ifBlank { device.name })
+                    val docRef = devRef.document(docId)
                     val data = mapOf(
                         "id" to device.id,
                         "name" to device.name,
@@ -194,7 +257,8 @@ class FirebaseDbService {
             // Upload retailers
             if (retRef != null) {
                 for (retailer in retailers) {
-                    val docRef = retRef.document(retailer.id.toString())
+                    val docId = if (retailer.id > 0) retailer.id.toString() else retailer.name
+                    val docRef = retRef.document(docId)
                     val data = mapOf(
                         "id" to retailer.id,
                         "name" to retailer.name,
@@ -238,6 +302,79 @@ class FirebaseDbService {
                 }
             }
 
+            // Upload card packages
+            if (pkgRef != null) {
+                for (pkg in cardPackages) {
+                    val docId = if (pkg.id > 0) pkg.id.toString() else pkg.name
+                    val docRef = pkgRef.document(docId)
+                    val data = mapOf(
+                        "id" to pkg.id,
+                        "name" to pkg.name,
+                        "retailPrice" to pkg.retailPrice,
+                        "wholesalePrice" to pkg.wholesalePrice,
+                        "quotaMb" to pkg.quotaMb,
+                        "validityHours" to pkg.validityHours,
+                        "speedLimit" to pkg.speedLimit,
+                        "mikrotikProfile" to pkg.mikrotikProfile,
+                        "colorTheme" to pkg.colorTheme,
+                        "notes" to pkg.notes,
+                        "createdAt" to pkg.createdAt,
+                        "ownerEmail" to (userEmail ?: "public")
+                    )
+                    setDocAsync(docRef, data)
+                    syncedPackages++
+                }
+            }
+
+            // Upload inventory items
+            if (invRef != null) {
+                for (item in inventoryItems) {
+                    val docId = if (item.id > 0) item.id.toString() else item.packageName
+                    val docRef = invRef.document(docId)
+                    val data = mapOf(
+                        "id" to item.id,
+                        "packageName" to item.packageName,
+                        "quantityAvailable" to item.quantityAvailable,
+                        "wholesalePrice" to item.wholesalePrice,
+                        "retailPrice" to item.retailPrice,
+                        "createdAt" to item.createdAt,
+                        "ownerEmail" to (userEmail ?: "public")
+                    )
+                    setDocAsync(docRef, data)
+                    syncedInventory++
+                }
+            }
+
+            // Upload sales invoices
+            if (invSalesRef != null) {
+                for (invoice in salesInvoices) {
+                    val docRef = invSalesRef.document(invoice.invoiceNumber)
+                    val data = mapOf(
+                        "id" to invoice.id,
+                        "invoiceNumber" to invoice.invoiceNumber,
+                        "customerName" to invoice.customerName,
+                        "customerPhone" to invoice.customerPhone,
+                        "retailerId" to (invoice.retailerId ?: 0L),
+                        "invoiceDateMillis" to invoice.invoiceDateMillis,
+                        "paymentType" to invoice.paymentType,
+                        "totalAmount" to invoice.totalAmount,
+                        "paidAmount" to invoice.paidAmount,
+                        "remainingAmount" to invoice.remainingAmount,
+                        "totalCardsCount" to invoice.totalCardsCount,
+                        "itemsCount" to invoice.itemsCount,
+                        "itemsSummary" to invoice.itemsSummary,
+                        "itemsJson" to invoice.itemsJson,
+                        "notes" to invoice.notes,
+                        "issuerName" to invoice.issuerName,
+                        "status" to invoice.status,
+                        "createdAt" to invoice.createdAt,
+                        "ownerEmail" to (userEmail ?: "public")
+                    )
+                    setDocAsync(docRef, data)
+                    syncedInvoices++
+                }
+            }
+
             val partitionLabel = if (!userEmail.isNullOrBlank()) "حساب $userEmail" else "المستودع العام"
 
             CloudSyncResult(
@@ -246,7 +383,10 @@ class FirebaseDbService {
                 userPartition = userEmail ?: "",
                 syncedDevicesCount = syncedDevices,
                 syncedRetailersCount = syncedRetailers,
-                syncedVouchersCount = syncedVouchers
+                syncedVouchersCount = syncedVouchers,
+                pulledPackagesCount = syncedPackages,
+                pulledInventoryCount = syncedInventory,
+                pulledInvoicesCount = syncedInvoices
             )
         } catch (e: Exception) {
             Log.e(tag, "Failed to sync with Firestore", e)
@@ -465,6 +605,254 @@ class FirebaseDbService {
             Log.e(tag, "Error fetching authorized user from Firestore", e)
             null
         }
+    }
+
+    private suspend fun getCollectionAsync(
+        colRef: CollectionReference
+    ): QuerySnapshot? = suspendCancellableCoroutine { cont ->
+        colRef.get()
+            .addOnSuccessListener { snap ->
+                if (cont.isActive) cont.resume(snap)
+            }
+            .addOnFailureListener { e ->
+                Log.w(tag, "Firestore getCollection note: ${e.message}")
+                if (cont.isActive) cont.resume(null)
+            }
+    }
+
+    private suspend fun getDocumentAsync(
+        docRef: DocumentReference
+    ): com.google.firebase.firestore.DocumentSnapshot? = suspendCancellableCoroutine { cont ->
+        docRef.get()
+            .addOnSuccessListener { snap ->
+                if (cont.isActive) cont.resume(snap)
+            }
+            .addOnFailureListener { e ->
+                Log.w(tag, "Firestore getDocument note: ${e.message}")
+                if (cont.isActive) cont.resume(null)
+            }
+    }
+
+    /**
+     * Pulls all synchronized data from Firestore into local models.
+     * Supports fetching from the user-specific partition (users/{userKey}/...)
+     * with transparent fallback/aggregation from the global root partition.
+     */
+    suspend fun pullFromCloud(userEmail: String? = null): CloudPullData = withContext(Dispatchers.IO) {
+        val fs = firestore ?: return@withContext CloudPullData()
+
+        val pulledDevices = mutableMapOf<String, NetworkDeviceEntity>()
+        val pulledRetailers = mutableMapOf<String, RetailerEntity>()
+        val pulledVouchers = mutableMapOf<String, FinancialVoucherEntity>()
+        val pulledPackages = mutableMapOf<String, CardPackageEntity>()
+        val pulledInventory = mutableMapOf<String, InventoryItemEntity>()
+        val pulledInvoices = mutableMapOf<String, CardSalesInvoiceEntity>()
+        var pulledIdentity: NetworkIdentityEntity? = null
+
+        // 1. Fetch Network Identity
+        try {
+            val idDocRef = getNetworkIdentityDocRef(userEmail)
+            var idSnap = idDocRef?.let { getDocumentAsync(it) }
+            if (idSnap == null || !idSnap.exists()) {
+                // Fallback to global identity if user partition has none
+                val globalIdDoc = fs.collection("settings").document("network_identity")
+                idSnap = getDocumentAsync(globalIdDoc)
+            }
+            if (idSnap != null && idSnap.exists()) {
+                pulledIdentity = NetworkIdentityEntity(
+                    id = 1L,
+                    networkName = idSnap.getString("networkName") ?: "شبكة سام ميكروتك",
+                    ownerName = idSnap.getString("ownerName") ?: "المهندس حسن",
+                    supportPhone = idSnap.getString("supportPhone") ?: "770000001",
+                    supportWhatsapp = idSnap.getString("supportWhatsapp") ?: "770000001",
+                    supportEmail = idSnap.getString("supportEmail") ?: "mosthassan.ye@gmail.com",
+                    networkLocation = idSnap.getString("networkLocation") ?: "صنعاء - اليمن",
+                    routerModel = idSnap.getString("routerModel") ?: "CCR2004-16G-2S+",
+                    routerOsVersion = idSnap.getString("routerOsVersion") ?: "RouterOS v7.18",
+                    approvedDeviceSubnet = idSnap.getString("approvedDeviceSubnet") ?: "192.168.88.0/24",
+                    gatewayIp = idSnap.getString("gatewayIp") ?: "192.168.88.1",
+                    ipRangeStart = idSnap.getString("ipRangeStart") ?: "192.168.88.2",
+                    ipRangeEnd = idSnap.getString("ipRangeEnd") ?: "192.168.88.254",
+                    hotspotSubnet = idSnap.getString("hotspotSubnet") ?: "10.10.10.0/24",
+                    hotspotGatewayIp = idSnap.getString("hotspotGatewayIp") ?: "10.10.10.1",
+                    dnsServers = idSnap.getString("dnsServers") ?: "8.8.8.8, 1.1.1.1",
+                    welcomeNotice = idSnap.getString("welcomeNotice") ?: "مرحباً بكم في شبكة سام ميكروتك السحابية",
+                    updatedAt = idSnap.getLong("updatedAt") ?: System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling network identity", e)
+        }
+
+        // Helper to query documents with user partition first, then optional global fallback
+        suspend fun readCollections(
+            userRef: CollectionReference?,
+            globalRef: CollectionReference?,
+            onDoc: (com.google.firebase.firestore.DocumentSnapshot) -> Unit
+        ) {
+            val userSnap = userRef?.let { getCollectionAsync(it) }
+            if (userSnap != null && !userSnap.isEmpty) {
+                userSnap.documents.forEach { onDoc(it) }
+            } else if (globalRef != null) {
+                val globalSnap = getCollectionAsync(globalRef)
+                globalSnap?.documents?.forEach { onDoc(it) }
+            }
+        }
+
+        // 2. Fetch Devices
+        try {
+            readCollections(getDevicesRef(userEmail), fs.collection("devices")) { doc ->
+                val ip = doc.getString("ipAddress") ?: ""
+                val name = doc.getString("name") ?: "جهاز شبكة"
+                val key = if (ip.isNotBlank()) ip else name
+                pulledDevices[key] = NetworkDeviceEntity(
+                    id = doc.getLong("id") ?: 0L,
+                    name = name,
+                    ipAddress = ip,
+                    macAddress = doc.getString("macAddress") ?: "",
+                    deviceType = doc.getString("deviceType") ?: "ACCESS_POINT",
+                    locationArea = doc.getString("locationArea") ?: "",
+                    portOrInterface = doc.getString("portOrInterface") ?: "",
+                    frequencyOrSsid = doc.getString("frequencyOrSsid") ?: "",
+                    model = doc.getString("model") ?: "",
+                    username = doc.getString("username") ?: "admin",
+                    status = doc.getString("status") ?: "ONLINE",
+                    signalDbm = doc.getLong("signalDbm")?.toInt() ?: -60,
+                    uptimeHours = doc.getLong("uptimeHours")?.toInt() ?: 24,
+                    notes = doc.getString("notes") ?: "",
+                    latitude = doc.getDouble("latitude") ?: 0.0,
+                    longitude = doc.getDouble("longitude") ?: 0.0,
+                    coverageRadiusMeters = doc.getLong("coverageRadiusMeters")?.toInt() ?: doc.getDouble("coverageRadiusMeters")?.toInt() ?: 120,
+                    parentDeviceId = doc.getLong("parentDeviceId"),
+                    createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling devices", e)
+        }
+
+        // 3. Fetch Retailers
+        try {
+            readCollections(getRetailersRef(userEmail), fs.collection("retailers")) { doc ->
+                val rName = doc.getString("name") ?: "بقالة"
+                pulledRetailers[rName] = RetailerEntity(
+                    id = doc.getLong("id") ?: 0L,
+                    name = rName,
+                    ownerName = doc.getString("ownerName") ?: "",
+                    phone = doc.getString("phone") ?: "",
+                    location = doc.getString("location") ?: "",
+                    balanceOwed = doc.getDouble("balanceOwed") ?: 0.0,
+                    totalPaid = doc.getDouble("totalPaid") ?: 0.0,
+                    activeCardsCount = doc.getLong("activeCardsCount")?.toInt() ?: 0,
+                    commissionPercent = doc.getDouble("commissionPercent") ?: 10.0,
+                    notes = doc.getString("notes") ?: "",
+                    createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling retailers", e)
+        }
+
+        // 4. Fetch Vouchers
+        try {
+            readCollections(getVouchersRef(userEmail), fs.collection("vouchers")) { doc ->
+                val vNumber = doc.getString("voucherNumber") ?: doc.id
+                pulledVouchers[vNumber] = FinancialVoucherEntity(
+                    id = doc.getLong("id") ?: 0L,
+                    voucherNumber = vNumber,
+                    voucherType = doc.getString("voucherType") ?: "RECEIPT",
+                    amount = doc.getDouble("amount") ?: 0.0,
+                    partyName = doc.getString("partyName") ?: "",
+                    retailerId = doc.getLong("retailerId")?.takeIf { it != 0L },
+                    category = doc.getString("category") ?: "عام",
+                    paymentMethod = doc.getString("paymentMethod") ?: "CASH",
+                    description = doc.getString("description") ?: "",
+                    dateMillis = doc.getLong("dateMillis") ?: System.currentTimeMillis(),
+                    issuerName = doc.getString("issuerName") ?: "المهندس حسن",
+                    notes = doc.getString("notes") ?: ""
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling vouchers", e)
+        }
+
+        // 5. Fetch Card Packages
+        try {
+            readCollections(getCardPackagesRef(userEmail), fs.collection("card_packages")) { doc ->
+                val pName = doc.getString("name") ?: doc.id
+                pulledPackages[pName] = CardPackageEntity(
+                    id = doc.getLong("id") ?: 0L,
+                    name = pName,
+                    retailPrice = doc.getDouble("retailPrice") ?: 0.0,
+                    wholesalePrice = doc.getDouble("wholesalePrice") ?: 0.0,
+                    quotaMb = doc.getLong("quotaMb") ?: 2500L,
+                    validityHours = doc.getLong("validityHours")?.toInt() ?: 24,
+                    speedLimit = doc.getString("speedLimit") ?: "4M/2M",
+                    mikrotikProfile = doc.getString("mikrotikProfile") ?: "default",
+                    colorTheme = doc.getString("colorTheme") ?: "cyan",
+                    notes = doc.getString("notes") ?: "",
+                    createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling packages", e)
+        }
+
+        // 6. Fetch Inventory Items
+        try {
+            readCollections(getInventoryItemsRef(userEmail), fs.collection("inventory_items")) { doc ->
+                val pkgName = doc.getString("packageName") ?: doc.id
+                pulledInventory[pkgName] = InventoryItemEntity(
+                    id = doc.getLong("id") ?: 0L,
+                    packageName = pkgName,
+                    quantityAvailable = doc.getLong("quantityAvailable")?.toInt() ?: 0,
+                    wholesalePrice = doc.getDouble("wholesalePrice") ?: 0.0,
+                    retailPrice = doc.getDouble("retailPrice") ?: 0.0,
+                    createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling inventory items", e)
+        }
+
+        // 7. Fetch Sales Invoices
+        try {
+            readCollections(getSalesInvoicesRef(userEmail), fs.collection("card_sales_invoices")) { doc ->
+                val invNum = doc.getString("invoiceNumber") ?: doc.id
+                pulledInvoices[invNum] = CardSalesInvoiceEntity(
+                    id = doc.getLong("id") ?: 0L,
+                    invoiceNumber = invNum,
+                    customerName = doc.getString("customerName") ?: "",
+                    customerPhone = doc.getString("customerPhone") ?: "",
+                    retailerId = doc.getLong("retailerId")?.takeIf { it != 0L },
+                    invoiceDateMillis = doc.getLong("invoiceDateMillis") ?: System.currentTimeMillis(),
+                    paymentType = doc.getString("paymentType") ?: "CASH",
+                    totalAmount = doc.getDouble("totalAmount") ?: 0.0,
+                    paidAmount = doc.getDouble("paidAmount") ?: 0.0,
+                    remainingAmount = doc.getDouble("remainingAmount") ?: 0.0,
+                    totalCardsCount = doc.getLong("totalCardsCount")?.toInt() ?: 0,
+                    itemsCount = doc.getLong("itemsCount")?.toInt() ?: 0,
+                    itemsSummary = doc.getString("itemsSummary") ?: "",
+                    itemsJson = doc.getString("itemsJson") ?: "[]",
+                    notes = doc.getString("notes") ?: "",
+                    issuerName = doc.getString("issuerName") ?: "المهندس حسن",
+                    status = doc.getString("status") ?: "PAID",
+                    createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error pulling sales invoices", e)
+        }
+
+        CloudPullData(
+            devices = pulledDevices.values.toList(),
+            retailers = pulledRetailers.values.toList(),
+            vouchers = pulledVouchers.values.toList(),
+            cardPackages = pulledPackages.values.toList(),
+            inventoryItems = pulledInventory.values.toList(),
+            salesInvoices = pulledInvoices.values.toList(),
+            networkIdentity = pulledIdentity
+        )
     }
 
     private suspend fun setDocAsync(

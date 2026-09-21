@@ -569,14 +569,17 @@ class NetworkRepository(private val db: AppDatabase) {
      */
     suspend fun reconcileAccountingLedger() = withContext(Dispatchers.IO) {
         try {
+            // 0. تطهير وحذف أي فواتير وهمية أو متكررة تم توليدها تلقائياً بالخطأ في السابق (INV-DELIV)
+            db.cardSalesInvoiceDao().deleteSyntheticInvoices()
+
             val retailers = db.retailerDao().getAllRetailers().first()
             val initialInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
-            val vouchers = db.financialVoucherDao().getAllVouchers().first()
+            val initialVouchers = db.financialVoucherDao().getAllVouchers().first()
 
             val retailersByName = retailers.associateBy { it.name.trim().lowercase() }
             val retailersById = retailers.associateBy { it.id }
 
-            // 1. ربط أي فاتورة معلقة بالبقالة المطابقة بالاسم إذا لم يكن الـ ID مربوطاً
+            // 1. ربط أي فاتورة أو سند معلق بالبقالة المطابقة بالاسم إذا لم يكن الـ ID مربوطاً
             for (inv in initialInvoices) {
                 if (inv.retailerId == null || inv.retailerId == 0L || !retailersById.containsKey(inv.retailerId)) {
                     val matchedRetailer = retailersByName[inv.customerName.trim().lowercase()]
@@ -586,61 +589,28 @@ class NetworkRepository(private val db: AppDatabase) {
                 }
             }
 
-            // إعادة تحميل الفواتير بعد اكتمال الربط
-            val currentInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first().toMutableList()
-
-            // 2. معالجة وتوليد فواتير تسليم رسمية لأي ديون أو كروت مقيدة على المحلات تسبق نظام الفواتير
-            for (retailer in retailers) {
-                val matchingInvoices = currentInvoices.filter {
-                    it.retailerId == retailer.id ||
-                    it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
-                }
-
-                val currentInvoicedRemaining = matchingInvoices.sumOf { it.remainingAmount }
-                val currentInvoicedCards = matchingInvoices.filter { it.remainingAmount > 0.01 }.sumOf { it.totalCardsCount }
-
-                val unInvoicedDebt = retailer.balanceOwed - currentInvoicedRemaining
-                val unInvoicedCards = (retailer.activeCardsCount - currentInvoicedCards).coerceAtLeast(0)
-
-                // إذا كانت هناك مديونية مسجلة للبقالة تفوق مجموع الفواتير الحالية، ننشئ فاتورة تسليم رسمية بالفرق
-                if (unInvoicedDebt > 1.0) {
-                    val randomNum = Random.nextInt(1000, 9999)
-                    val invoiceNumber = "INV-DELIV-2026-${retailer.id}-$randomNum"
-                    val totalCards = if (unInvoicedCards > 0) unInvoicedCards else (unInvoicedDebt / 350.0).toInt().coerceAtLeast(1)
-                    val newInvoice = CardSalesInvoiceEntity(
-                        invoiceNumber = invoiceNumber,
-                        customerName = retailer.name,
-                        customerPhone = retailer.phone,
-                        retailerId = retailer.id,
-                        paymentType = "CREDIT",
-                        totalAmount = unInvoicedDebt,
-                        paidAmount = 0.0,
-                        remainingAmount = unInvoicedDebt,
-                        totalCardsCount = totalCards,
-                        itemsCount = 1,
-                        itemsSummary = "تسليم وتوزيع كروت سابقة مقيدة على حساب البقالة ($totalCards كرت)",
-                        itemsJson = "",
-                        notes = "فاتورة تسوية ومطابقة محاسبية معتمدة لتسليمات الكروت السابقة",
-                        issuerName = "إدارة التوزيع المحاسبي",
-                        status = "CREDIT",
-                        invoiceDateMillis = if (retailer.createdAt > 0) retailer.createdAt else (System.currentTimeMillis() - 86400000L)
-                    )
-                    db.cardSalesInvoiceDao().insertInvoice(newInvoice)
+            for (v in initialVouchers) {
+                if (v.retailerId == null || v.retailerId == 0L || !retailersById.containsKey(v.retailerId)) {
+                    val matchedRetailer = retailersByName[v.partyName.trim().lowercase()]
+                    if (matchedRetailer != null) {
+                        db.financialVoucherDao().updateVoucher(v.copy(retailerId = matchedRetailer.id))
+                    }
                 }
             }
 
-            // إعادة تحميل الفواتير بعد اكتمال إدراج فواتير التسوية
+            // إعادة تحميل الفواتير والسندات بعد اكتمال توحيد الربط
             val allInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+            val allVouchers = db.financialVoucherDao().getAllVouchers().first()
 
-            // 3. تسوية الدفعات وسندات القبض على فواتير كل بقالة بنظام FIFO المحاسبي
+            // 2. التسوية الدفترية الدقيقة لكل بقالة بناءً على فواتير المبيعات الحقيقية وسندات القبض
             for (retailer in retailers) {
                 val matchingInvoices = allInvoices.filter {
                     it.retailerId == retailer.id ||
                     it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
                 }.sortedBy { it.invoiceDateMillis }
 
-                // السندات المالية المقبوضة المباشرة من البقالة (التي ليست سداداً مسبقاً مسجلاً عند إنشاء الفاتورة)
-                val directPayments = vouchers.filter {
+                // السندات المالية المقبوضة المباشرة من البقالة (سندات سداد مستقلة وليست سندات تم إنشاؤها تلقائياً مع الفاتورة)
+                val directPayments = allVouchers.filter {
                     (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
                     it.voucherType == "RECEIPT" &&
                     !it.description.contains("INV-") &&
@@ -649,63 +619,78 @@ class NetworkRepository(private val db: AppDatabase) {
 
                 var remainingPaymentPool = directPayments
 
-                for (inv in matchingInvoices) {
-                    val baseUnpaid = (inv.totalAmount - (if (inv.paymentType == "CASH") inv.totalAmount else 0.0)).coerceAtLeast(0.0)
-                    if (baseUnpaid <= 0.0) {
-                        if (inv.remainingAmount > 0.0 || inv.status != "PAID") {
+                var totalDebt = 0.0
+                var totalActiveCards = 0
+                var totalPaid = 0.0
+
+                if (matchingInvoices.isNotEmpty()) {
+                    for (inv in matchingInvoices) {
+                        // المبلغ المسدد أصلاً عند إنشاء الفاتورة
+                        val basePaidAtCreation = when (inv.paymentType) {
+                            "CASH" -> inv.totalAmount
+                            "CREDIT" -> 0.0
+                            "PARTIAL" -> (inv.totalAmount - inv.remainingAmount).coerceIn(0.0, inv.totalAmount)
+                            else -> inv.paidAmount.coerceIn(0.0, inv.totalAmount)
+                        }
+                        val baseUnpaid = (inv.totalAmount - basePaidAtCreation).coerceAtLeast(0.0)
+
+                        // تخصيص أي مبالغ من سندات القبض المستقلة بنظام FIFO المحاسبي
+                        val extraPayment = minOf(remainingPaymentPool, baseUnpaid)
+                        remainingPaymentPool = (remainingPaymentPool - extraPayment).coerceAtLeast(0.0)
+
+                        val finalPaid = basePaidAtCreation + extraPayment
+                        val finalRemaining = (inv.totalAmount - finalPaid).coerceAtLeast(0.0)
+                        val finalStatus = when {
+                            finalRemaining <= 0.01 -> "PAID"
+                            finalPaid > 0.01 -> "PARTIAL"
+                            else -> "CREDIT"
+                        }
+
+                        if (Math.abs(inv.paidAmount - finalPaid) > 0.01 ||
+                            Math.abs(inv.remainingAmount - finalRemaining) > 0.01 ||
+                            inv.status != finalStatus) {
                             db.cardSalesInvoiceDao().updateInvoice(
-                                inv.copy(paidAmount = inv.totalAmount, remainingAmount = 0.0, status = "PAID")
+                                inv.copy(
+                                    paidAmount = finalPaid,
+                                    remainingAmount = finalRemaining,
+                                    status = finalStatus
+                                )
                             )
                         }
-                        continue
+
+                        totalDebt += finalRemaining
+                        if (finalRemaining > 0.01) {
+                            totalActiveCards += inv.totalCardsCount
+                        }
+                        totalPaid += finalPaid
                     }
 
-                    val paymentForThisInvoice = minOf(remainingPaymentPool, baseUnpaid)
-                    val newPaid = paymentForThisInvoice
-                    val newRemaining = (baseUnpaid - paymentForThisInvoice).coerceAtLeast(0.0)
-                    val newStatus = when {
-                        newRemaining <= 0.01 -> "PAID"
-                        newPaid > 0.01 -> "PARTIAL"
-                        else -> "CREDIT"
-                    }
+                    // في حال تبقت مبالغ من سندات القبض المستقلة تفوق كل الفواتير
+                    totalDebt = (totalDebt - remainingPaymentPool).coerceAtLeast(0.0)
+                    totalPaid += remainingPaymentPool
 
-                    if (Math.abs(inv.paidAmount - newPaid) > 0.01 || Math.abs(inv.remainingAmount - newRemaining) > 0.01 || inv.status != newStatus) {
-                        db.cardSalesInvoiceDao().updateInvoice(
-                            inv.copy(
-                                paidAmount = newPaid,
-                                remainingAmount = newRemaining,
-                                status = newStatus
+                    // ضبط رصيد البقالة بدقة متناهية 100% ليطابق فواتيرها وسنداتها
+                    if (Math.abs(retailer.balanceOwed - totalDebt) > 0.01 ||
+                        retailer.activeCardsCount != totalActiveCards ||
+                        Math.abs(retailer.totalPaid - totalPaid) > 0.01) {
+                        db.retailerDao().updateRetailer(
+                            retailer.copy(
+                                balanceOwed = totalDebt,
+                                activeCardsCount = totalActiveCards,
+                                totalPaid = totalPaid
                             )
                         )
                     }
-
-                    remainingPaymentPool = (remainingPaymentPool - paymentForThisInvoice).coerceAtLeast(0.0)
-                }
-            }
-
-            // 4. ضبط الأرصدة والكروت النهائية المسجلة للبقالات لتطابق فواتير المبيعات بعد التسوية
-            val finalInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
-
-            for (retailer in retailers) {
-                val matchingInvoices = finalInvoices.filter {
-                    it.retailerId == retailer.id ||
-                    it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
-                }
-
-                val finalDebt = matchingInvoices.sumOf { it.remainingAmount }
-                val finalCards = matchingInvoices.filter { it.remainingAmount > 0.01 }.sumOf { it.totalCardsCount }
-                val totalPaid = matchingInvoices.sumOf { it.paidAmount }
-
-                if (Math.abs(retailer.balanceOwed - finalDebt) > 0.01 ||
-                    retailer.activeCardsCount != finalCards ||
-                    Math.abs(retailer.totalPaid - totalPaid) > 0.01) {
-                    db.retailerDao().updateRetailer(
-                        retailer.copy(
-                            balanceOwed = finalDebt,
-                            activeCardsCount = finalCards,
-                            totalPaid = totalPaid
+                } else {
+                    // إذا لم توجد فواتير مبيعات مسجلة للبقالة (مثلاً بقالة مسجلة حديثاً بدون حركات بعد)
+                    // نخصم أي سندات قبض مباشرة إن وجدت
+                    if (directPayments > 0.0) {
+                        val newDebt = (retailer.balanceOwed - directPayments).coerceAtLeast(0.0)
+                        val newPaid = retailer.totalPaid + directPayments
+                        db.retailerDao().updateRetailer(
+                            retailer.copy(balanceOwed = newDebt, totalPaid = newPaid)
                         )
-                    )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -1258,9 +1243,9 @@ class NetworkRepository(private val db: AppDatabase) {
                 DELETE FROM inventory_items WHERE packageName IN ('باقة 100 ريال سريعة', 'باقة 200 ريال يومية', 'باقة 500 ريال فايبر', 'باقة 1000 ريال أسبوعية', 'باقة 2500 ريال نصف شهرية')
             """.trimIndent())
 
-            // 8. حذف فواتير المبيعات الافتراضية
+            // 8. حذف فواتير المبيعات الافتراضية والفواتير الوهمية
             sqlDb.execSQL("""
-                DELETE FROM card_sales_invoices WHERE invoiceNumber IN ('INV-2026-1042', 'INV-2026-1043')
+                DELETE FROM card_sales_invoices WHERE invoiceNumber IN ('INV-2026-1042', 'INV-2026-1043') OR invoiceNumber LIKE 'INV-DELIV-%'
             """.trimIndent())
 
             // 9. حذف المستخدمين التجريبيين الافتراضيين

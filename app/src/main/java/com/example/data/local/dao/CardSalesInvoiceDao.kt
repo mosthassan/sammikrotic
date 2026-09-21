@@ -40,4 +40,7 @@ interface CardSalesInvoiceDao {
 
     @Query("DELETE FROM card_sales_invoices")
     suspend fun deleteAllInvoices()
+
+    @Query("DELETE FROM card_sales_invoices WHERE invoiceNumber LIKE 'INV-DELIV-%'")
+    suspend fun deleteSyntheticInvoices()
 }

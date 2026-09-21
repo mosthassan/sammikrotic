@@ -348,6 +348,9 @@ class FirebaseDbService {
             // Upload sales invoices
             if (invSalesRef != null) {
                 for (invoice in salesInvoices) {
+                    if (invoice.invoiceNumber.startsWith("INV-DELIV-")) {
+                        continue // لا ترفع أي فواتير وهمية أو آلية تم إلغاؤها
+                    }
                     val docRef = invSalesRef.document(invoice.invoiceNumber)
                     val data = mapOf(
                         "id" to invoice.id,
@@ -819,6 +822,11 @@ class FirebaseDbService {
         try {
             readCollections(getSalesInvoicesRef(userEmail), fs.collection("card_sales_invoices")) { doc ->
                 val invNum = doc.getString("invoiceNumber") ?: doc.id
+                if (invNum.startsWith("INV-DELIV-")) {
+                    // حذف وتجاهل أي فاتورة تسليم وهمية سابقة من السحابة
+                    try { doc.reference.delete() } catch (_: Exception) {}
+                    return@readCollections
+                }
                 pulledInvoices[invNum] = CardSalesInvoiceEntity(
                     id = doc.getLong("id") ?: 0L,
                     invoiceNumber = invNum,

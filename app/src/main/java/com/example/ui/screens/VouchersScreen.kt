@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Receipt
@@ -43,6 +44,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -226,6 +228,7 @@ fun VouchersListSubScreen(
 
     var selectedTypeFilter by remember { mutableStateOf("الكل") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var voucherToClone by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
     var voucherToPreview by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
     var voucherToDelete by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
 
@@ -355,6 +358,11 @@ fun VouchersListSubScreen(
                         val linkedRetailer = retailers.firstOrNull { it.id == voucher.retailerId }
                         VoucherItemCard(
                             voucher = voucher,
+                            onClone = {
+                                voucherToClone = voucher
+                                showAddDialog = true
+                                Toast.makeText(context, "تم نسخ تفاصيل السند لتسجيل سند جديد بسهولة", Toast.LENGTH_SHORT).show()
+                            },
                             onPreview = { voucherToPreview = voucher },
                             onWhatsAppShare = {
                                 val msg = WhatsAppHelper.generateVoucherMessage(voucher, linkedRetailer?.phone)
@@ -400,7 +408,10 @@ fun VouchersListSubScreen(
             }
 
             FloatingActionButton(
-                onClick = { showAddDialog = true },
+                onClick = {
+                    voucherToClone = null
+                    showAddDialog = true
+                },
                 containerColor = MikroTikPrimary,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(16.dp),
@@ -421,7 +432,11 @@ fun VouchersListSubScreen(
         if (showAddDialog) {
             AddVoucherDialog(
                 retailers = retailers,
-                onDismiss = { showAddDialog = false },
+                voucherToClone = voucherToClone,
+                onDismiss = {
+                    showAddDialog = false
+                    voucherToClone = null
+                },
                 onSave = { type, amount, party, retailerId, cat, method, desc, shareWhatsApp ->
                     viewModel.createVoucher(
                         voucherType = type,
@@ -433,6 +448,7 @@ fun VouchersListSubScreen(
                         description = desc
                     ) {
                         showAddDialog = false
+                        voucherToClone = null
                         Toast.makeText(context, "تم إصدار السند المالي بنجاح ✓", Toast.LENGTH_SHORT).show()
 
                         if (shareWhatsApp) {
@@ -552,6 +568,7 @@ fun VoucherSummaryCard(
 @Composable
 fun VoucherItemCard(
     voucher: FinancialVoucherEntity,
+    onClone: () -> Unit,
     onPreview: () -> Unit,
     onWhatsAppShare: () -> Unit,
     onDelete: () -> Unit
@@ -646,6 +663,10 @@ fun VoucherItemCard(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(onClick = onClone, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "استنساخ السند", tint = InvestmentGold, modifier = Modifier.size(15.dp))
+                    }
+
                     Button(
                         onClick = onWhatsAppShare,
                         colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen.copy(alpha = 0.15f)),
@@ -681,16 +702,18 @@ fun VoucherItemCard(
 @Composable
 fun AddVoucherDialog(
     retailers: List<com.example.data.local.entity.RetailerEntity>,
+    voucherToClone: FinancialVoucherEntity? = null,
     onDismiss: () -> Unit,
     onSave: (String, Double, String, Long?, String, String, String, Boolean) -> Unit
 ) {
-    var voucherType by remember { mutableStateOf("RECEIPT") } // RECEIPT or PAYMENT
-    var amountText by remember { mutableStateOf("") }
-    var partyName by remember { mutableStateOf("") }
-    var selectedRetailerId by remember { mutableStateOf<Long?>(null) }
-    var category by remember { mutableStateOf("توريد مبيعات كروت") }
-    var paymentMethod by remember { mutableStateOf("نقداً") }
-    var description by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    var voucherType by remember(voucherToClone) { mutableStateOf(voucherToClone?.voucherType ?: "RECEIPT") } // RECEIPT or PAYMENT
+    var amountText by remember(voucherToClone) { mutableStateOf(voucherToClone?.let { it.amount.toInt().toString() } ?: "") }
+    var partyName by remember(voucherToClone) { mutableStateOf(voucherToClone?.partyName ?: "") }
+    var selectedRetailerId by remember(voucherToClone) { mutableStateOf<Long?>(voucherToClone?.retailerId) }
+    var category by remember(voucherToClone) { mutableStateOf(voucherToClone?.category ?: "توريد مبيعات كروت") }
+    var paymentMethod by remember(voucherToClone) { mutableStateOf(voucherToClone?.paymentMethod ?: "نقداً") }
+    var description by remember(voucherToClone) { mutableStateOf(voucherToClone?.description ?: "") }
     var shareViaWhatsApp by remember { mutableStateOf(false) }
 
     var isRetailerDropdownExpanded by remember { mutableStateOf(false) }
@@ -699,7 +722,7 @@ fun AddVoucherDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = if (voucherType == "RECEIPT") "إصدار سند قبض مالي (توريد)" else "إصدار سند صرف مالي (مصروفات)",
+                text = if (voucherToClone != null) "استنساخ سند مالي وتعديله" else if (voucherType == "RECEIPT") "إصدار سند قبض مالي (توريد)" else "إصدار سند صرف مالي (مصروفات)",
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
@@ -876,21 +899,30 @@ fun AddVoucherDialog(
             Button(
                 onClick = {
                     val amt = amountText.toDoubleOrNull() ?: 0.0
-                    if (amt > 0 && partyName.isNotBlank()) {
+                    if (!isSaving && amt > 0 && partyName.isNotBlank()) {
+                        isSaving = true
                         onSave(voucherType, amt, partyName.trim(), selectedRetailerId, category.trim(), paymentMethod.trim(), description.trim(), shareViaWhatsApp)
                     }
                 },
-                enabled = amountText.toDoubleOrNull() != null && partyName.isNotBlank(),
+                enabled = !isSaving && amountText.toDoubleOrNull() != null && partyName.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (shareViaWhatsApp) WhatsAppDarkGreen else (if (voucherType == "RECEIPT") ReceiptGreen else PaymentRed)
                 )
             ) {
-                if (shareViaWhatsApp) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الحفظ...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else if (shareViaWhatsApp) {
                     Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("إصدار ومشاركة واتساب", color = Color.White)
+                    Text("إصدار ومشاركة واتساب", color = Color.White, fontWeight = FontWeight.Bold)
                 } else {
-                    Text("إصدار السند", color = Color.White)
+                    Text(if (voucherToClone != null) "حفظ السند المستنسخ" else "إصدار السند", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         },

@@ -20,6 +20,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1476,14 +1477,28 @@ fun PlantDeviceAtLocationDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var ipAddress by remember { mutableStateOf("192.168.88.") }
-    var deviceType by remember { mutableStateOf("Access Point") }
+    var deviceType by remember { mutableStateOf("مرسل") }
     var coverageRadius by remember { mutableFloatStateOf(300f) }
     var selectedParentId by remember { mutableStateOf<Long?>(allDevices.firstOrNull()?.id) }
 
     var isTypeMenuExpanded by remember { mutableStateOf(false) }
     var isParentMenuExpanded by remember { mutableStateOf(false) }
 
-    val deviceTypes = listOf("Access Point", "Sector Antenna", "MikroTik RouterBOARD", "CPE", "Switch")
+    val commonDeviceTypes = listOf(
+        "مرسل",
+        "مستقبل",
+        "لاقط",
+        "مرسل (Transmitter / AP)",
+        "مستقبل (Receiver / Station)",
+        "لاقط (CPE / Station / Dish)",
+        "Access Point",
+        "Sector Antenna",
+        "MikroTik RouterBOARD",
+        "CPE",
+        "Switch",
+        "صحن توجيهي (Dish)",
+        "Fiber OLT / ONU"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1518,31 +1533,94 @@ fun PlantDeviceAtLocationDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Device Type Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = isTypeMenuExpanded,
-                    onExpandedChange = { isTypeMenuExpanded = it }
-                ) {
-                    OutlinedTextField(
-                        value = deviceType,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("نوع الجهاز") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeMenuExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
+                // Device Type Dropdown & Free-text writable field + Quick Preset Chips
+                Column {
+                    ExposedDropdownMenuBox(
                         expanded = isTypeMenuExpanded,
-                        onDismissRequest = { isTypeMenuExpanded = false }
+                        onExpandedChange = { isTypeMenuExpanded = it }
                     ) {
-                        deviceTypes.forEach { type ->
-                            DropdownMenuItem(
-                                text = { Text(type) },
-                                onClick = {
-                                    deviceType = type
+                        OutlinedTextField(
+                            value = deviceType,
+                            onValueChange = {
+                                deviceType = it
+                                isTypeMenuExpanded = true
+                            },
+                            readOnly = false,
+                            label = { Text("نوع الجهاز * (اختر أو اكتب يدوياً)") },
+                            placeholder = { Text("مثال: مرسل، مستقبل، لاقط، Access Point...") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeMenuExpanded) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+
+                        val matchingTypes = if (deviceType.isBlank()) {
+                            commonDeviceTypes
+                        } else {
+                            val filtered = commonDeviceTypes.filter { it.contains(deviceType.trim(), ignoreCase = true) }
+                            if (filtered.isNotEmpty()) filtered else commonDeviceTypes
+                        }
+
+                        ExposedDropdownMenu(
+                            expanded = isTypeMenuExpanded,
+                            onDismissRequest = { isTypeMenuExpanded = false }
+                        ) {
+                            matchingTypes.forEach { type ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            val typeIcon = when {
+                                                type.contains("راوتر", ignoreCase = true) || type.contains("Router", ignoreCase = true) -> Icons.Default.Router
+                                                type.contains("سيكتور", ignoreCase = true) || type.contains("مرسل", ignoreCase = true) -> Icons.Default.CellTower
+                                                type.contains("مستقبل", ignoreCase = true) || type.contains("لاقط", ignoreCase = true) || type.contains("CPE", ignoreCase = true) -> Icons.Default.NetworkCheck
+                                                else -> Icons.Default.Wifi
+                                            }
+                                            Icon(typeIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(type)
+                                        }
+                                    },
+                                    onClick = {
+                                        deviceType = type
+                                        isTypeMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Quick selection chips
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "اختيار سريع بنقرة واحدة:",
+                        fontSize = 11.sp,
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val quickChips = listOf("مرسل", "مستقبل", "لاقط", "Access Point", "RouterBOARD", "سيكتور", "Switch", "CPE")
+                        items(quickChips) { chip ->
+                            val isSelected = deviceType.trim().equals(chip, ignoreCase = true)
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent),
+                                modifier = Modifier.clickable {
+                                    deviceType = chip
                                     isTypeMenuExpanded = false
                                 }
-                            )
+                            ) {
+                                Text(
+                                    text = chip,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1605,7 +1683,7 @@ fun PlantDeviceAtLocationDialog(
             Button(
                 onClick = {
                     if (name.isNotBlank() && ipAddress.isNotBlank()) {
-                        onSave(name, deviceType, ipAddress, coverageRadius.roundToInt(), selectedParentId)
+                        onSave(name.trim(), deviceType.trim().ifBlank { "مرسل" }, ipAddress.trim(), coverageRadius.roundToInt(), selectedParentId)
                     }
                 },
                 enabled = name.isNotBlank() && ipAddress.isNotBlank()

@@ -311,6 +311,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .map { it ?: NetworkIdentityEntity() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, NetworkIdentityEntity())
 
+    val sarToYerRate: StateFlow<Double> = networkIdentity
+        .map { if (it.sarToYerRate > 0) it.sarToYerRate else 430.0 }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 430.0)
+
+    val usdToYerRate: StateFlow<Double> = networkIdentity
+        .map { if (it.usdToYerRate > 0) it.usdToYerRate else 1630.0 }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 1630.0)
+
+    fun convertToYer(amount: Double, fromCurrency: String): Double {
+        val identity = networkIdentity.value
+        return com.example.util.CurrencyHelper.convertToYer(
+            amount,
+            fromCurrency,
+            if (identity.sarToYerRate > 0) identity.sarToYerRate else 430.0,
+            if (identity.usdToYerRate > 0) identity.usdToYerRate else 1630.0
+        )
+    }
+
+    fun reconcileAccountingLedger(onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.reconcileAccountingLedger()
+            onComplete()
+        }
+    }
+
     fun saveNetworkIdentity(identity: NetworkIdentityEntity, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             repository.saveNetworkIdentity(identity)
@@ -1128,6 +1153,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.ensureSuperAdminExists()
             } catch (e: Throwable) {
                 Log.e("MainViewModel", "Error ensuring super admin: ${e.message}")
+            }
+
+            try {
+                // تسوية ومطابقة الحسابات والديون المحاسبية فورياً لضمان التزامن التام
+                repository.reconcileAccountingLedger()
+            } catch (e: Throwable) {
+                Log.e("MainViewModel", "Error reconciling ledger: ${e.message}")
             }
 
             // سحب تلقائي للبيانات السحابية إذا كان المستخدم مسجل دخوله مسبقاً

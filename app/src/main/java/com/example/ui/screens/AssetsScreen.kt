@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Edit
@@ -39,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -76,6 +78,7 @@ import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
 import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.StatusOnline
+import com.example.util.CurrencyHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -88,6 +91,7 @@ fun AssetsScreen(
     val assets by viewModel.assets.collectAsState()
     val totalPurchaseCost by viewModel.totalAssetPurchaseCost.collectAsState()
     val totalCurrentAssetValue by viewModel.totalCurrentAssetValue.collectAsState()
+    val networkIdentity by viewModel.networkIdentity.collectAsState()
     val context = LocalContext.current
 
     var selectedCategoryFilter by remember { mutableStateOf("الكل") }
@@ -356,6 +360,16 @@ fun AssetsScreen(
                 items(filteredAssets, key = { it.id }) { asset ->
                     AssetCard(
                         asset = asset,
+                        onClone = {
+                            assetToEdit = asset.copy(
+                                id = 0L,
+                                assetName = "${asset.assetName} (نسخة)",
+                                serialNumber = "",
+                                purchaseDateMillis = System.currentTimeMillis()
+                            )
+                            showAddAssetDialog = true
+                            Toast.makeText(context, "تم استنساخ الأصل. قم بتعديل التفاصيل ثم احفظ", Toast.LENGTH_SHORT).show()
+                        },
                         onEdit = {
                             assetToEdit = asset
                             showAddAssetDialog = true
@@ -444,6 +458,8 @@ fun AssetsScreen(
     if (showAddAssetDialog) {
         AddEditAssetDialog(
             assetToEdit = assetToEdit,
+            sarToYerRate = if (networkIdentity.sarToYerRate > 0) networkIdentity.sarToYerRate else 430.0,
+            usdToYerRate = if (networkIdentity.usdToYerRate > 0) networkIdentity.usdToYerRate else 1630.0,
             onDismiss = { showAddAssetDialog = false },
             onSave = { asset ->
                 viewModel.saveAsset(asset) {
@@ -484,6 +500,7 @@ fun AssetsScreen(
 @Composable
 fun AssetCard(
     asset: NetworkAssetEntity,
+    onClone: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onShare: () -> Unit
@@ -575,6 +592,14 @@ fun AssetCard(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    if (asset.currency.isNotBlank() && asset.currency != "YER" && asset.originalCost > 0) {
+                        Text(
+                            text = CurrencyHelper.formatAmount(asset.originalCost, asset.currency),
+                            fontSize = 10.sp,
+                            color = InvestmentGold,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -618,6 +643,9 @@ fun AssetCard(
                 IconButton(onClick = onShare, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Share, contentDescription = "مشاركة", tint = MikroTikCyan, modifier = Modifier.size(18.dp))
                 }
+                IconButton(onClick = onClone, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "استنساخ الأصل", tint = InvestmentGold, modifier = Modifier.size(18.dp))
+                }
                 IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
@@ -633,17 +661,26 @@ fun AssetCard(
 @Composable
 fun AddEditAssetDialog(
     assetToEdit: NetworkAssetEntity?,
+    sarToYerRate: Double,
+    usdToYerRate: Double,
     onDismiss: () -> Unit,
     onSave: (NetworkAssetEntity) -> Unit
 ) {
-    var name by remember { mutableStateOf(assetToEdit?.assetName ?: "") }
-    var category by remember { mutableStateOf(assetToEdit?.category ?: "SERVERS") }
-    var purchaseCostText by remember { mutableStateOf(assetToEdit?.purchaseCost?.toInt()?.toString() ?: "") }
-    var currentValueText by remember { mutableStateOf(assetToEdit?.estimatedCurrentValue?.toInt()?.toString() ?: "") }
-    var location by remember { mutableStateOf(assetToEdit?.location ?: "") }
-    var serialNumber by remember { mutableStateOf(assetToEdit?.serialNumber ?: "") }
-    var status by remember { mutableStateOf(assetToEdit?.status ?: "ACTIVE") }
-    var notes by remember { mutableStateOf(assetToEdit?.notes ?: "") }
+    var isSaving by remember { mutableStateOf(false) }
+    var name by remember(assetToEdit) { mutableStateOf(assetToEdit?.assetName ?: "") }
+    var category by remember(assetToEdit) { mutableStateOf(assetToEdit?.category ?: "SERVERS") }
+    var selectedCurrency by remember(assetToEdit) { mutableStateOf(assetToEdit?.currency?.ifBlank { "YER" } ?: "YER") }
+
+    val initialCost = if (assetToEdit != null && assetToEdit.currency != "YER" && assetToEdit.originalCost > 0) {
+        assetToEdit.originalCost
+    } else {
+        assetToEdit?.purchaseCost ?: 0.0
+    }
+    var purchaseCostText by remember(assetToEdit) { mutableStateOf(if (initialCost > 0) initialCost.toInt().toString() else "") }
+    var currentValueText by remember(assetToEdit) { mutableStateOf(assetToEdit?.estimatedCurrentValue?.toInt()?.toString() ?: "") }
+    var location by remember(assetToEdit) { mutableStateOf(assetToEdit?.location ?: "") }
+    var serialNumber by remember(assetToEdit) { mutableStateOf(assetToEdit?.serialNumber ?: "") }
+    var notes by remember(assetToEdit) { mutableStateOf(assetToEdit?.notes ?: "") }
 
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -655,11 +692,17 @@ fun AddEditAssetDialog(
         "OTHER" to "أدوات ومعدات أخرى"
     )
 
+    // Calculate converted cost in YER
+    val rawEnteredCost = purchaseCostText.toDoubleOrNull() ?: 0.0
+    val equivalentYerCost = CurrencyHelper.convertToYer(rawEnteredCost, selectedCurrency, sarToYerRate, usdToYerRate)
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = if (assetToEdit == null) "إضافة أصل رأسمالي جديد" else "تعديل بيانات الأصل",
+                text = if (assetToEdit == null || assetToEdit.id == 0L) {
+                    if (assetToEdit?.id == 0L) "استنساخ وتسجيل أصل جديد" else "إضافة أصل رأسمالي جديد"
+                } else "تعديل بيانات الأصل",
                 fontWeight = FontWeight.Bold
             )
         },
@@ -703,6 +746,42 @@ fun AddEditAssetDialog(
                     }
                 }
 
+                // Currency selector chips
+                Column {
+                    Text("عملة الشراء والفاتورة:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            CurrencyHelper.CURRENCY_YER to "ريال يمني",
+                            CurrencyHelper.CURRENCY_SAR to "ريال سعودي",
+                            CurrencyHelper.CURRENCY_USD to "دولار أمريكي"
+                        ).forEach { (cKey, cLabel) ->
+                            val isSelected = selectedCurrency == cKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) AssetPurple else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .clickable {
+                                        selectedCurrency = cKey
+                                    }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = cLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -711,9 +790,11 @@ fun AddEditAssetDialog(
                         value = purchaseCostText,
                         onValueChange = {
                             purchaseCostText = it
-                            if (currentValueText.isEmpty()) currentValueText = it
+                            val entered = it.toDoubleOrNull() ?: 0.0
+                            val inYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
+                            if (currentValueText.isEmpty()) currentValueText = inYer.toInt().toString()
                         },
-                        label = { Text("سعر الشراء (ريال) *") },
+                        label = { Text("سعر الشراء (${CurrencyHelper.getCurrencySymbol(selectedCurrency)}) *") },
                         singleLine = true,
                         modifier = Modifier.weight(1f).testTag("input_asset_cost")
                     )
@@ -721,10 +802,38 @@ fun AddEditAssetDialog(
                     OutlinedTextField(
                         value = currentValueText,
                         onValueChange = { currentValueText = it },
-                        label = { Text("القيمة الحالية (ريال)") },
+                        label = { Text("القيمة الحالية (ريال يمني)") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                // Currency conversion notice card
+                if (selectedCurrency != CurrencyHelper.CURRENCY_YER && rawEnteredCost > 0) {
+                    val rate = if (selectedCurrency == CurrencyHelper.CURRENCY_USD) usdToYerRate else sarToYerRate
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = ProfitEmerald.copy(alpha = 0.1f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "المعادل بالريال اليمني (سعر الصرف: $rate):",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, "%,.0f", equivalentYerCost)} ر.ي",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = ProfitEmerald
+                            )
+                        }
+                    }
                 }
 
                 OutlinedTextField(
@@ -755,22 +864,30 @@ fun AddEditAssetDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (name.isNotBlank()) {
-                        val cost = purchaseCostText.toDoubleOrNull() ?: 0.0
-                        val currentVal = currentValueText.toDoubleOrNull() ?: cost
+                    if (!isSaving && name.isNotBlank()) {
+                        isSaving = true
+                        val entered = purchaseCostText.toDoubleOrNull() ?: 0.0
+                        val costInYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
+                        val currentVal = currentValueText.toDoubleOrNull() ?: costInYer
+                        val originalCost = if (selectedCurrency != CurrencyHelper.CURRENCY_YER) entered else 0.0
+
                         val asset = assetToEdit?.copy(
                             assetName = name,
                             category = category,
-                            purchaseCost = cost,
+                            purchaseCost = costInYer,
                             estimatedCurrentValue = currentVal,
+                            currency = selectedCurrency,
+                            originalCost = originalCost,
                             location = location,
                             serialNumber = serialNumber,
                             notes = notes
                         ) ?: NetworkAssetEntity(
                             assetName = name,
                             category = category,
-                            purchaseCost = cost,
+                            purchaseCost = costInYer,
                             estimatedCurrentValue = currentVal,
+                            currency = selectedCurrency,
+                            originalCost = originalCost,
                             location = location,
                             serialNumber = serialNumber,
                             notes = notes
@@ -778,10 +895,25 @@ fun AddEditAssetDialog(
                         onSave(asset)
                     }
                 },
+                enabled = !isSaving && name.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = AssetPurple),
                 modifier = Modifier.testTag("btn_save_asset")
             ) {
-                Text("حفظ الأصل", color = Color.White, fontWeight = FontWeight.Bold)
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الحفظ...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Text(
+                        if (assetToEdit != null && assetToEdit.id != 0L) "تحديث بيانات الأصل" else "حفظ الأصل",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         },
         dismissButton = {

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
@@ -49,6 +50,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -84,6 +86,7 @@ import com.example.ui.theme.CairoFontFamily
 import com.example.ui.theme.CyberBorder
 import com.example.ui.theme.CyberDarkCardElevated
 import com.example.ui.theme.CyberDarkSurface
+import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
@@ -348,6 +351,16 @@ fun DistributionScreen(
                                         } else {
                                             retailerForWhatsAppMenu = retailer
                                         }
+                                    },
+                                    onClone = {
+                                        retailerToEdit = retailer.copy(
+                                            id = 0L,
+                                            name = "${retailer.name} (فرع جديد)",
+                                            balanceOwed = 0.0,
+                                            totalPaid = 0.0,
+                                            activeCardsCount = 0
+                                        )
+                                        Toast.makeText(context, "تم استنساخ بيانات البقالة. عدّل التفاصيل ثم احفظ", Toast.LENGTH_SHORT).show()
                                     },
                                     onEdit = {
                                         retailerToEdit = retailer
@@ -642,6 +655,7 @@ fun RetailerCard(
     retailer: RetailerEntity,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
+    onClone: () -> Unit,
     onEdit: () -> Unit,
     onDistribute: () -> Unit,
     onQuickPay: () -> Unit,
@@ -821,6 +835,9 @@ fun RetailerCard(
                     IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color.Gray, modifier = Modifier.size(16.dp))
                     }
+                    IconButton(onClick = onClone, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "استنساخ البقالة", tint = InvestmentGold, modifier = Modifier.size(16.dp))
+                    }
                     IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MikroTikPrimary, modifier = Modifier.size(16.dp))
                     }
@@ -862,13 +879,14 @@ fun AddEditRetailerDialog(
 ) {
     val isEditing = initialRetailer != null
     val context = LocalContext.current
+    var isSaving by remember { mutableStateOf(false) }
 
-    var name by remember { mutableStateOf(initialRetailer?.name ?: "") }
-    var ownerName by remember { mutableStateOf(initialRetailer?.ownerName ?: "") }
-    var phone by remember { mutableStateOf(initialRetailer?.phone ?: "") }
-    var location by remember { mutableStateOf(initialRetailer?.location ?: "") }
-    var commission by remember { mutableStateOf((initialRetailer?.commissionPercent ?: 10.0).toInt().toString()) }
-    var notes by remember { mutableStateOf(initialRetailer?.notes ?: "") }
+    var name by remember(initialRetailer) { mutableStateOf(initialRetailer?.name ?: "") }
+    var ownerName by remember(initialRetailer) { mutableStateOf(initialRetailer?.ownerName ?: "") }
+    var phone by remember(initialRetailer) { mutableStateOf(initialRetailer?.phone ?: "") }
+    var location by remember(initialRetailer) { mutableStateOf(initialRetailer?.location ?: "") }
+    var commission by remember(initialRetailer) { mutableStateOf((initialRetailer?.commissionPercent ?: 10.0).toInt().toString()) }
+    var notes by remember(initialRetailer) { mutableStateOf(initialRetailer?.notes ?: "") }
 
     // Contact Picker
     val contactPickerLauncher = rememberLauncherForActivityResult(
@@ -930,7 +948,9 @@ fun AddEditRetailerDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = if (isEditing) "تعديل بيانات البقالة / نقطة البيع" else "إضافة بقالة أو نقطة بيع جديدة",
+                text = if (initialRetailer == null || initialRetailer.id == 0L) {
+                    if (initialRetailer?.id == 0L) "استنساخ وتسجيل بقالة جديدة" else "إضافة بقالة أو نقطة بيع جديدة"
+                } else "تعديل بيانات البقالة / نقطة البيع",
                 fontWeight = FontWeight.Bold
             )
         },
@@ -1063,25 +1083,41 @@ fun AddEditRetailerDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val entity = (initialRetailer ?: RetailerEntity(
-                        name = "",
-                        ownerName = "",
-                        phone = "",
-                        location = ""
-                    )).copy(
-                        name = name.trim(),
-                        ownerName = ownerName.trim(),
-                        phone = phone.trim(),
-                        location = location.trim(),
-                        commissionPercent = commission.toDoubleOrNull() ?: 10.0,
-                        notes = notes.trim()
-                    )
-                    onSave(entity)
+                    if (!isSaving && name.isNotBlank()) {
+                        isSaving = true
+                        val entity = (initialRetailer ?: RetailerEntity(
+                            name = "",
+                            ownerName = "",
+                            phone = "",
+                            location = ""
+                        )).copy(
+                            name = name.trim(),
+                            ownerName = ownerName.trim(),
+                            phone = phone.trim(),
+                            location = location.trim(),
+                            commissionPercent = commission.toDoubleOrNull() ?: 10.0,
+                            notes = notes.trim()
+                        )
+                        onSave(entity)
+                    }
                 },
-                enabled = name.isNotBlank(),
+                enabled = !isSaving && name.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
             ) {
-                Text(if (isEditing) "تحديث البيانات" else "حفظ وربط البقالة")
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الحفظ...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Text(
+                        if (isEditing && initialRetailer?.id != 0L) "تحديث البيانات" else "حفظ وربط البقالة",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         },
         dismissButton = {
@@ -1101,6 +1137,7 @@ fun DistributeCardsDialog(
     onDismiss: () -> Unit,
     onConfirm: (inventoryId: Long, retailerId: Long, quantity: Int, sendWhatsAppNotice: Boolean) -> Unit
 ) {
+    var isSaving by remember { mutableStateOf(false) }
     var selectedRetailer by remember { mutableStateOf(initialRetailer ?: retailers.firstOrNull()) }
     var selectedItem by remember { mutableStateOf(inventoryItems.firstOrNull()) }
     var quantityText by remember { mutableStateOf("20") }
@@ -1240,14 +1277,21 @@ fun DistributeCardsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (selectedItem != null && selectedRetailer != null && qty > 0) {
+                    if (!isSaving && selectedItem != null && selectedRetailer != null && qty > 0) {
+                        isSaving = true
                         onConfirm(selectedItem!!.id, selectedRetailer!!.id, qty, sendWhatsAppNotice)
                     }
                 },
-                enabled = selectedItem != null && selectedRetailer != null && qty > 0,
+                enabled = !isSaving && selectedItem != null && selectedRetailer != null && qty > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
             ) {
-                Text("تأكيد التسليم والقيد")
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري التسليم...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Text("تأكيد التسليم والقيد", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {
@@ -1264,6 +1308,7 @@ fun QuickPaymentDialog(
     onDismiss: () -> Unit,
     onConfirm: (amount: Double, method: String, desc: String, sendWhatsAppReceipt: Boolean) -> Unit
 ) {
+    var isSaving by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf(retailer.balanceOwed.toInt().toString()) }
     var paymentMethod by remember { mutableStateOf("نقداً") }
     var description by remember { mutableStateOf("سداد قيمة كروت هوتسبوت مباعة") }
@@ -1331,13 +1376,21 @@ fun QuickPaymentDialog(
             Button(
                 onClick = {
                     val amt = amountText.toDoubleOrNull() ?: 0.0
-                    if (amt > 0) {
+                    if (!isSaving && amt > 0) {
+                        isSaving = true
                         onConfirm(amt, paymentMethod, description, sendWhatsAppReceipt)
                     }
                 },
+                enabled = !isSaving && (amountText.toDoubleOrNull() ?: 0.0) > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = ReceiptGreen)
             ) {
-                Text("إصدار سند القبض")
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الإصدار...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Text("إصدار سند القبض", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {

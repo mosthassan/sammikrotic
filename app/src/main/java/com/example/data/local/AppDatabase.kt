@@ -56,7 +56,7 @@ import kotlinx.coroutines.launch
         CardSalesInvoiceEntity::class,
         InventoryMovementEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

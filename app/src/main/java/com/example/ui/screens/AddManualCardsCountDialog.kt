@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -85,6 +86,7 @@ fun AddManualCardsCountDialog(
 ) {
     // تحديد الباقة المختارة كبداية
     val defaultPkg = initialPackage ?: packages.firstOrNull()
+    var isSaving by remember { mutableStateOf(false) }
 
     var categoryName by remember {
         mutableStateOf(defaultPkg?.let { it.name } ?: "كروت فئة 200 ريال")
@@ -487,24 +489,37 @@ fun AddManualCardsCountDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val targetRetId = if (destinationMode == 1) selectedRetailer?.id else null
-                    onConfirm(
-                        categoryName.trim(),
-                        quantity,
-                        retailPrice,
-                        wholesalePrice,
-                        batchName.trim(),
-                        targetRetId
-                    )
+                    if (!isSaving && categoryName.isNotBlank() && quantity > 0) {
+                        isSaving = true
+                        val targetRetId = if (destinationMode == 1) selectedRetailer?.id else null
+                        onConfirm(
+                            categoryName.trim(),
+                            quantity,
+                            retailPrice,
+                            wholesalePrice,
+                            batchName.trim(),
+                            targetRetId
+                        )
+                    }
                 },
-                enabled = categoryName.isNotBlank() && quantity > 0,
+                enabled = !isSaving && categoryName.isNotBlank() && quantity > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                val targetName = if (destinationMode == 1 && selectedRetailer != null) "لـ (${selectedRetailer?.name})" else "للمخزن"
-                Text("إضافة $quantity كرت $targetName", fontWeight = FontWeight.Bold)
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الحفظ والإضافة...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    val targetName = if (destinationMode == 1 && selectedRetailer != null) "لـ (${selectedRetailer?.name})" else "للمخزن"
+                    Text("إضافة $quantity كرت $targetName", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {

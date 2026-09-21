@@ -465,11 +465,19 @@ class NetworkRepository(private val db: AppDatabase) {
             jsonArray.put(obj)
         }
 
+        // البحث عن البقالة إذا لم يكن الـ ID محدداً صراحة
+        val finalRetailerId = if (retailerId != null && retailerId > 0) {
+            retailerId
+        } else {
+            val allRet = db.retailerDao().getAllRetailers().first()
+            allRet.find { it.name.trim().equals(customerName.trim(), ignoreCase = true) }?.id
+        }
+
         val invoiceEntity = CardSalesInvoiceEntity(
             invoiceNumber = invoiceNumber,
             customerName = customerName.ifBlank { "عميل نقدي" },
             customerPhone = customerPhone,
-            retailerId = retailerId,
+            retailerId = finalRetailerId,
             paymentType = paymentType,
             totalAmount = totalAmount,
             paidAmount = actualPaid,
@@ -519,10 +527,10 @@ class NetworkRepository(private val db: AppDatabase) {
         }
 
         // إذا كانت مرتبطة ببقالة، نقيد المديونية المتبقية
-        if (retailerId != null && retailerId > 0) {
-            val retailer = db.retailerDao().getRetailerById(retailerId)
+        if (finalRetailerId != null && finalRetailerId > 0) {
+            val retailer = db.retailerDao().getRetailerById(finalRetailerId)
             if (retailer != null) {
-                db.retailerDao().updateBalanceAndCards(retailerId, remainingAmount, totalCards)
+                db.retailerDao().updateBalanceAndCards(finalRetailerId, remainingAmount, totalCards)
             }
         }
 
@@ -533,7 +541,7 @@ class NetworkRepository(private val db: AppDatabase) {
                 voucherType = "RECEIPT",
                 amount = actualPaid,
                 partyName = customerName.ifBlank { "مبيعات كروت نقدية" },
-                retailerId = retailerId,
+                retailerId = finalRetailerId,
                 category = "مبيعات كروت",
                 paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
                 description = "متحصلات من فاتورة مبيعات كروت $invoiceNumber - $itemsSummary",
@@ -543,11 +551,126 @@ class NetworkRepository(private val db: AppDatabase) {
             db.financialVoucherDao().insertVoucher(voucher)
         }
 
+        reconcileAccountingLedger()
+
         invoiceId
     }
 
+    /**
+     * محرك التسوية المحاسبية والربط الفوري والتزامن الشامل بين كافة التبويبات:
+     * - فواتير مبيعات الكروت
+     * - نقاط البيع (البقالات) والمديونيات
+     * - المخزن وحركات الأصناف
+     * - السندات المالية (القبض والصرف)
+     * - تقارير الأرباح والسيولة
+     */
+    suspend fun reconcileAccountingLedger() = withContext(Dispatchers.IO) {
+        try {
+            val retailers = db.retailerDao().getAllRetailers().first()
+            val invoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+            val vouchers = db.financialVoucherDao().getAllVouchers().first()
+
+            val retailersByName = retailers.associateBy { it.name.trim().lowercase() }
+            val retailersById = retailers.associateBy { it.id }
+
+            // 1. ربط أي فاتورة معلقة بالبقالة المطابقة بالاسم إذا لم يكن الـ ID مربوطاً
+            for (inv in invoices) {
+                if (inv.retailerId == null || inv.retailerId == 0L || !retailersById.containsKey(inv.retailerId)) {
+                    val matchedRetailer = retailersByName[inv.customerName.trim().lowercase()]
+                    if (matchedRetailer != null) {
+                        db.cardSalesInvoiceDao().updateInvoice(inv.copy(retailerId = matchedRetailer.id))
+                    }
+                }
+            }
+
+            // إعادة تحميل الفواتير بعد اكتمال الربط
+            val updatedInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+
+            // 2. مطابقة وحساب الأرصدة والديون والكروت الفعلية لكل بقالة بدقة تامة
+            for (retailer in retailers) {
+                val matchingInvoices = updatedInvoices.filter {
+                    it.retailerId == retailer.id ||
+                    it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
+                }
+
+                if (matchingInvoices.isNotEmpty()) {
+                    val totalInvoiceRemaining = matchingInvoices.sumOf { it.remainingAmount }
+                    val totalInvoiceCards = matchingInvoices.filter { it.remainingAmount > 0 }.sumOf { it.totalCardsCount }
+
+                    // السندات المالية المقبوضة من البقالة غير المندرجة ضمن الدفعات التلقائية للفواتير
+                    val directPayments = vouchers.filter {
+                        (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                        it.voucherType == "RECEIPT" &&
+                        !it.description.contains("INV-") &&
+                        !it.description.contains("فاتورة")
+                    }.sumOf { it.amount }
+
+                    val finalDebt = (totalInvoiceRemaining - directPayments).coerceAtLeast(0.0)
+                    val finalCards = totalInvoiceCards
+
+                    if (Math.abs(retailer.balanceOwed - finalDebt) > 0.01 || retailer.activeCardsCount != finalCards) {
+                        db.retailerDao().updateRetailer(
+                            retailer.copy(
+                                balanceOwed = finalDebt,
+                                activeCardsCount = finalCards
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("NetworkRepository", "reconcileAccountingLedger error: ${e.message}", e)
+        }
+    }
+
     suspend fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity) = withContext(Dispatchers.IO) {
-        db.cardSalesInvoiceDao().deleteInvoice(invoice)
+        try {
+            // 1. استرجاع الكميات للمخزن مع تسجيل حركة الإلغاء
+            if (invoice.itemsJson.isNotBlank()) {
+                val jsonArray = org.json.JSONArray(invoice.itemsJson)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val pkgName = obj.optString("packageName", "")
+                    val qty = obj.optInt("quantity", 0)
+                    if (pkgName.isNotBlank() && qty > 0) {
+                        val item = db.inventoryDao().getItemByPackageName(pkgName)
+                        if (item != null) {
+                            val newQty = item.quantityAvailable + qty
+                            db.inventoryDao().updateItem(item.copy(quantityAvailable = newQty))
+                            db.inventoryMovementDao().insertMovement(
+                                InventoryMovementEntity(
+                                    packageName = pkgName,
+                                    movementType = "RETURN",
+                                    quantityChange = qty,
+                                    resultingBalance = newQty,
+                                    referenceNumber = "CANCEL-${invoice.invoiceNumber}",
+                                    customerOrSupplier = invoice.customerName,
+                                    unitPrice = item.wholesalePrice,
+                                    notes = "استرجاع كميات بسبب حذف/إلغاء الفاتورة ${invoice.invoiceNumber}"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. حذف سند القبض المالي المقيد مع الفاتورة إن وجد
+            val vouchers = db.financialVoucherDao().getAllVouchers().first()
+            val linkedVoucher = vouchers.find { it.description.contains(invoice.invoiceNumber) }
+            if (linkedVoucher != null) {
+                db.financialVoucherDao().deleteVoucher(linkedVoucher)
+            }
+
+            // 3. حذف الفاتورة
+            db.cardSalesInvoiceDao().deleteInvoice(invoice)
+
+            // 4. تسوية الحسابات المحاسبية فورا
+            reconcileAccountingLedger()
+        } catch (e: Exception) {
+            android.util.Log.e("NetworkRepository", "deleteSalesInvoice error: ${e.message}", e)
+            db.cardSalesInvoiceDao().deleteInvoice(invoice)
+            reconcileAccountingLedger()
+        }
     }
 
     suspend fun distributeFromInventory(
@@ -1150,6 +1273,9 @@ class NetworkRepository(private val db: AppDatabase) {
                 )
             }
         }
+
+        // 8. تسوية ومطابقة الحسابات والديون المحاسبية فورياً بعد الاستعادة
+        reconcileAccountingLedger()
     }
 }
 

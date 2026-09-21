@@ -23,5 +23,9 @@ data class NetworkIdentityEntity(
     val hotspotGatewayIp: String = "10.5.50.1",
     val dnsServers: String = "8.8.8.8, 1.1.1.1",
     val welcomeNotice: String = "أهلاً بكم في شبكة سام اللاسلكية - إنترنت فائق السرعة واستقرار دائم",
+    val defaultCurrency: String = "YER", // "YER", "SAR", "USD"
+    val sarToYerRate: Double = 140.0,    // سعر صرف الريال السعودي مقابل اليمني
+    val usdToYerRate: Double = 530.0,    // سعر صرف الدولار الأمريكي مقابل اليمني
+    val usdToSarRate: Double = 3.75,     // سعر صرف الدولار مقابل السعودي
     val updatedAt: Long = System.currentTimeMillis()
 )

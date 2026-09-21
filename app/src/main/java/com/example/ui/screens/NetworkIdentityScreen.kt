@@ -26,10 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
@@ -75,12 +77,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NetworkIdentityEntity
 import com.example.ui.MainViewModel
+import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
 import com.example.ui.theme.MikroTikPrimary
+import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.ReceiptGreen
 import com.example.ui.theme.StatusOnline
 import com.example.ui.theme.StatusWarning
+import com.example.util.CurrencyHelper
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -113,6 +118,18 @@ fun NetworkIdentityScreen(
     var hotspotGatewayIp by remember(identityFromDb) { mutableStateOf(identityFromDb.hotspotGatewayIp) }
     var dnsServers by remember(identityFromDb) { mutableStateOf(identityFromDb.dnsServers) }
     var welcomeNotice by remember(identityFromDb) { mutableStateOf(identityFromDb.welcomeNotice) }
+
+    // Multi-Currency & Exchange Rates State
+    var defaultCurrency by remember(identityFromDb) { mutableStateOf(identityFromDb.defaultCurrency.ifBlank { "YER" }) }
+    var sarToYerRateText by remember(identityFromDb) { mutableStateOf((if (identityFromDb.sarToYerRate > 0) identityFromDb.sarToYerRate else 430.0).toString()) }
+    var usdToYerRateText by remember(identityFromDb) { mutableStateOf((if (identityFromDb.usdToYerRate > 0) identityFromDb.usdToYerRate else 1630.0).toString()) }
+    var usdToSarRateText by remember(identityFromDb) { mutableStateOf((if (identityFromDb.usdToSarRate > 0) identityFromDb.usdToSarRate else 3.79).toString()) }
+
+    var isReconciling by remember { mutableStateOf(false) }
+
+    // Quick currency calculator
+    var calcAmountText by remember { mutableStateOf("100") }
+    var calcCurrency by remember { mutableStateOf("USD") }
 
     var suggestedIpPreview by remember { mutableStateOf<String?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
@@ -711,6 +728,212 @@ fun NetworkIdentityScreen(
             }
         }
 
+        // Section: Multi-Currency & Exchange Rates Management (قسم العملات وأسعار الصرف)
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, InvestmentGold.copy(alpha = 0.5f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                modifier = Modifier.fillMaxWidth().testTag("section_currencies_settings")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(InvestmentGold.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.CurrencyExchange,
+                                    contentDescription = null,
+                                    tint = InvestmentGold,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "إدارة العملات وأسعار الصرف",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "ريال يمني (YER) • ريال سعودي (SAR) • دولار أمريكي (USD)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Base currency badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MikroTikPrimary.copy(alpha = 0.15f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "العملة الأساسية: ريال يمني",
+                                color = MikroTikPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "يتيح النظام تسجيل المشتريات والأجهزة ومساهمات الشركاء بالدولار أو السعودي، مع تحويلها آلياً للريال اليمني لتوحيد الحسابات والميزانية والتقارير بدقة مالية عالية.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Exchange rates inputs
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = sarToYerRateText,
+                            onValueChange = { sarToYerRateText = it },
+                            label = { Text("1 ريال سعودي = (ريال يمني)") },
+                            placeholder = { Text("430") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_sar_to_yer")
+                        )
+
+                        OutlinedTextField(
+                            value = usdToYerRateText,
+                            onValueChange = { usdToYerRateText = it },
+                            label = { Text("1 دولار أمريكي = (ريال يمني)") },
+                            placeholder = { Text("1630") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_usd_to_yer")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = usdToSarRateText,
+                        onValueChange = { usdToSarRateText = it },
+                        label = { Text("1 دولار أمريكي = (ريال سعودي)") },
+                        placeholder = { Text("3.79") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("input_usd_to_sar")
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Live Currency Converter Mini-Widget
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Calculate, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("حاسبة التحويل السريع المباشرة", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf("USD" to "دولار", "SAR" to "سعودي").forEach { (cKey, cLabel) ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (calcCurrency == cKey) MikroTikPrimary else Color.Transparent)
+                                                .clickable { calcCurrency = cKey }
+                                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = cLabel,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (calcCurrency == cKey) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = calcAmountText,
+                                    onValueChange = { calcAmountText = it },
+                                    label = { Text("المبلغ بـ ($calcCurrency)") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                val inputAmount = calcAmountText.toDoubleOrNull() ?: 0.0
+                                val curSarRate = sarToYerRateText.toDoubleOrNull() ?: 430.0
+                                val curUsdRate = usdToYerRateText.toDoubleOrNull() ?: 1630.0
+                                val convertedYer = if (calcCurrency == "USD") inputAmount * curUsdRate else inputAmount * curSarRate
+
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.End
+                                ) {
+                                    Text("المعادل بالريال اليمني:", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = "${String.format(Locale.US, "%,.0f", convertedYer)} ر.ي",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = ProfitEmerald
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Reconcile Accounting Ledger Button
+                    OutlinedButton(
+                        onClick = {
+                            isReconciling = true
+                            viewModel.reconcileAccountingLedger {
+                                isReconciling = false
+                                Toast.makeText(context, "تمت التسوية المحاسبية ومطابقة كافة التبويبات بنجاح ✓", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp).testTag("btn_reconcile_ledger")
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isReconciling) "جارٍ التسوية والمطابقة التامة..." else "مزامنة وتسوية الحسابات بين كافة التبويبات",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
         // Section 6: AI Awareness & Integration Box
         item {
             Card(
@@ -825,12 +1048,16 @@ fun NetworkIdentityScreen(
                             hotspotGatewayIp = hotspotGatewayIp.trim(),
                             dnsServers = dnsServers.trim(),
                             welcomeNotice = welcomeNotice.trim(),
+                            defaultCurrency = defaultCurrency.trim().ifBlank { "YER" },
+                            sarToYerRate = sarToYerRateText.toDoubleOrNull() ?: 430.0,
+                            usdToYerRate = usdToYerRateText.toDoubleOrNull() ?: 1630.0,
+                            usdToSarRate = usdToSarRateText.toDoubleOrNull() ?: 3.79,
                             updatedAt = System.currentTimeMillis()
                         )
 
                         viewModel.saveNetworkIdentity(updated) {
                             isSaving = false
-                            Toast.makeText(context, "تم حفظ هوية الشبكة وتحديث سياق الذكاء الاصطناعي بنجاح ✓", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "تم حفظ هوية الشبكة وأسعار الصرف وتحديث سياق الذكاء الاصطناعي بنجاح ✓", Toast.LENGTH_LONG).show()
                         }
                     },
                     shape = RoundedCornerShape(12.dp),

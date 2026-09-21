@@ -82,6 +82,7 @@ import com.example.ui.theme.MikroTikPrimary
 import com.example.ui.theme.PaymentRed
 import com.example.ui.theme.ProfitEmerald
 import com.example.ui.theme.ReceiptGreen
+import com.example.util.CurrencyHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -98,6 +99,7 @@ fun PartnersScreen(
     val vouchers by viewModel.vouchers.collectAsState()
     val totalReceipts by viewModel.totalReceipts.collectAsState()
     val totalPayments by viewModel.totalPayments.collectAsState()
+    val networkIdentity by viewModel.networkIdentity.collectAsState()
 
     val context = LocalContext.current
 
@@ -406,6 +408,8 @@ fun PartnersScreen(
     if (showAddPartnerDialog) {
         AddEditPartnerDialog(
             partnerToEdit = partnerToEdit,
+            sarToYerRate = if (networkIdentity.sarToYerRate > 0) networkIdentity.sarToYerRate else 430.0,
+            usdToYerRate = if (networkIdentity.usdToYerRate > 0) networkIdentity.usdToYerRate else 1630.0,
             onDismiss = { showAddPartnerDialog = false },
             onSave = { partner ->
                 viewModel.savePartner(partner) {
@@ -422,6 +426,8 @@ fun PartnersScreen(
             partners = partners,
             preSelectedPartner = selectedPartnerForPayout,
             availableOperatingProfit = netOperatingProfit,
+            sarToYerRate = if (networkIdentity.sarToYerRate > 0) networkIdentity.sarToYerRate else 430.0,
+            usdToYerRate = if (networkIdentity.usdToYerRate > 0) networkIdentity.usdToYerRate else 1630.0,
             onDismiss = { showPayoutDialog = false },
             onConfirmPayout = { tx ->
                 viewModel.recordPartnerTransaction(tx) {
@@ -560,6 +566,14 @@ fun PartnerCard(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    if (partner.currency.isNotBlank() && partner.currency != "YER" && partner.originalCapital > 0) {
+                        Text(
+                            text = CurrencyHelper.formatAmount(partner.originalCapital, partner.currency),
+                            fontSize = 10.sp,
+                            color = InvestmentGold,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -710,14 +724,26 @@ fun PartnerTransactionItem(
 @Composable
 fun AddEditPartnerDialog(
     partnerToEdit: PartnerEntity?,
+    sarToYerRate: Double,
+    usdToYerRate: Double,
     onDismiss: () -> Unit,
     onSave: (PartnerEntity) -> Unit
 ) {
     var name by remember { mutableStateOf(partnerToEdit?.name ?: "") }
     var phone by remember { mutableStateOf(partnerToEdit?.phone ?: "") }
-    var capitalText by remember { mutableStateOf(partnerToEdit?.capitalInvested?.toInt()?.toString() ?: "") }
+    var selectedCurrency by remember { mutableStateOf(partnerToEdit?.currency?.ifBlank { "YER" } ?: "YER") }
+
+    val initialCapital = if (partnerToEdit != null && partnerToEdit.currency != "YER" && partnerToEdit.originalCapital > 0) {
+        partnerToEdit.originalCapital
+    } else {
+        partnerToEdit?.capitalInvested ?: 0.0
+    }
+    var capitalText by remember { mutableStateOf(if (initialCapital > 0) initialCapital.toInt().toString() else "") }
     var percentageText by remember { mutableStateOf(partnerToEdit?.sharePercentage?.toString() ?: "") }
     var notes by remember { mutableStateOf(partnerToEdit?.notes ?: "") }
+
+    val rawEnteredCapital = capitalText.toDoubleOrNull() ?: 0.0
+    val equivalentYerCapital = CurrencyHelper.convertToYer(rawEnteredCapital, selectedCurrency, sarToYerRate, usdToYerRate)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -745,14 +771,76 @@ fun AddEditPartnerDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Currency selector chips
+                Column {
+                    Text("عملة رأس المال المستثمر:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            CurrencyHelper.CURRENCY_YER to "ريال يمني",
+                            CurrencyHelper.CURRENCY_SAR to "ريال سعودي",
+                            CurrencyHelper.CURRENCY_USD to "دولار أمريكي"
+                        ).forEach { (cKey, cLabel) ->
+                            val isSelected = selectedCurrency == cKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) InvestmentGold else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .clickable { selectedCurrency = cKey }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = cLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = capitalText,
                     onValueChange = { capitalText = it },
-                    label = { Text("رأس المال المستثمر (ريال) *") },
+                    label = { Text("رأس المال المستثمر (${CurrencyHelper.getCurrencySymbol(selectedCurrency)}) *") },
                     placeholder = { Text("مثال: 1000000") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("input_partner_capital")
                 )
+
+                // Currency conversion notice card
+                if (selectedCurrency != CurrencyHelper.CURRENCY_YER && rawEnteredCapital > 0) {
+                    val rate = if (selectedCurrency == CurrencyHelper.CURRENCY_USD) usdToYerRate else sarToYerRate
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = InvestmentGold.copy(alpha = 0.12f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "المعادل بالريال اليمني (سعر الصرف: $rate):",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, "%,.0f", equivalentYerCapital)} ر.ي",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = InvestmentGold
+                            )
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = percentageText,
@@ -776,18 +864,25 @@ fun AddEditPartnerDialog(
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        val capital = capitalText.toDoubleOrNull() ?: 0.0
+                        val entered = capitalText.toDoubleOrNull() ?: 0.0
+                        val capitalInYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
+                        val originalCapital = if (selectedCurrency != CurrencyHelper.CURRENCY_YER) entered else 0.0
                         val percent = percentageText.toDoubleOrNull() ?: 0.0
+
                         val partner = partnerToEdit?.copy(
                             name = name,
                             phone = phone,
-                            capitalInvested = capital,
+                            capitalInvested = capitalInYer,
+                            currency = selectedCurrency,
+                            originalCapital = originalCapital,
                             sharePercentage = percent,
                             notes = notes
                         ) ?: PartnerEntity(
                             name = name,
                             phone = phone,
-                            capitalInvested = capital,
+                            capitalInvested = capitalInYer,
+                            currency = selectedCurrency,
+                            originalCapital = originalCapital,
                             sharePercentage = percent,
                             notes = notes
                         )
@@ -814,16 +909,22 @@ fun DividendPayoutDialog(
     partners: List<PartnerEntity>,
     preSelectedPartner: PartnerEntity?,
     availableOperatingProfit: Double,
+    sarToYerRate: Double,
+    usdToYerRate: Double,
     onDismiss: () -> Unit,
     onConfirmPayout: (PartnerTransactionEntity) -> Unit
 ) {
     var selectedPartner by remember { mutableStateOf(preSelectedPartner ?: partners.firstOrNull()) }
     var isPartnerDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedCurrency by remember { mutableStateOf(CurrencyHelper.CURRENCY_YER) }
     var payoutAmountText by remember {
         val suggestedAmount = ((availableOperatingProfit * ((selectedPartner?.sharePercentage ?: 0.0) / 100.0))).toInt()
         mutableStateOf(if (suggestedAmount > 0) suggestedAmount.toString() else "")
     }
     var notes by remember { mutableStateOf("صرف أرباح دورية للشبكة") }
+
+    val rawEnteredPayout = payoutAmountText.toDoubleOrNull() ?: 0.0
+    val equivalentYerPayout = CurrencyHelper.convertToYer(rawEnteredPayout, selectedCurrency, sarToYerRate, usdToYerRate)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -837,7 +938,7 @@ fun DividendPayoutDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "الأرباح الصافية المتاحة حالياً للتوزيع: ${String.format(Locale.US, "%,.0f", availableOperatingProfit)} ريال",
+                    text = "الأرباح الصافية المتاحة حالياً للتوزيع: ${String.format(Locale.US, "%,.0f", availableOperatingProfit)} ريال يمني",
                     fontSize = 12.sp,
                     color = ProfitEmerald,
                     fontWeight = FontWeight.Bold
@@ -874,14 +975,76 @@ fun DividendPayoutDialog(
                     }
                 }
 
+                // Currency selector chips
+                Column {
+                    Text("عملة صرف وتوزيع الأرباح:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            CurrencyHelper.CURRENCY_YER to "ريال يمني",
+                            CurrencyHelper.CURRENCY_SAR to "ريال سعودي",
+                            CurrencyHelper.CURRENCY_USD to "دولار أمريكي"
+                        ).forEach { (cKey, cLabel) ->
+                            val isSelected = selectedCurrency == cKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) ProfitEmerald else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .clickable { selectedCurrency = cKey }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = cLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = payoutAmountText,
                     onValueChange = { payoutAmountText = it },
-                    label = { Text("مبلغ الأرباح المصروف (ريال) *") },
+                    label = { Text("مبلغ الأرباح المصروف (${CurrencyHelper.getCurrencySymbol(selectedCurrency)}) *") },
                     placeholder = { Text("مثال: 50000") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("input_dividend_amount")
                 )
+
+                // Currency conversion notice card
+                if (selectedCurrency != CurrencyHelper.CURRENCY_YER && rawEnteredPayout > 0) {
+                    val rate = if (selectedCurrency == CurrencyHelper.CURRENCY_USD) usdToYerRate else sarToYerRate
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = ProfitEmerald.copy(alpha = 0.1f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "المعادل بالريال اليمني (سعر الصرف: $rate):",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, "%,.0f", equivalentYerPayout)} ر.ي",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = ProfitEmerald
+                            )
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = notes,
@@ -895,15 +1058,19 @@ fun DividendPayoutDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = payoutAmountText.toDoubleOrNull() ?: 0.0
+                    val entered = payoutAmountText.toDoubleOrNull() ?: 0.0
+                    val amountInYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
+                    val originalAmount = if (selectedCurrency != CurrencyHelper.CURRENCY_YER) entered else 0.0
                     val partner = selectedPartner
-                    if (amount > 0 && partner != null) {
+                    if (amountInYer > 0 && partner != null) {
                         onConfirmPayout(
                             PartnerTransactionEntity(
                                 partnerId = partner.id,
                                 partnerName = partner.name,
                                 transactionType = "DIVIDEND_PAYOUT",
-                                amount = amount,
+                                amount = amountInYer,
+                                currency = selectedCurrency,
+                                originalAmount = originalAmount,
                                 notes = notes
                             )
                         )

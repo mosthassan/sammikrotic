@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +25,7 @@ import com.example.ui.theme.MikroTikPrimary
 fun InventoryScreen(viewModel: MainViewModel, onNavigateToStudio: () -> Unit, onNavigateToBatches: () -> Unit) {
     val items by viewModel.inventoryItems.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var itemToClone by remember { mutableStateOf<InventoryItemEntity?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -67,14 +69,23 @@ fun InventoryScreen(viewModel: MainViewModel, onNavigateToStudio: () -> Unit, on
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(items) { item ->
-                        InventoryItemCard(item = item)
+                        InventoryItemCard(
+                            item = item,
+                            onClone = {
+                                itemToClone = item
+                                showAddDialog = true
+                            }
+                        )
                     }
                 }
             }
         }
 
         FloatingActionButton(
-            onClick = { showAddDialog = true },
+            onClick = {
+                itemToClone = null
+                showAddDialog = true
+            },
             containerColor = MikroTikPrimary,
             contentColor = Color.White,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
@@ -85,17 +96,25 @@ fun InventoryScreen(viewModel: MainViewModel, onNavigateToStudio: () -> Unit, on
 
     if (showAddDialog) {
         AddInventoryDialog(
-            onDismiss = { showAddDialog = false },
+            itemToClone = itemToClone,
+            onDismiss = {
+                showAddDialog = false
+                itemToClone = null
+            },
             onConfirm = { packageName, qty, wholesale, retail ->
                 viewModel.saveInventoryItem(packageName, qty, wholesale, retail)
                 showAddDialog = false
+                itemToClone = null
             }
         )
     }
 }
 
 @Composable
-fun InventoryItemCard(item: InventoryItemEntity) {
+fun InventoryItemCard(
+    item: InventoryItemEntity,
+    onClone: () -> Unit
+) {
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -106,19 +125,31 @@ fun InventoryItemCard(item: InventoryItemEntity) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(text = item.packageName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text("سعر الجملة: ${item.wholesalePrice.toInt()} ريال", fontSize = 12.sp, color = Color.Gray)
                 Text("سعر الجمهور: ${item.retailPrice.toInt()} ريال", fontSize = 12.sp, color = Color.Gray)
             }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-                shape = RoundedCornerShape(8.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("الرصيد", fontSize = 10.sp, color = Color.White)
-                    Text("${item.quantityAvailable}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                IconButton(onClick = onClone) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "استنساخ الباقة وتفاصيلها",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("الرصيد", fontSize = 10.sp, color = Color.White)
+                        Text("${item.quantityAvailable}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                    }
                 }
             }
         }
@@ -127,17 +158,24 @@ fun InventoryItemCard(item: InventoryItemEntity) {
 
 @Composable
 fun AddInventoryDialog(
+    itemToClone: InventoryItemEntity? = null,
     onDismiss: () -> Unit,
     onConfirm: (packageName: String, qty: Int, wholesale: Double, retail: Double) -> Unit
 ) {
-    var packageName by remember { mutableStateOf("") }
-    var quantity by remember { mutableStateOf("") }
-    var wholesalePrice by remember { mutableStateOf("") }
-    var retailPrice by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    var packageName by remember(itemToClone) { mutableStateOf(itemToClone?.packageName ?: "") }
+    var quantity by remember(itemToClone) { mutableStateOf(if (itemToClone != null) "100" else "") }
+    var wholesalePrice by remember(itemToClone) { mutableStateOf(itemToClone?.let { it.wholesalePrice.toInt().toString() } ?: "") }
+    var retailPrice by remember(itemToClone) { mutableStateOf(itemToClone?.let { it.retailPrice.toInt().toString() } ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("إضافة كروت للمخزن", fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                if (itemToClone != null) "استنساخ باقة كروت وإضافتها للمخزن" else "إضافة كروت للمخزن",
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -179,13 +217,25 @@ fun AddInventoryDialog(
                     val qty = quantity.toIntOrNull() ?: 0
                     val wPrice = wholesalePrice.toDoubleOrNull() ?: 0.0
                     val rPrice = retailPrice.toDoubleOrNull() ?: 0.0
-                    if (packageName.isNotBlank() && qty > 0) {
-                        onConfirm(packageName, qty, wPrice, rPrice)
+                    if (!isSaving && packageName.isNotBlank() && qty > 0) {
+                        isSaving = true
+                        onConfirm(packageName.trim(), qty, wPrice, rPrice)
                     }
                 },
+                enabled = !isSaving && packageName.isNotBlank() && (quantity.toIntOrNull() ?: 0) > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary)
             ) {
-                Text("إضافة")
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الحفظ والإضافة...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Text(if (itemToClone != null) "حفظ الباقة المستنسخة" else "إضافة للمخزن", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {

@@ -78,6 +78,7 @@ fun CreateCardSalesInvoiceDialog(
     )
 
     var invoiceItems by remember { mutableStateOf(listOf(initialItem)) }
+    var isSaving by remember { mutableStateOf(false) }
 
     // Payment Type: CASH (نقد), CREDIT (آجل), PARTIAL (مقدم ومتبقي)
     var paymentType by remember { mutableStateOf("CASH") }
@@ -466,6 +467,7 @@ fun CreateCardSalesInvoiceDialog(
 
                     Button(
                         onClick = {
+                            if (isSaving) return@Button
                             if (customerNameText.isBlank()) {
                                 Toast.makeText(context, "يرجى تحديد أو إدخال اسم العميل", Toast.LENGTH_SHORT).show()
                                 return@Button
@@ -487,6 +489,7 @@ fun CreateCardSalesInvoiceDialog(
                                 return@Button
                             }
 
+                            isSaving = true
                             onConfirmInvoice(
                                 customerNameText.trim(),
                                 customerPhoneText.trim(),
@@ -497,13 +500,24 @@ fun CreateCardSalesInvoiceDialog(
                                 notesText.trim()
                             )
                         },
+                        enabled = !isSaving,
                         colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1.3f)
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("إصدار الفاتورة وخصم المخزن", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold)
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("جاري الحفظ وإصدار الفاتورة...", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
+                        } else {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("إصدار الفاتورة وخصم المخزن", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

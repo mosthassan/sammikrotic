@@ -15,6 +15,8 @@ data class PurchaseInvoiceEntity(
     val invoiceDateMillis: Long = System.currentTimeMillis(),
     val targetType: String = "ASSETS", // "ASSETS" (أصول ثابتة), "EXPENSES" (مصروفات تشغيلية)
     val totalAmount: Double = 0.0,
+    val currency: String = "USD",      // العملة: USD, SAR, YER
+    val originalAmount: Double = 0.0,  // المبلغ بالعملة الأصلية
     val paidAmount: Double = 0.0,
     val paymentMethod: String = "نقداً",
     val status: String = "APPROVED", // "APPROVED", "DRAFT"

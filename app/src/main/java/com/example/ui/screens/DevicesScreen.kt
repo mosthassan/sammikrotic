@@ -118,16 +118,23 @@ fun DevicesScreen(
     var pingingDeviceId by remember { mutableStateOf<Long?>(null) }
     var activeSubTab by remember { mutableStateOf(0) } // 0: Devices list, 1: Spectrum & Interference Analyzer
 
-    val filterTypes = listOf("الكل", "Access Point", "MikroTik RouterBOARD", "Sector Antenna", "Switch", "CPE")
+    val filterTypes = remember(devices) {
+        val basePresets = listOf("الكل", "مرسل", "مستقبل", "لاقط", "Access Point", "MikroTik RouterBOARD", "Sector Antenna", "Switch", "CPE")
+        val fromExisting = devices.map { it.deviceType.trim() }.filter { it.isNotBlank() }
+        (listOf("الكل") + (basePresets.drop(1) + fromExisting).distinct())
+    }
 
     val filteredDevices = devices.filter { device ->
         val matchesSearch = searchQuery.isBlank() ||
                 device.name.contains(searchQuery, ignoreCase = true) ||
                 device.ipAddress.contains(searchQuery, ignoreCase = true) ||
                 device.locationArea.contains(searchQuery, ignoreCase = true) ||
-                device.frequencyOrSsid.contains(searchQuery, ignoreCase = true)
+                device.frequencyOrSsid.contains(searchQuery, ignoreCase = true) ||
+                device.deviceType.contains(searchQuery, ignoreCase = true)
 
-        val matchesType = selectedTypeFilter == "الكل" || device.deviceType == selectedTypeFilter
+        val matchesType = selectedTypeFilter == "الكل" ||
+                device.deviceType.equals(selectedTypeFilter, ignoreCase = true) ||
+                device.deviceType.contains(selectedTypeFilter, ignoreCase = true)
         matchesSearch && matchesType
     }
 
@@ -358,6 +365,20 @@ fun DevicesScreen(
                         DeviceCard(
                             device = device,
                             isPinging = pingingDeviceId == device.id,
+                            onClone = {
+                                coroutineScope.launch {
+                                    val suggestedIp = viewModel.getSuggestedIp()
+                                    deviceToEdit = device.copy(
+                                        id = 0L,
+                                        name = "${device.name} (نسخة)",
+                                        ipAddress = suggestedIp,
+                                        uptimeHours = 0
+                                    )
+                                    viewModel.clearIpValidation()
+                                    showAddEditDialog = true
+                                    Toast.makeText(context, "تم استنساخ بيانات الجهاز واقتراح آي بي جديد. عدّل التفاصيل ثم احفظ", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             onEdit = {
                                 deviceToEdit = device
                                 showAddEditDialog = true
@@ -472,6 +493,7 @@ fun DevicesScreen(
 fun DeviceCard(
     device: NetworkDeviceEntity,
     isPinging: Boolean,
+    onClone: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onPing: () -> Unit
@@ -494,9 +516,10 @@ fun DeviceCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    val icon = when (device.deviceType) {
-                        "MikroTik RouterBOARD" -> Icons.Default.Router
-                        "Sector Antenna" -> Icons.Default.CellTower
+                    val icon = when {
+                        device.deviceType.contains("راوتر", ignoreCase = true) || device.deviceType.contains("Router", ignoreCase = true) -> Icons.Default.Router
+                        device.deviceType.contains("سيكتور", ignoreCase = true) || device.deviceType.contains("Sector", ignoreCase = true) || device.deviceType.contains("مرسل", ignoreCase = true) -> Icons.Default.CellTower
+                        device.deviceType.contains("مستقبل", ignoreCase = true) || device.deviceType.contains("لاقط", ignoreCase = true) || device.deviceType.contains("CPE", ignoreCase = true) || device.deviceType.contains("Dish", ignoreCase = true) -> Icons.Default.NetworkCheck
                         else -> Icons.Default.Wifi
                     }
                     Box(
@@ -698,12 +721,16 @@ fun DeviceCard(
                 }
             }
 
-            // Bottom Actions (Edit / Delete)
+            // Bottom Actions (Clone / Edit / Delete)
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
+                IconButton(onClick = onClone, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "استنساخ الجهاز", tint = MikroTikCyan, modifier = Modifier.size(16.dp))
+                }
+                Spacer(modifier = Modifier.width(4.dp))
                 IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MikroTikPrimary, modifier = Modifier.size(16.dp))
                 }
@@ -729,29 +756,37 @@ fun AddEditDeviceDialog(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var name by remember { mutableStateOf(deviceToEdit?.name ?: "") }
-    var ipAddress by remember { mutableStateOf(deviceToEdit?.ipAddress ?: "") }
-    var locationArea by remember { mutableStateOf(deviceToEdit?.locationArea ?: "") }
-    var latitude by remember { mutableStateOf(if (deviceToEdit?.latitude != null && deviceToEdit.latitude != 0.0) deviceToEdit.latitude.toString() else "") }
-    var longitude by remember { mutableStateOf(if (deviceToEdit?.longitude != null && deviceToEdit.longitude != 0.0) deviceToEdit.longitude.toString() else "") }
-    var coverageRadius by remember { mutableFloatStateOf(deviceToEdit?.coverageRadiusMeters?.toFloat() ?: 300f) }
-    var parentDeviceId by remember { mutableStateOf<Long?>(deviceToEdit?.parentDeviceId) }
+    var isSaving by remember { mutableStateOf(false) }
+    var name by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.name ?: "") }
+    var ipAddress by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.ipAddress ?: "") }
+    var locationArea by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.locationArea ?: "") }
+    var latitude by remember(deviceToEdit) { mutableStateOf(if (deviceToEdit?.latitude != null && deviceToEdit.latitude != 0.0) deviceToEdit.latitude.toString() else "") }
+    var longitude by remember(deviceToEdit) { mutableStateOf(if (deviceToEdit?.longitude != null && deviceToEdit.longitude != 0.0) deviceToEdit.longitude.toString() else "") }
+    var coverageRadius by remember(deviceToEdit) { mutableFloatStateOf(deviceToEdit?.coverageRadiusMeters?.toFloat() ?: 300f) }
+    var parentDeviceId by remember(deviceToEdit) { mutableStateOf<Long?>(deviceToEdit?.parentDeviceId) }
     var isParentExpanded by remember { mutableStateOf(false) }
     var isLocatingGps by remember { mutableStateOf(false) }
-    var deviceType by remember { mutableStateOf(deviceToEdit?.deviceType ?: "Access Point") }
-    var portOrInterface by remember { mutableStateOf(deviceToEdit?.portOrInterface ?: "ether1") }
-    var frequencyOrSsid by remember { mutableStateOf(deviceToEdit?.frequencyOrSsid ?: "") }
-    var model by remember { mutableStateOf(deviceToEdit?.model ?: "") }
-    var notes by remember { mutableStateOf(deviceToEdit?.notes ?: "") }
+    var deviceType by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.deviceType ?: "مرسل") }
+    var portOrInterface by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.portOrInterface ?: "ether1") }
+    var frequencyOrSsid by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.frequencyOrSsid ?: "") }
+    var model by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.model ?: "") }
+    var notes by remember(deviceToEdit) { mutableStateOf(deviceToEdit?.notes ?: "") }
 
     var isTypeExpanded by remember { mutableStateOf(false) }
-    val deviceTypes = listOf(
+    val commonDeviceTypes = listOf(
+        "مرسل",
+        "مستقبل",
+        "لاقط",
+        "مرسل (Transmitter / AP)",
+        "مستقبل (Receiver / Station)",
+        "لاقط (CPE / Station / Dish)",
         "Access Point",
         "MikroTik RouterBOARD",
         "Sector Antenna",
         "Switch",
         "CPE",
-        "Fiber OLT"
+        "صحن توجيهي (Dish)",
+        "Fiber OLT / ONU"
     )
 
     // Trigger validation on initial load or change
@@ -763,7 +798,9 @@ fun AddEditDeviceDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = if (deviceToEdit == null) "إضافة جهاز شبكة جديد" else "تعديل بيانات الجهاز",
+                text = if (deviceToEdit == null || deviceToEdit.id == 0L) {
+                    if (deviceToEdit?.id == 0L) "استنساخ وتسجيل جهاز جديد" else "إضافة جهاز شبكة جديد"
+                } else "تعديل بيانات الجهاز",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
@@ -785,32 +822,98 @@ fun AddEditDeviceDialog(
                     )
                 }
 
-                // Device Type Dropdown
+                // Device Type (Writable TextField + Exposed Dropdown + Quick Preset Chips)
                 item {
-                    ExposedDropdownMenuBox(
-                        expanded = isTypeExpanded,
-                        onExpandedChange = { isTypeExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = deviceType,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("نوع الجهاز") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(
+                    Column {
+                        ExposedDropdownMenuBox(
                             expanded = isTypeExpanded,
-                            onDismissRequest = { isTypeExpanded = false }
+                            onExpandedChange = { isTypeExpanded = it }
                         ) {
-                            deviceTypes.forEach { type ->
-                                DropdownMenuItem(
-                                    text = { Text(type) },
-                                    onClick = {
-                                        deviceType = type
+                            OutlinedTextField(
+                                value = deviceType,
+                                onValueChange = {
+                                    deviceType = it
+                                    isTypeExpanded = true
+                                },
+                                readOnly = false,
+                                label = { Text("نوع الجهاز * (اختر أو اكتب يدوياً)") },
+                                placeholder = { Text("مثال: مرسل، مستقبل، لاقط، Access Point...") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeExpanded) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                                    .testTag("device_type_input")
+                            )
+
+                            val matchingTypes = if (deviceType.isBlank()) {
+                                commonDeviceTypes
+                            } else {
+                                val filtered = commonDeviceTypes.filter { it.contains(deviceType.trim(), ignoreCase = true) }
+                                if (filtered.isNotEmpty()) filtered else commonDeviceTypes
+                            }
+
+                            ExposedDropdownMenu(
+                                expanded = isTypeExpanded,
+                                onDismissRequest = { isTypeExpanded = false }
+                            ) {
+                                matchingTypes.forEach { type ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val typeIcon = when {
+                                                    type.contains("راوتر", ignoreCase = true) || type.contains("Router", ignoreCase = true) -> Icons.Default.Router
+                                                    type.contains("سيكتور", ignoreCase = true) || type.contains("مرسل", ignoreCase = true) -> Icons.Default.CellTower
+                                                    type.contains("مستقبل", ignoreCase = true) || type.contains("لاقط", ignoreCase = true) || type.contains("CPE", ignoreCase = true) -> Icons.Default.NetworkCheck
+                                                    else -> Icons.Default.Wifi
+                                                }
+                                                Icon(typeIcon, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(type)
+                                            }
+                                        },
+                                        onClick = {
+                                            deviceType = type
+                                            isTypeExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Quick selection chips
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "اختيار سريع بنقرة واحدة:",
+                            fontSize = 11.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val quickChips = listOf("مرسل", "مستقبل", "لاقط", "Access Point", "RouterBOARD", "سيكتور", "Switch", "CPE")
+                            items(quickChips) { chip ->
+                                val isSelected = deviceType.trim().equals(chip, ignoreCase = true)
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isSelected) MikroTikPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    border = BorderStroke(1.dp, if (isSelected) MikroTikPrimary else Color.Transparent),
+                                    modifier = Modifier.clickable {
+                                        deviceType = chip
                                         isTypeExpanded = false
                                     }
-                                )
+                                ) {
+                                    Text(
+                                        text = chip,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1121,32 +1224,49 @@ fun AddEditDeviceDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val updated = (deviceToEdit ?: NetworkDeviceEntity(
-                        name = name.trim(),
-                        ipAddress = ipAddress.trim(),
-                        locationArea = locationArea.trim(),
-                        deviceType = deviceType
-                    )).copy(
-                        name = name.trim(),
-                        ipAddress = ipAddress.trim(),
-                        locationArea = locationArea.trim(),
-                        deviceType = deviceType,
-                        latitude = latitude.toDoubleOrNull() ?: 0.0,
-                        longitude = longitude.toDoubleOrNull() ?: 0.0,
-                        coverageRadiusMeters = coverageRadius.roundToInt(),
-                        parentDeviceId = parentDeviceId,
-                        portOrInterface = portOrInterface.trim(),
-                        frequencyOrSsid = frequencyOrSsid.trim(),
-                        model = model.trim(),
-                        notes = notes.trim()
-                    )
-                    onSave(updated)
+                    if (!isSaving && name.isNotBlank() && ipAddress.isNotBlank() && locationArea.isNotBlank() && !ipValidation.hasConflict) {
+                        isSaving = true
+                        val finalDeviceType = deviceType.trim().ifBlank { "مرسل" }
+                        val updated = (deviceToEdit ?: NetworkDeviceEntity(
+                            name = name.trim(),
+                            ipAddress = ipAddress.trim(),
+                            locationArea = locationArea.trim(),
+                            deviceType = finalDeviceType
+                        )).copy(
+                            name = name.trim(),
+                            ipAddress = ipAddress.trim(),
+                            locationArea = locationArea.trim(),
+                            deviceType = finalDeviceType,
+                            latitude = latitude.toDoubleOrNull() ?: 0.0,
+                            longitude = longitude.toDoubleOrNull() ?: 0.0,
+                            coverageRadiusMeters = coverageRadius.roundToInt(),
+                            parentDeviceId = parentDeviceId,
+                            portOrInterface = portOrInterface.trim(),
+                            frequencyOrSsid = frequencyOrSsid.trim(),
+                            model = model.trim(),
+                            notes = notes.trim()
+                        )
+                        onSave(updated)
+                    }
                 },
-                enabled = name.isNotBlank() && ipAddress.isNotBlank() && locationArea.isNotBlank() && !ipValidation.hasConflict,
+                enabled = !isSaving && name.isNotBlank() && ipAddress.isNotBlank() && locationArea.isNotBlank() && !ipValidation.hasConflict,
                 colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
                 modifier = Modifier.testTag("save_device_btn")
             ) {
-                Text("حفظ الجهاز")
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("جاري الحفظ...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    Text(
+                        if (deviceToEdit != null && deviceToEdit.id != 0L) "تحديث الجهاز" else "حفظ الجهاز",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         },
         dismissButton = {

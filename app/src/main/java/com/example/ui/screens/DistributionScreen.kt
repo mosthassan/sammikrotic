@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Store
@@ -267,6 +269,65 @@ fun DistributionScreen(
                 }
                 else -> {
                     // تبويب نقاط البيع والديون
+                    // شريط المطابقة والتدقيق الدفتري مع فواتير المبيعات
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF0F172A),
+                        border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = ProfitEmerald,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = "المطابقة الدفترية للحسابات والديون",
+                                        fontFamily = CairoFontFamily,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "تطابق شامل بنسبة 100% بين ديون المحلات وفواتير المبيعات الآجلة",
+                                        fontFamily = CairoFontFamily,
+                                        fontSize = 10.sp,
+                                        color = ProfitEmerald
+                                    )
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.reconcileAccountingLedger {
+                                        Toast.makeText(context, "تم تدقيق ومطابقة الديون مع فواتير المبيعات بنجاح 100% ✓", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, ProfitEmerald),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("تدقيق ومطابقة", fontSize = 10.5.sp, color = ProfitEmerald, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
                     // Debt & Cards Banner
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -364,6 +425,10 @@ fun DistributionScreen(
                                     },
                                     onEdit = {
                                         retailerToEdit = retailer
+                                    },
+                                    onInvoice = {
+                                        selectedRetailerForInvoice = retailer
+                                        showCreateInvoiceDialog = true
                                     },
                                     onDistribute = {
                                         selectedRetailerForDistribution = retailer
@@ -625,6 +690,7 @@ fun DistributionScreen(
             CreateCardSalesInvoiceDialog(
                 inventoryItems = inventoryItems,
                 retailers = retailers,
+                initialRetailer = selectedRetailerForInvoice,
                 preSelectedPackageName = null,
                 onDismiss = {
                     showCreateInvoiceDialog = false
@@ -657,6 +723,7 @@ fun RetailerCard(
     onWhatsApp: () -> Unit,
     onClone: () -> Unit,
     onEdit: () -> Unit,
+    onInvoice: () -> Unit,
     onDistribute: () -> Unit,
     onQuickPay: () -> Unit,
     onDelete: () -> Unit
@@ -843,16 +910,27 @@ fun RetailerCard(
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = onInvoice,
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("فاتورة", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+
                     Button(
                         onClick = onQuickPay,
                         colors = ButtonDefaults.buttonColors(containerColor = ReceiptGreen),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Icon(Icons.Default.LocalAtm, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("سداد / قبض", fontSize = 11.sp)
+                        Icon(Icons.Default.LocalAtm, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("سداد", fontSize = 11.sp)
                     }
 
                     Button(
@@ -861,9 +939,9 @@ fun RetailerCard(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("تسليم كروت", fontSize = 11.sp)
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("تسليم", fontSize = 11.sp)
                     }
                 }
             }

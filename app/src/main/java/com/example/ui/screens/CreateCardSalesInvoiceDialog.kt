@@ -46,6 +46,7 @@ import java.util.UUID
 fun CreateCardSalesInvoiceDialog(
     inventoryItems: List<InventoryItemEntity>,
     retailers: List<RetailerEntity>,
+    initialRetailer: RetailerEntity? = null,
     preSelectedPackageName: String? = null,
     onDismiss: () -> Unit,
     onConfirmInvoice: (
@@ -60,11 +61,12 @@ fun CreateCardSalesInvoiceDialog(
 ) {
     val context = LocalContext.current
 
+    val defaultRetailer = initialRetailer ?: retailers.firstOrNull()
     // Customer Info
-    var selectedRetailer by remember { mutableStateOf<RetailerEntity?>(retailers.firstOrNull()) }
-    var isDirectCustomer by remember { mutableStateOf(false) }
-    var customerNameText by remember { mutableStateOf(retailers.firstOrNull()?.name ?: "عميل مباشر") }
-    var customerPhoneText by remember { mutableStateOf(retailers.firstOrNull()?.phone ?: "") }
+    var selectedRetailer by remember(initialRetailer) { mutableStateOf<RetailerEntity?>(defaultRetailer) }
+    var isDirectCustomer by remember(initialRetailer) { mutableStateOf(false) }
+    var customerNameText by remember(initialRetailer) { mutableStateOf(defaultRetailer?.name ?: "عميل مباشر") }
+    var customerPhoneText by remember(initialRetailer) { mutableStateOf(defaultRetailer?.phone ?: "") }
 
     // Multi-Item Invoice Rows
     // Initial row
@@ -81,7 +83,7 @@ fun CreateCardSalesInvoiceDialog(
     var isSaving by remember { mutableStateOf(false) }
 
     // Payment Type: CASH (نقد), CREDIT (آجل), PARTIAL (مقدم ومتبقي)
-    var paymentType by remember { mutableStateOf("CASH") }
+    var paymentType by remember(initialRetailer) { mutableStateOf(if (defaultRetailer != null) "CREDIT" else "CASH") }
     var customPaidAmountText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
 

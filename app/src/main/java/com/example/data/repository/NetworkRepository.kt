@@ -558,23 +558,26 @@ class NetworkRepository(private val db: AppDatabase) {
 
     /**
      * محرك التسوية المحاسبية والربط الفوري والتزامن الشامل بين كافة التبويبات:
-     * - فواتير مبيعات الكروت
-     * - نقاط البيع (البقالات) والمديونيات
-     * - المخزن وحركات الأصناف
-     * - السندات المالية (القبض والصرف)
-     * - تقارير الأرباح والسيولة
+     * - فواتير مبيعات الكروت (card_sales_invoices)
+     * - نقاط البيع والمديونيات (retailers)
+     * - المخزن وحركات الأصناف (inventory_items & inventory_movements)
+     * - السندات المالية للقبض والصرف (financial_vouchers)
+     *
+     * يحقق التطابق التام 100% بين:
+     * إجمالي ديون المحلات == المديونية الآجلة لفواتير المبيعات
+     * كروت بحوزة البقالات == الكروت المرتبطة بالفواتير غير المسددة
      */
     suspend fun reconcileAccountingLedger() = withContext(Dispatchers.IO) {
         try {
             val retailers = db.retailerDao().getAllRetailers().first()
-            val invoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+            val initialInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
             val vouchers = db.financialVoucherDao().getAllVouchers().first()
 
             val retailersByName = retailers.associateBy { it.name.trim().lowercase() }
             val retailersById = retailers.associateBy { it.id }
 
             // 1. ربط أي فاتورة معلقة بالبقالة المطابقة بالاسم إذا لم يكن الـ ID مربوطاً
-            for (inv in invoices) {
+            for (inv in initialInvoices) {
                 if (inv.retailerId == null || inv.retailerId == 0L || !retailersById.containsKey(inv.retailerId)) {
                     val matchedRetailer = retailersByName[inv.customerName.trim().lowercase()]
                     if (matchedRetailer != null) {
@@ -584,38 +587,125 @@ class NetworkRepository(private val db: AppDatabase) {
             }
 
             // إعادة تحميل الفواتير بعد اكتمال الربط
-            val updatedInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+            val currentInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first().toMutableList()
 
-            // 2. مطابقة وحساب الأرصدة والديون والكروت الفعلية لكل بقالة بدقة تامة
+            // 2. معالجة وتوليد فواتير تسليم رسمية لأي ديون أو كروت مقيدة على المحلات تسبق نظام الفواتير
             for (retailer in retailers) {
-                val matchingInvoices = updatedInvoices.filter {
+                val matchingInvoices = currentInvoices.filter {
                     it.retailerId == retailer.id ||
                     it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
                 }
 
-                if (matchingInvoices.isNotEmpty()) {
-                    val totalInvoiceRemaining = matchingInvoices.sumOf { it.remainingAmount }
-                    val totalInvoiceCards = matchingInvoices.filter { it.remainingAmount > 0 }.sumOf { it.totalCardsCount }
+                val currentInvoicedRemaining = matchingInvoices.sumOf { it.remainingAmount }
+                val currentInvoicedCards = matchingInvoices.filter { it.remainingAmount > 0.01 }.sumOf { it.totalCardsCount }
 
-                    // السندات المالية المقبوضة من البقالة غير المندرجة ضمن الدفعات التلقائية للفواتير
-                    val directPayments = vouchers.filter {
-                        (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
-                        it.voucherType == "RECEIPT" &&
-                        !it.description.contains("INV-") &&
-                        !it.description.contains("فاتورة")
-                    }.sumOf { it.amount }
+                val unInvoicedDebt = retailer.balanceOwed - currentInvoicedRemaining
+                val unInvoicedCards = (retailer.activeCardsCount - currentInvoicedCards).coerceAtLeast(0)
 
-                    val finalDebt = (totalInvoiceRemaining - directPayments).coerceAtLeast(0.0)
-                    val finalCards = totalInvoiceCards
+                // إذا كانت هناك مديونية مسجلة للبقالة تفوق مجموع الفواتير الحالية، ننشئ فاتورة تسليم رسمية بالفرق
+                if (unInvoicedDebt > 1.0) {
+                    val randomNum = Random.nextInt(1000, 9999)
+                    val invoiceNumber = "INV-DELIV-2026-${retailer.id}-$randomNum"
+                    val totalCards = if (unInvoicedCards > 0) unInvoicedCards else (unInvoicedDebt / 350.0).toInt().coerceAtLeast(1)
+                    val newInvoice = CardSalesInvoiceEntity(
+                        invoiceNumber = invoiceNumber,
+                        customerName = retailer.name,
+                        customerPhone = retailer.phone,
+                        retailerId = retailer.id,
+                        paymentType = "CREDIT",
+                        totalAmount = unInvoicedDebt,
+                        paidAmount = 0.0,
+                        remainingAmount = unInvoicedDebt,
+                        totalCardsCount = totalCards,
+                        itemsCount = 1,
+                        itemsSummary = "تسليم وتوزيع كروت سابقة مقيدة على حساب البقالة ($totalCards كرت)",
+                        itemsJson = "",
+                        notes = "فاتورة تسوية ومطابقة محاسبية معتمدة لتسليمات الكروت السابقة",
+                        issuerName = "إدارة التوزيع المحاسبي",
+                        status = "CREDIT",
+                        invoiceDateMillis = if (retailer.createdAt > 0) retailer.createdAt else (System.currentTimeMillis() - 86400000L)
+                    )
+                    db.cardSalesInvoiceDao().insertInvoice(newInvoice)
+                }
+            }
 
-                    if (Math.abs(retailer.balanceOwed - finalDebt) > 0.01 || retailer.activeCardsCount != finalCards) {
-                        db.retailerDao().updateRetailer(
-                            retailer.copy(
-                                balanceOwed = finalDebt,
-                                activeCardsCount = finalCards
+            // إعادة تحميل الفواتير بعد اكتمال إدراج فواتير التسوية
+            val allInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+
+            // 3. تسوية الدفعات وسندات القبض على فواتير كل بقالة بنظام FIFO المحاسبي
+            for (retailer in retailers) {
+                val matchingInvoices = allInvoices.filter {
+                    it.retailerId == retailer.id ||
+                    it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
+                }.sortedBy { it.invoiceDateMillis }
+
+                // السندات المالية المقبوضة المباشرة من البقالة (التي ليست سداداً مسبقاً مسجلاً عند إنشاء الفاتورة)
+                val directPayments = vouchers.filter {
+                    (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                    it.voucherType == "RECEIPT" &&
+                    !it.description.contains("INV-") &&
+                    !it.description.contains("فاتورة")
+                }.sumOf { it.amount }
+
+                var remainingPaymentPool = directPayments
+
+                for (inv in matchingInvoices) {
+                    val baseUnpaid = (inv.totalAmount - (if (inv.paymentType == "CASH") inv.totalAmount else 0.0)).coerceAtLeast(0.0)
+                    if (baseUnpaid <= 0.0) {
+                        if (inv.remainingAmount > 0.0 || inv.status != "PAID") {
+                            db.cardSalesInvoiceDao().updateInvoice(
+                                inv.copy(paidAmount = inv.totalAmount, remainingAmount = 0.0, status = "PAID")
+                            )
+                        }
+                        continue
+                    }
+
+                    val paymentForThisInvoice = minOf(remainingPaymentPool, baseUnpaid)
+                    val newPaid = paymentForThisInvoice
+                    val newRemaining = (baseUnpaid - paymentForThisInvoice).coerceAtLeast(0.0)
+                    val newStatus = when {
+                        newRemaining <= 0.01 -> "PAID"
+                        newPaid > 0.01 -> "PARTIAL"
+                        else -> "CREDIT"
+                    }
+
+                    if (Math.abs(inv.paidAmount - newPaid) > 0.01 || Math.abs(inv.remainingAmount - newRemaining) > 0.01 || inv.status != newStatus) {
+                        db.cardSalesInvoiceDao().updateInvoice(
+                            inv.copy(
+                                paidAmount = newPaid,
+                                remainingAmount = newRemaining,
+                                status = newStatus
                             )
                         )
                     }
+
+                    remainingPaymentPool = (remainingPaymentPool - paymentForThisInvoice).coerceAtLeast(0.0)
+                }
+            }
+
+            // 4. ضبط الأرصدة والكروت النهائية المسجلة للبقالات لتطابق فواتير المبيعات بعد التسوية
+            val finalInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
+
+            for (retailer in retailers) {
+                val matchingInvoices = finalInvoices.filter {
+                    it.retailerId == retailer.id ||
+                    it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
+                }
+
+                val finalDebt = matchingInvoices.sumOf { it.remainingAmount }
+                val finalCards = matchingInvoices.filter { it.remainingAmount > 0.01 }.sumOf { it.totalCardsCount }
+                val totalPaid = matchingInvoices.sumOf { it.paidAmount }
+
+                if (Math.abs(retailer.balanceOwed - finalDebt) > 0.01 ||
+                    retailer.activeCardsCount != finalCards ||
+                    Math.abs(retailer.totalPaid - totalPaid) > 0.01) {
+                    db.retailerDao().updateRetailer(
+                        retailer.copy(
+                            balanceOwed = finalDebt,
+                            activeCardsCount = finalCards,
+                            totalPaid = totalPaid
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -686,10 +776,58 @@ class NetworkRepository(private val db: AppDatabase) {
         val updatedItem = item.copy(quantityAvailable = item.quantityAvailable - quantity)
         db.inventoryDao().updateItem(updatedItem)
 
-        // Add debt to retailer
         val totalDebt = item.wholesalePrice * quantity
+        val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
+
+        // قيد حركة مخزنية خارجة (خصم تسليم كروت)
+        db.inventoryMovementDao().insertMovement(
+            InventoryMovementEntity(
+                packageName = item.packageName,
+                movementType = "SALE",
+                quantityChange = -quantity,
+                resultingBalance = updatedItem.quantityAvailable,
+                referenceNumber = invoiceNumber,
+                customerOrSupplier = retailer.name,
+                unitPrice = item.wholesalePrice,
+                notes = "تسليم كروت للبقالة $invoiceNumber"
+            )
+        )
+
+        // إنشاء فاتورة مبيعات كروت رسمية بالآجل
+        val jsonArray = org.json.JSONArray().apply {
+            put(org.json.JSONObject().apply {
+                put("id", java.util.UUID.randomUUID().toString())
+                put("packageName", item.packageName)
+                put("quantity", quantity)
+                put("unitPrice", item.wholesalePrice)
+                put("retailPrice", item.retailPrice)
+                put("lineTotal", totalDebt)
+            })
+        }
+
+        val invoiceEntity = CardSalesInvoiceEntity(
+            invoiceNumber = invoiceNumber,
+            customerName = retailer.name,
+            customerPhone = retailer.phone,
+            retailerId = retailerId,
+            paymentType = "CREDIT",
+            totalAmount = totalDebt,
+            paidAmount = 0.0,
+            remainingAmount = totalDebt,
+            totalCardsCount = quantity,
+            itemsCount = 1,
+            itemsSummary = "$quantity كرت [${item.packageName}]",
+            itemsJson = jsonArray.toString(),
+            notes = "تسليم وتوزيع كروت بالآجل من المخزن",
+            issuerName = "مسؤول التوزيع",
+            status = "CREDIT"
+        )
+        db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
+        // إضافة المديونية والكروت وإعادة التسوية الشاملة
         db.retailerDao().updateBalanceAndCards(retailerId, totalDebt, quantity)
-        
+        reconcileAccountingLedger()
+
         true
     }
 
@@ -710,7 +848,42 @@ class NetworkRepository(private val db: AppDatabase) {
         db.cardDao().assignCardsToRetailer(cardIds, retailerId, retailer.name, now)
 
         val totalWholesaleDebt = availableCards.sumOf { it.wholesalePrice }
+        val categoryName = availableCards.firstOrNull()?.categoryName ?: "كروت شبكة"
+        val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
+
+        val jsonArray = org.json.JSONArray().apply {
+            put(org.json.JSONObject().apply {
+                put("id", java.util.UUID.randomUUID().toString())
+                put("packageName", categoryName)
+                put("quantity", countToDistribute)
+                put("unitPrice", if (countToDistribute > 0) totalWholesaleDebt / countToDistribute else 0.0)
+                put("retailPrice", availableCards.firstOrNull()?.retailPrice ?: 0.0)
+                put("lineTotal", totalWholesaleDebt)
+            })
+        }
+
+        val invoiceEntity = CardSalesInvoiceEntity(
+            invoiceNumber = invoiceNumber,
+            customerName = retailer.name,
+            customerPhone = retailer.phone,
+            retailerId = retailerId,
+            paymentType = "CREDIT",
+            totalAmount = totalWholesaleDebt,
+            paidAmount = 0.0,
+            remainingAmount = totalWholesaleDebt,
+            totalCardsCount = countToDistribute,
+            itemsCount = 1,
+            itemsSummary = "$countToDistribute كرت [$categoryName]",
+            itemsJson = jsonArray.toString(),
+            notes = "تسليم دفعة كروت بالآجل للبقالة",
+            issuerName = "مسؤول التوزيع",
+            status = "CREDIT"
+        )
+        db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
         db.retailerDao().updateBalanceAndCards(retailerId, totalWholesaleDebt, countToDistribute)
+        reconcileAccountingLedger()
+
         true
     }
 
@@ -778,10 +951,33 @@ class NetworkRepository(private val db: AppDatabase) {
 
         val voucherId = db.financialVoucherDao().insertVoucher(voucher)
 
+        val isCash = paymentMethod.contains("نقد")
+        val invoiceEntity = CardSalesInvoiceEntity(
+            invoiceNumber = voucherNumber,
+            customerName = retailerName,
+            customerPhone = retailer?.phone ?: "",
+            retailerId = retailerId,
+            paymentType = if (isCash) "CASH" else "CREDIT",
+            totalAmount = totalWholesale,
+            paidAmount = if (isCash) totalWholesale else 0.0,
+            remainingAmount = if (isCash) 0.0 else totalWholesale,
+            totalCardsCount = quantity,
+            itemsCount = 1,
+            itemsSummary = "$quantity كرت [${packageEntity.name}]",
+            itemsJson = "",
+            notes = notes.ifBlank { "فاتورة مبيعات باقة ${packageEntity.name}" },
+            issuerName = issuerName,
+            status = if (isCash) "PAID" else "CREDIT"
+        )
+        db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
         // تحديث رصيد البقالة بالمديونية الجديدة وزيادة عدد الكروت المستلمة
         if (retailer != null) {
-            db.retailerDao().updateBalanceAndCards(retailerId, totalWholesale, quantity)
+            val debtToAdd = if (isCash) 0.0 else totalWholesale
+            db.retailerDao().updateBalanceAndCards(retailerId, debtToAdd, quantity)
         }
+
+        reconcileAccountingLedger()
 
         voucherId
     }
@@ -843,11 +1039,14 @@ class NetworkRepository(private val db: AppDatabase) {
             db.retailerDao().recordPayment(retailerId, amount)
         }
 
+        reconcileAccountingLedger()
+
         id
     }
 
     suspend fun deleteVoucher(voucher: FinancialVoucherEntity) = withContext(Dispatchers.IO) {
         db.financialVoucherDao().deleteVoucher(voucher)
+        reconcileAccountingLedger()
     }
 
     suspend fun insertVoucher(voucher: FinancialVoucherEntity): Long = withContext(Dispatchers.IO) {

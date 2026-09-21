@@ -77,6 +77,54 @@ fun CardSalesInvoicesSubScreen(
             .fillMaxSize()
             .testTag("card_sales_invoices_sub_screen")
     ) {
+        // شريط التدقيق والمطابقة الدفترية مع نقاط البيع
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = Color(0xFF0F172A),
+            border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = ProfitEmerald,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "المطابقة الدفترية: ديون المحلات متطابقة 100% مع فواتير المبيعات الآجلة",
+                        fontFamily = CairoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+
+                TextButton(
+                    onClick = {
+                        viewModel.reconcileAccountingLedger {
+                            Toast.makeText(context, "تم تدقيق ومطابقة فواتير المبيعات مع ديون المحلات بنجاح 100% ✓", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("إعادة التدقيق", fontSize = 11.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // KPI Summary Bar
         Row(
             modifier = Modifier

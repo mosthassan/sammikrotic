@@ -557,6 +557,194 @@ class NetworkRepository(private val db: AppDatabase) {
     }
 
     /**
+     * تحديث وتعديل فاتورة مبيعات كروت سابقة:
+     * - يقوم باسترجاع الأصناف والكميات السابقة للمخزن
+     * - إلغاء السند المالي السابق المرتبط بها
+     * - خصم الأصناف والكميات المعدلة الجديدة من المخزن
+     * - تحديث بيانات الفاتورة والسند المالي
+     * - إعادة تسوية أرصدة المحلات محاسبياً 100%
+     */
+    suspend fun updateMultiItemSalesInvoice(
+        originalInvoice: CardSalesInvoiceEntity,
+        customerName: String,
+        customerPhone: String = "",
+        retailerId: Long? = null,
+        items: List<CardSalesInvoiceItem>,
+        paymentType: String = "CASH",
+        paidAmount: Double = 0.0,
+        notes: String = "",
+        issuerName: String = "المهندس حسن"
+    ) = withContext(Dispatchers.IO) {
+        // 1. استرجاع الكميات السابقة للمخزن
+        if (originalInvoice.itemsJson.isNotBlank()) {
+            try {
+                val jsonArray = JSONArray(originalInvoice.itemsJson)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val pkgName = obj.optString("packageName", "")
+                    val qty = obj.optInt("quantity", 0)
+                    if (pkgName.isNotBlank() && qty > 0) {
+                        val item = db.inventoryDao().getItemByPackageName(pkgName)
+                        if (item != null) {
+                            val newQty = item.quantityAvailable + qty
+                            db.inventoryDao().updateItem(item.copy(quantityAvailable = newQty))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("NetworkRepository", "Error refunding old invoice items: ${e.message}")
+            }
+        }
+
+        // 2. حذف السند المالي السابق المرتبط بهذه الفاتورة إن وجد
+        try {
+            val vouchers = db.financialVoucherDao().getAllVouchers().first()
+            val linkedVoucher = vouchers.find { it.description.contains(originalInvoice.invoiceNumber) }
+            if (linkedVoucher != null) {
+                db.financialVoucherDao().deleteVoucher(linkedVoucher)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("NetworkRepository", "Error deleting old voucher: ${e.message}")
+        }
+
+        // 3. خصم الأصناف الجديدة من المخزن
+        items.forEach { item ->
+            val inventoryItem = db.inventoryDao().getItemByPackageName(item.packageName)
+            if (inventoryItem != null) {
+                val newQty = (inventoryItem.quantityAvailable - item.quantity).coerceAtLeast(0)
+                db.inventoryDao().updateItem(inventoryItem.copy(quantityAvailable = newQty))
+                db.inventoryMovementDao().insertMovement(
+                    InventoryMovementEntity(
+                        packageName = item.packageName,
+                        movementType = "SALE",
+                        quantityChange = -item.quantity,
+                        resultingBalance = newQty,
+                        referenceNumber = "EDIT-${originalInvoice.invoiceNumber}",
+                        customerOrSupplier = customerName,
+                        unitPrice = item.unitPrice,
+                        notes = "تعديل فاتورة مبيعات #${originalInvoice.invoiceNumber}"
+                    )
+                )
+            }
+        }
+
+        // 4. احتساب المبالغ والأصناف
+        val totalAmount = items.sumOf { it.lineTotal }
+        val totalCardsCount = items.sumOf { it.quantity }
+        val actualPaidAmount = when (paymentType) {
+            "CASH" -> totalAmount
+            "CREDIT" -> 0.0
+            "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
+            else -> totalAmount
+        }
+        val remainingAmount = (totalAmount - actualPaidAmount).coerceAtLeast(0.0)
+
+        val itemsJsonArray = JSONArray()
+        items.forEach { item ->
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("packageName", item.packageName)
+                put("quantity", item.quantity)
+                put("unitPrice", item.unitPrice)
+                put("retailPrice", item.retailPrice)
+                put("lineTotal", item.lineTotal)
+            }
+            itemsJsonArray.put(obj)
+        }
+        val itemsSummary = items.joinToString("، ") { "${it.packageName} (${it.quantity})" }
+
+        // 5. حفظ التعديل في قاعدة البيانات
+        val updatedInvoice = originalInvoice.copy(
+            customerName = customerName,
+            customerPhone = customerPhone,
+            retailerId = retailerId,
+            totalAmount = totalAmount,
+            paidAmount = actualPaidAmount,
+            remainingAmount = remainingAmount,
+            totalCardsCount = totalCardsCount,
+            paymentType = paymentType,
+            itemsJson = itemsJsonArray.toString(),
+            itemsSummary = itemsSummary,
+            notes = notes,
+            issuerName = issuerName
+        )
+        db.cardSalesInvoiceDao().updateInvoice(updatedInvoice)
+
+        // 6. تسجيل سند قبض مالي جديد إذا كان هناك سداد
+        if (actualPaidAmount > 0) {
+            val voucher = FinancialVoucherEntity(
+                voucherNumber = "REC-${System.currentTimeMillis() % 100000}",
+                voucherType = "RECEIPT",
+                amount = actualPaidAmount,
+                partyName = customerName,
+                category = "مبيعات كروت شبكة",
+                paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
+                description = "سداد قيمة فاتورة مبيعات معدلة #${originalInvoice.invoiceNumber} ($itemsSummary)",
+                issuerName = issuerName,
+                notes = notes,
+                retailerId = retailerId
+            )
+            db.financialVoucherDao().insertVoucher(voucher)
+        }
+
+        // 7. تسوية الدفاتر المحاسبية
+        reconcileAccountingLedger()
+    }
+
+    /**
+     * استنساخ مباشر وفوري لفاتورة مبيعات كروت:
+     * - ينشئ فاتورة جديدة برقم جديد كلياً
+     * - ينسخ كافة الأصناف والأسعار ونوع الدفع وبيانات العميل
+     * - يخصم الكروت من المخزن ويسجل السند المحاسبي
+     */
+    suspend fun cloneSalesInvoice(
+        originalInvoice: CardSalesInvoiceEntity,
+        issuerName: String = "المهندس حسن"
+    ): Long = withContext(Dispatchers.IO) {
+        val items = mutableListOf<CardSalesInvoiceItem>()
+        if (originalInvoice.itemsJson.isNotBlank()) {
+            try {
+                val arr = JSONArray(originalInvoice.itemsJson)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    items.add(
+                        CardSalesInvoiceItem(
+                            id = java.util.UUID.randomUUID().toString(),
+                            packageName = obj.optString("packageName", ""),
+                            quantity = obj.optInt("quantity", 1),
+                            unitPrice = obj.optDouble("unitPrice", 0.0),
+                            retailPrice = obj.optDouble("retailPrice", 0.0)
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        val finalItems = if (items.isNotEmpty()) items else listOf(
+            CardSalesInvoiceItem(
+                id = java.util.UUID.randomUUID().toString(),
+                packageName = "صنف كروت",
+                quantity = originalInvoice.totalCardsCount.coerceAtLeast(1),
+                unitPrice = if (originalInvoice.totalCardsCount > 0) originalInvoice.totalAmount / originalInvoice.totalCardsCount else originalInvoice.totalAmount,
+                retailPrice = if (originalInvoice.totalCardsCount > 0) originalInvoice.totalAmount / originalInvoice.totalCardsCount else originalInvoice.totalAmount
+            )
+        )
+
+        issueMultiItemSalesInvoice(
+            customerName = originalInvoice.customerName,
+            customerPhone = originalInvoice.customerPhone,
+            retailerId = originalInvoice.retailerId,
+            items = finalItems,
+            paymentType = originalInvoice.paymentType,
+            paidAmount = originalInvoice.paidAmount,
+            notes = if (originalInvoice.notes.isNotBlank()) "${originalInvoice.notes} (مستنسخة من #${originalInvoice.invoiceNumber})" else "مستنسخة من #${originalInvoice.invoiceNumber}",
+            issuerName = issuerName
+        )
+    }
+
+    /**
      * محرك التسوية المحاسبية والربط الفوري والتزامن الشامل بين كافة التبويبات:
      * - فواتير مبيعات الكروت (card_sales_invoices)
      * - نقاط البيع والمديونيات (retailers)

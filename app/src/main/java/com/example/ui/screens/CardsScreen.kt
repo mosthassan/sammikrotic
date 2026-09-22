@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import com.example.data.local.entity.CardSalesInvoiceEntity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -124,6 +125,8 @@ fun CardsScreen(
 
     var showCreateInvoiceDialog by remember { mutableStateOf(false) }
     var preselectedPackageForInvoice by remember { mutableStateOf<String?>(null) }
+    var invoiceToClone by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
+    var invoiceToEdit by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
 
     val statusFilters = listOf("الكل", "المتاحة بالمستودع", "الموزعة للمحلات", "المباعة")
 
@@ -232,6 +235,20 @@ fun CardsScreen(
                     CardSalesInvoicesSubScreen(
                         viewModel = viewModel,
                         onOpenCreateInvoice = {
+                            preselectedPackageForInvoice = null
+                            invoiceToClone = null
+                            invoiceToEdit = null
+                            showCreateInvoiceDialog = true
+                        },
+                        onEditInvoice = { inv ->
+                            invoiceToEdit = inv
+                            invoiceToClone = null
+                            preselectedPackageForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        onCloneInvoice = { inv ->
+                            invoiceToClone = inv
+                            invoiceToEdit = null
                             preselectedPackageForInvoice = null
                             showCreateInvoiceDialog = true
                         },
@@ -708,15 +725,37 @@ fun CardsScreen(
             )
         }
 
-        // نافذة إصدار فاتورة مبيعات كروت احترافية متعددة الأصناف
+        // نافذة إصدار أو تعديل أو استنساخ فاتورة مبيعات كروت احترافية
         if (showCreateInvoiceDialog) {
             CreateCardSalesInvoiceDialog(
                 inventoryItems = inventoryItems,
                 retailers = retailers,
                 preSelectedPackageName = preselectedPackageForInvoice,
+                initialInvoiceToClone = invoiceToClone,
+                invoiceToEdit = invoiceToEdit,
                 onDismiss = {
                     showCreateInvoiceDialog = false
                     preselectedPackageForInvoice = null
+                    invoiceToClone = null
+                    invoiceToEdit = null
+                },
+                onConfirmEdit = { originalInvoice, customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes ->
+                    viewModel.updateSalesInvoice(
+                        originalInvoice = originalInvoice,
+                        customerName = customerName,
+                        customerPhone = customerPhone,
+                        retailerId = retailerId,
+                        items = items,
+                        paymentType = paymentType,
+                        paidAmount = paidAmount,
+                        notes = notes
+                    ) {
+                        showCreateInvoiceDialog = false
+                        preselectedPackageForInvoice = null
+                        invoiceToClone = null
+                        invoiceToEdit = null
+                        Toast.makeText(context, "تم حفظ وتحديث الفاتورة وضبط الحسابات والمخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                    }
                 },
                 onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes, oldInvoiceToDelete ->
                     if (oldInvoiceToDelete != null) {
@@ -732,6 +771,8 @@ fun CardsScreen(
                         ) { invoiceId ->
                             showCreateInvoiceDialog = false
                             preselectedPackageForInvoice = null
+                            invoiceToClone = null
+                            invoiceToEdit = null
                             Toast.makeText(context, "تم استنساخ الفاتورة وحذف السابقة بنجاح ✓", Toast.LENGTH_LONG).show()
                         }
                     } else {
@@ -746,7 +787,14 @@ fun CardsScreen(
                         ) { invoiceId ->
                             showCreateInvoiceDialog = false
                             preselectedPackageForInvoice = null
-                            Toast.makeText(context, "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                            invoiceToClone = null
+                            invoiceToEdit = null
+                            val successMsg = if (invoiceToClone != null) {
+                                "تم استنساخ الفاتورة وإصدارها برقم جديد بنجاح ✓"
+                            } else {
+                                "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓"
+                            }
+                            Toast.makeText(context, successMsg, Toast.LENGTH_LONG).show()
                         }
                     }
                 }

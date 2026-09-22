@@ -46,6 +46,7 @@ fun CardSalesInvoiceDetailDialog(
     invoice: CardSalesInvoiceEntity,
     viewModel: MainViewModel,
     onDismiss: () -> Unit,
+    onEditInvoice: ((CardSalesInvoiceEntity) -> Unit)? = null,
     onCloneInvoice: ((CardSalesInvoiceEntity) -> Unit)? = null,
     onDeleteInvoice: ((CardSalesInvoiceEntity) -> Unit)? = null
 ) {
@@ -443,11 +444,27 @@ fun CardSalesInvoiceDetailDialog(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Row 0: Clone & Delete Action Buttons
+                    // Row 0: Edit, Clone & Delete Action Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (onEditInvoice != null) {
+                            Button(
+                                onClick = {
+                                    onDismiss()
+                                    onEditInvoice(invoice)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("تعديل الفاتورة", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+
                         if (onCloneInvoice != null) {
                             Button(
                                 onClick = {
@@ -457,11 +474,11 @@ fun CardSalesInvoiceDetailDialog(
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F2942)),
                                 border = BorderStroke(1.dp, Color(0xFF38BDF8)),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1.3f)
+                                modifier = Modifier.weight(1f)
                             ) {
                                 Icon(Icons.Default.CopyAll, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("استنساخ الفاتورة (رقم جديد)", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("استنساخ", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
                             }
                         }
 
@@ -474,7 +491,7 @@ fun CardSalesInvoiceDetailDialog(
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.7f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
-                                modifier = Modifier.weight(0.7f)
+                                modifier = Modifier.weight(0.6f)
                             ) {
                                 Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFEF4444))
                                 Spacer(modifier = Modifier.width(4.dp))

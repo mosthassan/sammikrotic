@@ -129,6 +129,7 @@ fun DistributionScreen(
     var showCreateInvoiceDialog by remember { mutableStateOf(false) }
     var selectedRetailerForInvoice by remember { mutableStateOf<RetailerEntity?>(null) }
     var invoiceToClone by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
+    var invoiceToEdit by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
 
     // حساب الأرصدة والكروت الحقيقية بشكل فوري ومباشر 100% من واقع الفواتير والسندات
     val dynamicRetailers = remember(retailers, salesInvoices, vouchers) {
@@ -288,11 +289,19 @@ fun DistributionScreen(
                         viewModel = viewModel,
                         onOpenCreateInvoice = {
                             invoiceToClone = null
+                            invoiceToEdit = null
+                            selectedRetailerForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        onEditInvoice = { inv ->
+                            invoiceToEdit = inv
+                            invoiceToClone = null
                             selectedRetailerForInvoice = null
                             showCreateInvoiceDialog = true
                         },
                         onCloneInvoice = { inv ->
                             invoiceToClone = inv
+                            invoiceToEdit = null
                             selectedRetailerForInvoice = null
                             showCreateInvoiceDialog = true
                         },
@@ -747,7 +756,7 @@ fun DistributionScreen(
             )
         }
 
-        // نافذة إصدار أو استنساخ فاتورة مبيعات كروت احترافية
+        // نافذة إصدار أو تعديل أو استنساخ فاتورة مبيعات كروت احترافية
         if (showCreateInvoiceDialog) {
             CreateCardSalesInvoiceDialog(
                 inventoryItems = inventoryItems,
@@ -755,10 +764,30 @@ fun DistributionScreen(
                 initialRetailer = selectedRetailerForInvoice,
                 preSelectedPackageName = null,
                 initialInvoiceToClone = invoiceToClone,
+                invoiceToEdit = invoiceToEdit,
                 onDismiss = {
                     showCreateInvoiceDialog = false
                     selectedRetailerForInvoice = null
                     invoiceToClone = null
+                    invoiceToEdit = null
+                },
+                onConfirmEdit = { originalInvoice, customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes ->
+                    viewModel.updateSalesInvoice(
+                        originalInvoice = originalInvoice,
+                        customerName = customerName,
+                        customerPhone = customerPhone,
+                        retailerId = retailerId,
+                        items = items,
+                        paymentType = paymentType,
+                        paidAmount = paidAmount,
+                        notes = notes
+                    ) {
+                        showCreateInvoiceDialog = false
+                        selectedRetailerForInvoice = null
+                        invoiceToClone = null
+                        invoiceToEdit = null
+                        Toast.makeText(context, "تم حفظ وتحديث الفاتورة وضبط الحسابات والمخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                    }
                 },
                 onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes, oldInvoiceToDelete ->
                     if (oldInvoiceToDelete != null) {
@@ -775,6 +804,7 @@ fun DistributionScreen(
                             showCreateInvoiceDialog = false
                             selectedRetailerForInvoice = null
                             invoiceToClone = null
+                            invoiceToEdit = null
                             Toast.makeText(context, "تم استنساخ الفاتورة وحذف السابقة وضبط الحسابات بنجاح ✓", Toast.LENGTH_LONG).show()
                         }
                     } else {
@@ -790,6 +820,7 @@ fun DistributionScreen(
                             showCreateInvoiceDialog = false
                             selectedRetailerForInvoice = null
                             invoiceToClone = null
+                            invoiceToEdit = null
                             val successMsg = if (invoiceToClone != null) {
                                 "تم استنساخ الفاتورة وإصدارها برقم جديد بنجاح ✓"
                             } else {

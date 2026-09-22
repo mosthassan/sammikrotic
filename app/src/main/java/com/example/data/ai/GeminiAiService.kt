@@ -402,46 +402,63 @@ class GeminiAiService(private val context: Context? = null) {
 
         val requestBody = rootJson.toString().toRequestBody(jsonMediaType)
 
-        // Try primary model gemini-2.5-flash, fallback to gemini-3.5-flash
-        val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash")
+        // Try models in priority order
+        val modelsToTry = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-3.5-flash", "gemini-3.1-pro-preview")
         var lastError: Exception? = null
 
+        val isBearerToken = apiKey.startsWith("AQ.") || apiKey.startsWith("ya29.") || apiKey.startsWith("Bearer ")
+        val cleanToken = apiKey.removePrefix("Bearer ").trim()
+
         for (modelName in modelsToTry) {
-            try {
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
-                val request = Request.Builder()
-                    .url(url)
-                    .post(requestBody)
-                    .build()
+            val attempts = if (isBearerToken) {
+                listOf(
+                    Pair("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent", cleanToken),
+                    Pair("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$cleanToken", null)
+                )
+            } else {
+                listOf(
+                    Pair("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey", null),
+                    Pair("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent", apiKey)
+                )
+            }
 
-                val response = client.newCall(request).execute()
-                val responseBody = response.body?.string()
+            for ((url, bearer) in attempts) {
+                try {
+                    val reqBuilder = Request.Builder().url(url).post(requestBody)
+                    if (!bearer.isNullOrBlank()) {
+                        reqBuilder.addHeader("Authorization", "Bearer $bearer")
+                    }
+                    val request = reqBuilder.build()
 
-                if (response.isSuccessful && !responseBody.isNullOrEmpty()) {
-                    val respJson = JSONObject(responseBody)
-                    val candidates = respJson.optJSONArray("candidates")
-                    if (candidates != null && candidates.length() > 0) {
-                        val candidate = candidates.getJSONObject(0)
-                        val content = candidate.optJSONObject("content")
-                        val parts = content?.optJSONArray("parts")
-                        if (parts != null && parts.length() > 0) {
-                            val rawText = parts.getJSONObject(0).optString("text", "")
-                            if (rawText.isNotBlank()) {
-                                return@withContext parseJsonInvoice(rawText)
+                    val response = client.newCall(request).execute()
+                    val responseBody = response.body?.string()
+
+                    if (response.isSuccessful && !responseBody.isNullOrEmpty()) {
+                        val respJson = JSONObject(responseBody)
+                        val candidates = respJson.optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val candidate = candidates.getJSONObject(0)
+                            val content = candidate.optJSONObject("content")
+                            val parts = content?.optJSONArray("parts")
+                            if (parts != null && parts.length() > 0) {
+                                val rawText = parts.getJSONObject(0).optString("text", "")
+                                if (rawText.isNotBlank()) {
+                                    return@withContext parseJsonInvoice(rawText)
+                                }
                             }
                         }
+                    } else {
+                        Log.w("GeminiAiService", "Model $modelName attempt failed: ${response.code} $responseBody")
+                        if (response.code == 400 || response.code == 401 || response.code == 403) {
+                            val errObj = try { JSONObject(responseBody ?: "") } catch (e: Exception) { null }
+                            val errMsg = errObj?.optJSONObject("error")?.optString("message") ?: "خطأ في المفتاح أو الاتصال بالذكاء الاصطناعي (${response.code})"
+                            lastError = Exception(errMsg)
+                        }
                     }
-                } else {
-                    Log.w("GeminiAiService", "Model $modelName returned error: ${response.code} $responseBody")
-                    if (response.code == 400 || response.code == 403) {
-                        val errObj = try { JSONObject(responseBody ?: "") } catch (e: Exception) { null }
-                        val errMsg = errObj?.optJSONObject("error")?.optString("message") ?: "خطأ في الاتصال بالذكاء الاصطناعي (${response.code})"
-                        lastError = Exception(errMsg)
-                    }
+                } catch (e: Exception) {
+                    Log.w("GeminiAiService", "Error calling $modelName ($url)", e)
+                    lastError = e
                 }
-            } catch (e: Exception) {
-                Log.w("GeminiAiService", "Error calling $modelName", e)
-                lastError = e
             }
         }
 
@@ -450,16 +467,16 @@ class GeminiAiService(private val context: Context? = null) {
 
     private fun parseJsonInvoice(jsonString: String): ParsedInvoiceData {
         var cleaned = jsonString.trim()
-        if (cleaned.startsWith("```json")) {
-            cleaned = cleaned.removePrefix("```json")
+        val jsonStart = cleaned.indexOf("{")
+        val jsonEnd = cleaned.lastIndexOf("}")
+        if (jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart) {
+            cleaned = cleaned.substring(jsonStart, jsonEnd + 1)
+        } else {
+            if (cleaned.startsWith("```json")) cleaned = cleaned.removePrefix("```json")
+            if (cleaned.startsWith("```")) cleaned = cleaned.removePrefix("```")
+            if (cleaned.endsWith("```")) cleaned = cleaned.removeSuffix("```")
+            cleaned = cleaned.trim()
         }
-        if (cleaned.startsWith("```")) {
-            cleaned = cleaned.removePrefix("```")
-        }
-        if (cleaned.endsWith("```")) {
-            cleaned = cleaned.removeSuffix("```")
-        }
-        cleaned = cleaned.trim()
 
         val json = JSONObject(cleaned)
         val supplierName = json.optString("supplierName", "").trim()

@@ -24,6 +24,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -136,6 +138,8 @@ fun SmartInvoiceScannerDialog(
 
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var hasParsedInvoice by remember { mutableStateOf(false) }
+    var isAiExtracted by remember { mutableStateOf(false) }
+    var aiErrorMessage by remember { mutableStateOf<String?>(null) }
 
     // Invoice Header Fields
     var supplierName by remember { mutableStateOf("") }
@@ -156,6 +160,7 @@ fun SmartInvoiceScannerDialog(
     val itemsList = remember { mutableStateListOf<InvoiceItem>() }
 
     fun processInvoiceBitmap(bitmap: Bitmap) {
+        aiErrorMessage = null
         if (!viewModel.isAiApiKeyConfigured()) {
             showApiKeyDialog = true
             return
@@ -174,17 +179,21 @@ fun SmartInvoiceScannerDialog(
                     itemsList = itemsList
                 )
                 hasParsedInvoice = true
+                isAiExtracted = true
+                aiErrorMessage = null
                 if (parsed.items.isEmpty()) {
-                    Toast.makeText(context, "لم يتم العثور على أصناف واضحة في الصورة، يمكنك إضافتها يدوياً", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "تم تحليل الصورة بنجاح ولكن لم يتم العثور على أصناف واضحة، يمكنك إضافتها يدوياً", Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(context, "تم استخراج وقراءة بيانات الفاتورة الفعلية (${parsed.items.size} أصناف) بنجاح! ✓", Toast.LENGTH_SHORT).show()
                 }
             },
             onError = { err ->
-                if (err.contains("مفتاح") || err.contains("API") || err.contains("key") || err.contains("400") || err.contains("403")) {
+                isAiExtracted = false
+                aiErrorMessage = err
+                if (err.contains("مفتاح") || err.contains("API") || err.contains("key") || err.contains("400") || err.contains("401") || err.contains("403")) {
                     showApiKeyDialog = true
                 }
-                Toast.makeText(context, "تنبيه: $err", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "تنبيه قراءة الفاتورة: $err", Toast.LENGTH_LONG).show()
             }
         )
     }
@@ -197,6 +206,8 @@ fun SmartInvoiceScannerDialog(
             val bitmap = BitmapFactory.decodeFile(tempPhotoFile!!.absolutePath)
             if (bitmap != null) {
                 capturedBitmap = bitmap
+                hasParsedInvoice = false
+                isAiExtracted = false
                 processInvoiceBitmap(bitmap)
             }
         }
@@ -246,6 +257,8 @@ fun SmartInvoiceScannerDialog(
             val bitmap = uriToBitmap(context, uri)
             if (bitmap != null) {
                 capturedBitmap = bitmap
+                hasParsedInvoice = false
+                isAiExtracted = false
                 processInvoiceBitmap(bitmap)
             }
         }
@@ -500,6 +513,7 @@ fun SmartInvoiceScannerDialog(
                         OutlinedButton(
                             onClick = {
                                 hasParsedInvoice = true
+                                isAiExtracted = false
                                 if (itemsList.isEmpty()) {
                                     itemsList.add(
                                         InvoiceItem(
@@ -519,6 +533,146 @@ fun SmartInvoiceScannerDialog(
                             Icon(Icons.Default.Edit, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("إدخال بنود الفاتورة يدوياً بدون تصوير", fontSize = 12.sp)
+                        }
+                    }
+                } else if (!hasParsedInvoice && capturedBitmap != null) {
+                    // Phase 1.5: Image captured, but AI analysis failed or requires review
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MikroTikNavyLight)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Image(
+                                    bitmap = capturedBitmap!!.asImageBitmap(),
+                                    contentDescription = "صورة الفاتورة الملتقطة",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF381515)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "تنبيه قراءة الفاتورة بالذكاء الاصطناعي",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFCA5A5),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = aiErrorMessage ?: "تعذر قراءة نصوص الفاتورة بدقة. يرجى التأكد من وضوح الصورة وتفعيل مفتاح Gemini API.",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = { processInvoiceBitmap(capturedBitmap!!) },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MikroTikCyan),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("إعادة المحاولة بالفحص الذكي 🔄", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { showApiKeyDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = InvestmentGold),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, InvestmentGold),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.VpnKey, contentDescription = null, tint = InvestmentGold)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("تعديل أو إدخال مفتاح Gemini API 🔑", fontWeight = FontWeight.Bold)
+                            }
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedButton(
+                                    onClick = { launchCamera() },
+                                    modifier = Modifier.weight(1f).height(44.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("إعادة التصوير", fontSize = 12.sp)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        hasParsedInvoice = true
+                                        isAiExtracted = false
+                                        if (itemsList.isEmpty()) {
+                                            itemsList.add(
+                                                InvoiceItem(
+                                                    name = "",
+                                                    quantity = 1.0,
+                                                    unitPrice = 0.0,
+                                                    subtotal = 0.0,
+                                                    category = if (targetType == "ASSETS") "SERVERS" else "MAINTENANCE"
+                                                )
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).height(44.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MikroTikNavyLight),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("إدخال يدوي", fontSize = 12.sp, color = Color.White)
+                                }
+                            }
                         }
                     }
                 } else {
@@ -558,21 +712,21 @@ fun SmartInvoiceScannerDialog(
                                         Column {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Icon(
-                                                    imageVector = Icons.Default.CheckCircle,
+                                                    imageVector = if (isAiExtracted) Icons.Default.CheckCircle else Icons.Default.Edit,
                                                     contentDescription = null,
-                                                    tint = ProfitEmerald,
+                                                    tint = if (isAiExtracted) ProfitEmerald else MikroTikCyan,
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = "تم استخراج البيانات بالذكاء الاصطناعي",
-                                                    color = ProfitEmerald,
+                                                    text = if (isAiExtracted) "تم استخراج وقراءة بيانات الفاتورة الفعلية بالذكاء الاصطناعي (${itemsList.size} أصناف)" else "إدخال ومراجعة بيانات الفاتورة",
+                                                    color = if (isAiExtracted) ProfitEmerald else MikroTikCyan,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 12.sp
                                                 )
                                             }
                                             Text(
-                                                text = "يمكنك تعديل أي صنف أو كمية أو سعر قبل الاعتماد",
+                                                text = "يمكنك مراجعة وتعديل أي صنف أو كمية أو سعر قبل الاعتماد",
                                                 color = Color(0xFF94A3B8),
                                                 fontSize = 11.sp
                                             )
@@ -1028,15 +1182,19 @@ fun SmartInvoiceScannerDialog(
                 }
             },
             dismissButton = {
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { apiKeyInput = com.example.data.ai.GeminiAiService.DEFAULT_CONFIGURED_KEY }) {
+                        Text("استعادة المفتاح المعتمد", color = MikroTikCyan, fontSize = 11.sp)
+                    }
                     if (capturedBitmap != null && !hasParsedInvoice) {
                         TextButton(onClick = {
                             showApiKeyDialog = false
                             hasParsedInvoice = true
+                            isAiExtracted = false
                             if (itemsList.isEmpty()) {
                                 itemsList.add(
                                     InvoiceItem(
-                                        name = "صنف جديد",
+                                        name = "",
                                         quantity = 1.0,
                                         unitPrice = 0.0,
                                         subtotal = 0.0,
@@ -1045,11 +1203,11 @@ fun SmartInvoiceScannerDialog(
                                 )
                             }
                         }) {
-                            Text("إدخال يدوي", color = Color(0xFF94A3B8))
+                            Text("إدخال يدوي", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                     }
                     TextButton(onClick = { showApiKeyDialog = false }) {
-                        Text("إلغاء", color = Color.White)
+                        Text("إلغاء", color = Color.White, fontSize = 11.sp)
                     }
                 }
             },

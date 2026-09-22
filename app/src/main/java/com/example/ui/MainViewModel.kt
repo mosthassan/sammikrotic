@@ -571,6 +571,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * تحديث وتعديل فاتورة مبيعات قائمة مع حفظ التعديلات وإعادة ضبط الأرصدة والمخزن
+     */
+    fun updateSalesInvoice(
+        originalInvoice: CardSalesInvoiceEntity,
+        customerName: String,
+        customerPhone: String = "",
+        retailerId: Long? = null,
+        items: List<CardSalesInvoiceItem>,
+        paymentType: String = "CASH",
+        paidAmount: Double = 0.0,
+        notes: String = "",
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+            repository.updateMultiItemSalesInvoice(
+                originalInvoice = originalInvoice,
+                customerName = customerName,
+                customerPhone = customerPhone,
+                retailerId = retailerId,
+                items = items,
+                paymentType = paymentType,
+                paidAmount = paidAmount,
+                notes = notes,
+                issuerName = issuer
+            )
+            onComplete()
+        }
+    }
+
+    /**
+     * استنساخ مباشر وسريع لفاتورة مبيعات كروت بنقرة واحدة
+     */
+    fun instantCloneSalesInvoice(
+        invoice: CardSalesInvoiceEntity,
+        onComplete: (Long) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+            val newInvoiceId = repository.cloneSalesInvoice(invoice, issuer)
+            onComplete(newInvoiceId)
+        }
+    }
+
+    /**
      * استبدال واستنساخ الفاتورة:
      * يقوم بحذف الفاتورة السابقة وإصدار الفاتورة الجديدة بنظام متسلسل يضمن استقرار المخزن وضبط الأرصدة
      */

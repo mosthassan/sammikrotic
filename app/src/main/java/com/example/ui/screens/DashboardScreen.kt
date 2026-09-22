@@ -662,9 +662,8 @@ fun DashboardScreen(
             }
         }
 
-        // Production Environment Initialization & Factory Reset Card (يختفي تماماً بمجرد الضغط عليه والتحول للوضع الفعلي)
-        val hasDefaultDemoData = devices.isNotEmpty() || vouchers.isNotEmpty() || (availableCards ?: 0) > 0
-        if (!isProductionMode && hasDefaultDemoData) {
+        // Production Environment Initialization & Factory Reset Card (يظهر لكل مستخدم جديد لتهيئة بيئة عمله النظيفة)
+        if (!isProductionMode) {
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
@@ -699,7 +698,7 @@ fun DashboardScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "تهيئة بيئة العمل الفعلية",
+                                        text = "تهيئة بيئة العمل وتخصيص شبكتك الجديدة",
                                         color = TextPrimaryDark,
                                         fontFamily = CairoFontFamily,
                                         fontWeight = FontWeight.Bold,
@@ -712,7 +711,7 @@ fun DashboardScreen(
                                         border = BorderStroke(1.dp, PaymentRed.copy(alpha = 0.35f))
                                     ) {
                                         Text(
-                                            text = "بيانات تجريبية نشطة ⚠️",
+                                            text = "إعداد أولي 🚀",
                                             color = PaymentRed,
                                             fontFamily = CairoFontFamily,
                                             fontSize = 9.5.sp,
@@ -722,7 +721,7 @@ fun DashboardScreen(
                                     }
                                 }
                                 Text(
-                                    text = "حذف كل البيانات الافتراضية وتصفير الكروت والسندات لبدء تشغيل شبكتك الخاصة",
+                                    text = "حذف كل البيانات الافتراضية وتصفير النظام لبدء تشغيل شبكتك الخاصة كمنتج مستقل",
                                     color = TextSecondaryDark,
                                     fontFamily = CairoFontFamily,
                                     fontSize = 11.sp
@@ -738,18 +737,18 @@ fun DashboardScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = PaymentRed),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(40.dp)
+                                .height(42.dp)
                                 .testTag("dashboard_reset_production_button")
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.DeleteSweep,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "تهيئة التطبيق وحذف البيانات الافتراضية للعمل الفعلي",
+                                    text = "تهيئة التطبيق وإزالة كافة البيانات الافتراضية",
                                     fontFamily = CairoFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp
@@ -1470,7 +1469,7 @@ fun EmailAuthDialog(
     onDismiss: () -> Unit
 ) {
     var isSignUp by remember { mutableStateOf(false) }
-    var email by remember { mutableStateOf("mosthassan.ye2@gmail.com") }
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }

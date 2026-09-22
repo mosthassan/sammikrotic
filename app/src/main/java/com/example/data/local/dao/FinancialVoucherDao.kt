@@ -29,6 +29,21 @@ interface FinancialVoucherDao {
     @Delete
     suspend fun deleteVoucher(voucher: FinancialVoucherEntity)
 
+    @Query("SELECT * FROM financial_vouchers ORDER BY dateMillis DESC")
+    suspend fun getVouchersList(): List<FinancialVoucherEntity>
+
+    @Query("SELECT * FROM financial_vouchers WHERE invoiceId = :invoiceId")
+    suspend fun getVouchersByInvoiceId(invoiceId: Long): List<FinancialVoucherEntity>
+
+    @Query("SELECT * FROM financial_vouchers WHERE invoiceNumber = :invoiceNumber")
+    suspend fun getVouchersByInvoiceNumber(invoiceNumber: String): List<FinancialVoucherEntity>
+
+    @Query("DELETE FROM financial_vouchers WHERE invoiceId = :invoiceId")
+    suspend fun deleteVouchersByInvoiceId(invoiceId: Long)
+
+    @Query("DELETE FROM financial_vouchers WHERE invoiceNumber = :invoiceNumber")
+    suspend fun deleteVouchersByInvoiceNumber(invoiceNumber: String)
+
     @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'RECEIPT'")
     fun getTotalReceipts(): Flow<Double?>
 

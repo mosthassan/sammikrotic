@@ -19,6 +19,8 @@ import com.example.data.local.entity.InventoryMovementEntity
 import com.example.data.model.CardSalesInvoiceItem
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.room.withTransaction
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -432,137 +434,142 @@ class NetworkRepository(private val db: AppDatabase) {
         notes: String = "",
         issuerName: String = "المهندس حسن"
     ): Long = withContext(Dispatchers.IO) {
-        val totalAmount = items.sumOf { it.lineTotal }
-        val totalCards = items.sumOf { it.quantity }
+        db.withTransaction {
+            val totalAmount = items.sumOf { it.lineTotal }
+            val totalCards = items.sumOf { it.quantity }
 
-        val actualPaid = when (paymentType) {
-            "CASH" -> totalAmount
-            "CREDIT" -> 0.0
-            "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
-            else -> paidAmount
-        }
-        val remainingAmount = (totalAmount - actualPaid).coerceAtLeast(0.0)
-        val status = when {
-            remainingAmount <= 0.0 -> "PAID"
-            actualPaid <= 0.0 -> "CREDIT"
-            else -> "PARTIAL"
-        }
-
-        val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
-        val itemsSummary = items.joinToString(" + ") { "${it.quantity} كرت [${it.packageName}]" }
-
-        // JSON serialization of items
-        val jsonArray = JSONArray()
-        items.forEach { item ->
-            val obj = JSONObject().apply {
-                put("id", item.id)
-                put("packageName", item.packageName)
-                put("quantity", item.quantity)
-                put("unitPrice", item.unitPrice)
-                put("retailPrice", item.retailPrice)
-                put("lineTotal", item.lineTotal)
+            val actualPaid = when (paymentType) {
+                "CASH" -> totalAmount
+                "CREDIT" -> 0.0
+                "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
+                else -> paidAmount
             }
-            jsonArray.put(obj)
-        }
+            val remainingAmount = (totalAmount - actualPaid).coerceAtLeast(0.0)
+            val status = when {
+                remainingAmount <= 0.0 -> "PAID"
+                actualPaid <= 0.0 -> "CREDIT"
+                else -> "PARTIAL"
+            }
 
-        // البحث عن البقالة إذا لم يكن الـ ID محدداً صراحة
-        val finalRetailerId = if (retailerId != null && retailerId > 0) {
-            retailerId
-        } else {
-            val allRet = db.retailerDao().getAllRetailers().first()
-            allRet.find { it.name.trim().equals(customerName.trim(), ignoreCase = true) }?.id
-        }
+            val totalInvoicesCount = db.cardSalesInvoiceDao().getSalesInvoicesList().size + 1
+            var candidateNumber = "INV-2026-${String.format(Locale.US, "%04d", totalInvoicesCount)}"
+            var collisionOffset = 1
+            while (db.cardSalesInvoiceDao().getInvoiceByNumber(candidateNumber) != null) {
+                candidateNumber = "INV-2026-${String.format(Locale.US, "%04d", totalInvoicesCount + collisionOffset)}"
+                collisionOffset++
+            }
+            val invoiceNumber = candidateNumber
+            val itemsSummary = items.joinToString(" + ") { "${it.quantity} كرت [${it.packageName}]" }
 
-        val invoiceEntity = CardSalesInvoiceEntity(
-            invoiceNumber = invoiceNumber,
-            customerName = customerName.ifBlank { "عميل نقدي" },
-            customerPhone = customerPhone,
-            retailerId = finalRetailerId,
-            paymentType = paymentType,
-            totalAmount = totalAmount,
-            paidAmount = actualPaid,
-            remainingAmount = remainingAmount,
-            totalCardsCount = totalCards,
-            itemsCount = items.size,
-            itemsSummary = itemsSummary,
-            itemsJson = jsonArray.toString(),
-            notes = notes,
-            issuerName = issuerName,
-            status = status
-        )
-        val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+            // JSON serialization of items
+            val jsonArray = JSONArray()
+            items.forEach { item ->
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("packageName", item.packageName)
+                    put("quantity", item.quantity)
+                    put("unitPrice", item.unitPrice)
+                    put("retailPrice", item.retailPrice)
+                    put("lineTotal", item.lineTotal)
+                }
+                jsonArray.put(obj)
+            }
 
-        // خصم الكميات من المخزن لكل صنف وتسجيل حركات الصرف
-        items.forEach { item ->
-            val existing = db.inventoryDao().getItemByPackageName(item.packageName)
-            val newQty = if (existing != null) {
-                val updated = (existing.quantityAvailable - item.quantity).coerceAtLeast(0)
-                db.inventoryDao().updateItem(existing.copy(quantityAvailable = updated))
-                updated
+            // البحث عن البقالة إذا لم يكن الـ ID محدداً صراحة
+            val finalRetailerId = if (retailerId != null && retailerId > 0) {
+                retailerId
             } else {
-                db.inventoryDao().insertItem(
-                    InventoryItemEntity(
+                val allRet = db.retailerDao().getRetailersList()
+                allRet.find { it.name.trim().equals(customerName.trim(), ignoreCase = true) }?.id
+            }
+
+            val invoiceEntity = CardSalesInvoiceEntity(
+                invoiceNumber = invoiceNumber,
+                customerName = customerName.ifBlank { "عميل نقدي" },
+                customerPhone = customerPhone,
+                retailerId = finalRetailerId,
+                paymentType = paymentType,
+                totalAmount = totalAmount,
+                paidAmount = actualPaid,
+                remainingAmount = remainingAmount,
+                totalCardsCount = totalCards,
+                itemsCount = items.size,
+                itemsSummary = itemsSummary,
+                itemsJson = jsonArray.toString(),
+                notes = notes,
+                issuerName = issuerName,
+                status = status
+            )
+            val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
+            // خصم الكميات من المخزن لكل صنف وتسجيل حركات الصرف
+            items.forEach { item ->
+                val existing = db.inventoryDao().getItemByPackageName(item.packageName)
+                val newQty = if (existing != null) {
+                    val updated = (existing.quantityAvailable - item.quantity).coerceAtLeast(0)
+                    db.inventoryDao().updateItem(existing.copy(quantityAvailable = updated))
+                    updated
+                } else {
+                    db.inventoryDao().insertItem(
+                        InventoryItemEntity(
+                            packageName = item.packageName,
+                            quantityAvailable = 0,
+                            wholesalePrice = item.unitPrice,
+                            retailPrice = item.retailPrice
+                        )
+                    )
+                    0
+                }
+
+                // قيد حركة مخزنية خارجة (خصم مبيعات)
+                db.inventoryMovementDao().insertMovement(
+                    InventoryMovementEntity(
                         packageName = item.packageName,
-                        quantityAvailable = 0,
-                        wholesalePrice = item.unitPrice,
-                        retailPrice = item.retailPrice
+                        movementType = "SALE",
+                        quantityChange = -item.quantity,
+                        resultingBalance = newQty,
+                        referenceNumber = invoiceNumber,
+                        customerOrSupplier = customerName.ifBlank { "عميل نقدي" },
+                        unitPrice = item.unitPrice,
+                        notes = "خصم مبيعات فاتورة رقم $invoiceNumber ($paymentType)"
                     )
                 )
-                0
             }
 
-            // قيد حركة مخزنية خارجة (خصم مبيعات)
-            db.inventoryMovementDao().insertMovement(
-                InventoryMovementEntity(
-                    packageName = item.packageName,
-                    movementType = "SALE",
-                    quantityChange = -item.quantity,
-                    resultingBalance = newQty,
-                    referenceNumber = invoiceNumber,
-                    customerOrSupplier = customerName.ifBlank { "عميل نقدي" },
-                    unitPrice = item.unitPrice,
-                    notes = "خصم مبيعات فاتورة رقم $invoiceNumber ($paymentType)"
+            // إنشاء سند قبض مالي رسمي مربوط بمعرف الفاتورة مباشرة عند وجود سداد
+            if (actualPaid > 0) {
+                val voucher = FinancialVoucherEntity(
+                    voucherNumber = "REC-2026-${Random.nextInt(1000, 9999)}",
+                    voucherType = "RECEIPT",
+                    amount = actualPaid,
+                    partyName = customerName.ifBlank { "مبيعات كروت نقدية" },
+                    retailerId = finalRetailerId,
+                    invoiceId = invoiceId,
+                    invoiceNumber = invoiceNumber,
+                    allocatedAmount = actualPaid,
+                    category = "مبيعات كروت",
+                    paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
+                    description = "متحصلات من فاتورة مبيعات كروت $invoiceNumber - $itemsSummary",
+                    issuerName = issuerName,
+                    notes = notes
                 )
-            )
-        }
-
-        // إذا كانت مرتبطة ببقالة، نقيد المديونية المتبقية
-        if (finalRetailerId != null && finalRetailerId > 0) {
-            val retailer = db.retailerDao().getRetailerById(finalRetailerId)
-            if (retailer != null) {
-                db.retailerDao().updateBalanceAndCards(finalRetailerId, remainingAmount, totalCards)
+                db.financialVoucherDao().insertVoucher(voucher)
             }
+
+            // تسوية دفتر الأستاذ دون تعديل مزدوج
+            reconcileAccountingLedgerInternal()
+
+            invoiceId
         }
-
-        // إذا كان هناك مبلغ مدفوع، ننشئ سند قبض مالي رسمي لضبط الخزينة
-        if (actualPaid > 0) {
-            val voucher = FinancialVoucherEntity(
-                voucherNumber = "REC-2026-${Random.nextInt(1000, 9999)}",
-                voucherType = "RECEIPT",
-                amount = actualPaid,
-                partyName = customerName.ifBlank { "مبيعات كروت نقدية" },
-                retailerId = finalRetailerId,
-                category = "مبيعات كروت",
-                paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
-                description = "متحصلات من فاتورة مبيعات كروت $invoiceNumber - $itemsSummary",
-                issuerName = issuerName,
-                notes = notes
-            )
-            db.financialVoucherDao().insertVoucher(voucher)
-        }
-
-        reconcileAccountingLedger()
-
-        invoiceId
     }
 
     /**
-     * تحديث وتعديل فاتورة مبيعات كروت سابقة:
+     * تحديث وتعديل فاتورة مبيعات كروت سابقة بشكل ذري (Atomic Transaction):
      * - يقوم باسترجاع الأصناف والكميات السابقة للمخزن
-     * - إلغاء السند المالي السابق المرتبط بها
+     * - إلغاء السند المالي السابق المرتبط بها برقم الفاتورة أو المعرف
      * - خصم الأصناف والكميات المعدلة الجديدة من المخزن
-     * - تحديث بيانات الفاتورة والسند المالي
-     * - إعادة تسوية أرصدة المحلات محاسبياً 100%
+     * - تحديث بيانات الفاتورة والسند المالي بربط قيد مباشر
+     * - إعادة تسوية أرصدة المحلات محاسبياً 100% بدون تعديل يدوي مزدوج
      */
     suspend fun updateMultiItemSalesInvoice(
         originalInvoice: CardSalesInvoiceEntity,
@@ -575,120 +582,138 @@ class NetworkRepository(private val db: AppDatabase) {
         notes: String = "",
         issuerName: String = "المهندس حسن"
     ) = withContext(Dispatchers.IO) {
-        // 1. استرجاع الكميات السابقة للمخزن
-        if (originalInvoice.itemsJson.isNotBlank()) {
-            try {
-                val jsonArray = JSONArray(originalInvoice.itemsJson)
-                for (i in 0 until jsonArray.length()) {
-                    val obj = jsonArray.getJSONObject(i)
-                    val pkgName = obj.optString("packageName", "")
-                    val qty = obj.optInt("quantity", 0)
-                    if (pkgName.isNotBlank() && qty > 0) {
-                        val item = db.inventoryDao().getItemByPackageName(pkgName)
-                        if (item != null) {
-                            val newQty = item.quantityAvailable + qty
-                            db.inventoryDao().updateItem(item.copy(quantityAvailable = newQty))
+        db.withTransaction {
+            // 1. استرجاع الكميات السابقة للمخزن
+            if (originalInvoice.itemsJson.isNotBlank()) {
+                try {
+                    val jsonArray = JSONArray(originalInvoice.itemsJson)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val pkgName = obj.optString("packageName", "")
+                        val qty = obj.optInt("quantity", 0)
+                        if (pkgName.isNotBlank() && qty > 0) {
+                            val item = db.inventoryDao().getItemByPackageName(pkgName)
+                            if (item != null) {
+                                val newQty = item.quantityAvailable + qty
+                                db.inventoryDao().updateItem(item.copy(quantityAvailable = newQty))
+                                db.inventoryMovementDao().insertMovement(
+                                    InventoryMovementEntity(
+                                        packageName = pkgName,
+                                        movementType = "RETURN",
+                                        quantityChange = qty,
+                                        resultingBalance = newQty,
+                                        referenceNumber = "REFUND-${originalInvoice.invoiceNumber}",
+                                        customerOrSupplier = originalInvoice.customerName,
+                                        unitPrice = item.wholesalePrice,
+                                        notes = "استرجاع كميات المخزن لتعديل الفاتورة #${originalInvoice.invoiceNumber}"
+                                    )
+                                )
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    android.util.Log.e("NetworkRepository", "Error refunding old invoice items: ${e.message}")
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("NetworkRepository", "Error refunding old invoice items: ${e.message}")
             }
-        }
 
-        // 2. حذف السند المالي السابق المرتبط بهذه الفاتورة إن وجد
-        try {
-            val vouchers = db.financialVoucherDao().getAllVouchers().first()
-            val linkedVoucher = vouchers.find { it.description.contains(originalInvoice.invoiceNumber) }
-            if (linkedVoucher != null) {
-                db.financialVoucherDao().deleteVoucher(linkedVoucher)
+            // 2. حذف السند المالي السابق المرتبط بهذه الفاتورة بمعرف الفاتورة ورقمها بدقة
+            db.financialVoucherDao().deleteVouchersByInvoiceId(originalInvoice.id)
+            if (originalInvoice.invoiceNumber.isNotBlank()) {
+                db.financialVoucherDao().deleteVouchersByInvoiceNumber(originalInvoice.invoiceNumber)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("NetworkRepository", "Error deleting old voucher: ${e.message}")
-        }
 
-        // 3. خصم الأصناف الجديدة من المخزن
-        items.forEach { item ->
-            val inventoryItem = db.inventoryDao().getItemByPackageName(item.packageName)
-            if (inventoryItem != null) {
-                val newQty = (inventoryItem.quantityAvailable - item.quantity).coerceAtLeast(0)
-                db.inventoryDao().updateItem(inventoryItem.copy(quantityAvailable = newQty))
-                db.inventoryMovementDao().insertMovement(
-                    InventoryMovementEntity(
-                        packageName = item.packageName,
-                        movementType = "SALE",
-                        quantityChange = -item.quantity,
-                        resultingBalance = newQty,
-                        referenceNumber = "EDIT-${originalInvoice.invoiceNumber}",
-                        customerOrSupplier = customerName,
-                        unitPrice = item.unitPrice,
-                        notes = "تعديل فاتورة مبيعات #${originalInvoice.invoiceNumber}"
+            // 3. خصم الأصناف الجديدة من المخزن
+            items.forEach { item ->
+                val inventoryItem = db.inventoryDao().getItemByPackageName(item.packageName)
+                if (inventoryItem != null) {
+                    val newQty = (inventoryItem.quantityAvailable - item.quantity).coerceAtLeast(0)
+                    db.inventoryDao().updateItem(inventoryItem.copy(quantityAvailable = newQty))
+                    db.inventoryMovementDao().insertMovement(
+                        InventoryMovementEntity(
+                            packageName = item.packageName,
+                            movementType = "SALE",
+                            quantityChange = -item.quantity,
+                            resultingBalance = newQty,
+                            referenceNumber = "EDIT-${originalInvoice.invoiceNumber}",
+                            customerOrSupplier = customerName,
+                            unitPrice = item.unitPrice,
+                            notes = "تعديل فاتورة مبيعات #${originalInvoice.invoiceNumber}"
+                        )
                     )
-                )
+                }
             }
-        }
 
-        // 4. احتساب المبالغ والأصناف
-        val totalAmount = items.sumOf { it.lineTotal }
-        val totalCardsCount = items.sumOf { it.quantity }
-        val actualPaidAmount = when (paymentType) {
-            "CASH" -> totalAmount
-            "CREDIT" -> 0.0
-            "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
-            else -> totalAmount
-        }
-        val remainingAmount = (totalAmount - actualPaidAmount).coerceAtLeast(0.0)
-
-        val itemsJsonArray = JSONArray()
-        items.forEach { item ->
-            val obj = JSONObject().apply {
-                put("id", item.id)
-                put("packageName", item.packageName)
-                put("quantity", item.quantity)
-                put("unitPrice", item.unitPrice)
-                put("retailPrice", item.retailPrice)
-                put("lineTotal", item.lineTotal)
+            // 4. احتساب المبالغ والأصناف
+            val totalAmount = items.sumOf { it.lineTotal }
+            val totalCardsCount = items.sumOf { it.quantity }
+            val actualPaidAmount = when (paymentType) {
+                "CASH" -> totalAmount
+                "CREDIT" -> 0.0
+                "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
+                else -> totalAmount
             }
-            itemsJsonArray.put(obj)
-        }
-        val itemsSummary = items.joinToString("، ") { "${it.packageName} (${it.quantity})" }
+            val remainingAmount = (totalAmount - actualPaidAmount).coerceAtLeast(0.0)
+            val status = when {
+                remainingAmount <= 0.0 -> "PAID"
+                actualPaidAmount <= 0.0 -> "CREDIT"
+                else -> "PARTIAL"
+            }
 
-        // 5. حفظ التعديل في قاعدة البيانات
-        val updatedInvoice = originalInvoice.copy(
-            customerName = customerName,
-            customerPhone = customerPhone,
-            retailerId = retailerId,
-            totalAmount = totalAmount,
-            paidAmount = actualPaidAmount,
-            remainingAmount = remainingAmount,
-            totalCardsCount = totalCardsCount,
-            paymentType = paymentType,
-            itemsJson = itemsJsonArray.toString(),
-            itemsSummary = itemsSummary,
-            notes = notes,
-            issuerName = issuerName
-        )
-        db.cardSalesInvoiceDao().updateInvoice(updatedInvoice)
+            val itemsJsonArray = JSONArray()
+            items.forEach { item ->
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("packageName", item.packageName)
+                    put("quantity", item.quantity)
+                    put("unitPrice", item.unitPrice)
+                    put("retailPrice", item.retailPrice)
+                    put("lineTotal", item.lineTotal)
+                }
+                itemsJsonArray.put(obj)
+            }
+            val itemsSummary = items.joinToString("، ") { "${it.packageName} (${it.quantity})" }
 
-        // 6. تسجيل سند قبض مالي جديد إذا كان هناك سداد
-        if (actualPaidAmount > 0) {
-            val voucher = FinancialVoucherEntity(
-                voucherNumber = "REC-${System.currentTimeMillis() % 100000}",
-                voucherType = "RECEIPT",
-                amount = actualPaidAmount,
-                partyName = customerName,
-                category = "مبيعات كروت شبكة",
-                paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
-                description = "سداد قيمة فاتورة مبيعات معدلة #${originalInvoice.invoiceNumber} ($itemsSummary)",
-                issuerName = issuerName,
+            // 5. حفظ التعديل في قاعدة البيانات
+            val updatedInvoice = originalInvoice.copy(
+                customerName = customerName,
+                customerPhone = customerPhone,
+                retailerId = retailerId,
+                totalAmount = totalAmount,
+                paidAmount = actualPaidAmount,
+                remainingAmount = remainingAmount,
+                totalCardsCount = totalCardsCount,
+                paymentType = paymentType,
+                itemsJson = itemsJsonArray.toString(),
+                itemsSummary = itemsSummary,
                 notes = notes,
-                retailerId = retailerId
+                issuerName = issuerName,
+                status = status
             )
-            db.financialVoucherDao().insertVoucher(voucher)
-        }
+            db.cardSalesInvoiceDao().updateInvoice(updatedInvoice)
 
-        // 7. تسوية الدفاتر المحاسبية
-        reconcileAccountingLedger()
+            // 6. تسجيل سند قبض مالي جديد مع الربط المباشر بمعرف ورقم الفاتورة
+            if (actualPaidAmount > 0) {
+                val voucher = FinancialVoucherEntity(
+                    voucherNumber = "REC-${System.currentTimeMillis() % 100000}",
+                    voucherType = "RECEIPT",
+                    amount = actualPaidAmount,
+                    partyName = customerName,
+                    category = "مبيعات كروت شبكة",
+                    paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
+                    description = "سداد قيمة فاتورة مبيعات معدلة #${originalInvoice.invoiceNumber} ($itemsSummary)",
+                    issuerName = issuerName,
+                    notes = notes,
+                    retailerId = retailerId,
+                    invoiceId = originalInvoice.id,
+                    invoiceNumber = originalInvoice.invoiceNumber,
+                    allocatedAmount = actualPaidAmount
+                )
+                db.financialVoucherDao().insertVoucher(voucher)
+            }
+
+            // 7. تسوية الدفاتر المحاسبية
+            reconcileAccountingLedgerInternal()
+        }
     }
 
     /**
@@ -745,29 +770,23 @@ class NetworkRepository(private val db: AppDatabase) {
     }
 
     /**
-     * محرك التسوية المحاسبية والربط الفوري والتزامن الشامل بين كافة التبويبات:
-     * - فواتير مبيعات الكروت (card_sales_invoices)
-     * - نقاط البيع والمديونيات (retailers)
-     * - المخزن وحركات الأصناف (inventory_items & inventory_movements)
-     * - السندات المالية للقبض والصرف (financial_vouchers)
-     *
-     * يحقق التطابق التام 100% بين:
-     * إجمالي ديون المحلات == المديونية الآجلة لفواتير المبيعات
-     * كروت بحوزة البقالات == الكروت المرتبطة بالفواتير غير المسددة
+     * الدالة الداخلية لتسوية دفتر الأستاذ (تستدعى داخل معامَلة ذرية withTransaction).
+     * تعتمد كلياً على الربط الصريح بالمعرفات (invoiceId) والمطابقة الحسابية دون التحقق النصي الهش.
      */
-    suspend fun reconcileAccountingLedger() = withContext(Dispatchers.IO) {
+    private suspend fun reconcileAccountingLedgerInternal() {
         try {
-            // 0. تطهير وحذف أي فواتير وهمية أو متكررة تم توليدها تلقائياً بالخطأ في السابق (INV-DELIV)
+            // 0. تنظيف أي فواتير وهمية قديمة
             db.cardSalesInvoiceDao().deleteSyntheticInvoices()
 
-            val retailers = db.retailerDao().getAllRetailers().first()
-            val initialInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
-            val initialVouchers = db.financialVoucherDao().getAllVouchers().first()
+            val retailers = db.retailerDao().getRetailersList()
+            val initialInvoices = db.cardSalesInvoiceDao().getSalesInvoicesList()
+            val initialVouchers = db.financialVoucherDao().getVouchersList()
 
             val retailersByName = retailers.associateBy { it.name.trim().lowercase() }
             val retailersById = retailers.associateBy { it.id }
+            val invoicesByNumber = initialInvoices.associateBy { it.invoiceNumber }
 
-            // 1. ربط أي فاتورة أو سند معلق بالبقالة المطابقة بالاسم إذا لم يكن الـ ID مربوطاً
+            // 1. تسوية وتوحيد الربط للبقالات والفواتير القديمة غير المربوطة بمعرف
             for (inv in initialInvoices) {
                 if (inv.retailerId == null || inv.retailerId == 0L || !retailersById.containsKey(inv.retailerId)) {
                     val matchedRetailer = retailersByName[inv.customerName.trim().lowercase()]
@@ -778,17 +797,31 @@ class NetworkRepository(private val db: AppDatabase) {
             }
 
             for (v in initialVouchers) {
+                var updatedVoucher = v
+                var changed = false
                 if (v.retailerId == null || v.retailerId == 0L || !retailersById.containsKey(v.retailerId)) {
                     val matchedRetailer = retailersByName[v.partyName.trim().lowercase()]
                     if (matchedRetailer != null) {
-                        db.financialVoucherDao().updateVoucher(v.copy(retailerId = matchedRetailer.id))
+                        updatedVoucher = updatedVoucher.copy(retailerId = matchedRetailer.id)
+                        changed = true
                     }
+                }
+                // إذا كان السند يحتوي على رقم فاتورة بدون invoiceId نربطه صراحة
+                if (updatedVoucher.invoiceId == null && updatedVoucher.invoiceNumber.isNotBlank()) {
+                    val matchedInv = invoicesByNumber[updatedVoucher.invoiceNumber]
+                    if (matchedInv != null) {
+                        updatedVoucher = updatedVoucher.copy(invoiceId = matchedInv.id)
+                        changed = true
+                    }
+                }
+                if (changed) {
+                    db.financialVoucherDao().updateVoucher(updatedVoucher)
                 }
             }
 
-            // إعادة تحميل الفواتير والسندات بعد اكتمال توحيد الربط
-            val allInvoices = db.cardSalesInvoiceDao().getAllSalesInvoices().first()
-            val allVouchers = db.financialVoucherDao().getAllVouchers().first()
+            // إعادة تحميل البيانات بعد اكتمال الربط بالمعرفات
+            val allInvoices = db.cardSalesInvoiceDao().getSalesInvoicesList()
+            val allVouchers = db.financialVoucherDao().getVouchersList()
 
             // 2. التسوية الدفترية الدقيقة لكل بقالة بناءً على فواتير المبيعات الحقيقية وسندات القبض
             for (retailer in retailers) {
@@ -797,36 +830,53 @@ class NetworkRepository(private val db: AppDatabase) {
                     it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)
                 }.sortedBy { it.invoiceDateMillis }
 
-                // السندات المالية المقبوضة المباشرة من البقالة (سندات سداد مستقلة وليست سندات تم إنشاؤها تلقائياً مع الفاتورة)
-                val directPayments = allVouchers.filter {
+                val retailerReceipts = allVouchers.filter {
                     (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
-                    it.voucherType == "RECEIPT" &&
-                    !it.description.contains("INV-") &&
-                    !it.description.contains("فاتورة")
-                }.sumOf { it.amount }
+                    it.voucherType == "RECEIPT"
+                }
 
-                var remainingPaymentPool = directPayments
+                // تقسيم السندات إلى:
+                // أ) سندات مرتبطة مباشرة بفاتورة معينة (عبر invoiceId أو invoiceNumber)
+                // ب) سندات قبض غير مخصصة (سداد عام للمديونية بنظام FIFO)
+                val invoiceBoundReceipts = retailerReceipts.filter {
+                    it.invoiceId != null || (it.invoiceNumber.isNotBlank() && matchingInvoices.any { inv -> inv.invoiceNumber == it.invoiceNumber })
+                }
+                val paymentsByInvoiceId = invoiceBoundReceipts.filter { it.invoiceId != null }.groupBy { it.invoiceId!! }
+                val paymentsByInvoiceNumber = invoiceBoundReceipts.filter { it.invoiceNumber.isNotBlank() }.groupBy { it.invoiceNumber }
+
+                val generalReceipts = retailerReceipts.filter { it !in invoiceBoundReceipts }
+                var unallocatedPool = generalReceipts.sumOf { it.amount }
 
                 var totalDebt = 0.0
-                var totalActiveCards = 0
+                var totalUnpaidCards = 0
                 var totalPaid = 0.0
 
                 if (matchingInvoices.isNotEmpty()) {
                     for (inv in matchingInvoices) {
-                        // المبلغ المسدد أصلاً عند إنشاء الفاتورة
-                        val basePaidAtCreation = when (inv.paymentType) {
-                            "CASH" -> inv.totalAmount
-                            "CREDIT" -> 0.0
-                            "PARTIAL" -> (inv.totalAmount - inv.remainingAmount).coerceIn(0.0, inv.totalAmount)
-                            else -> inv.paidAmount.coerceIn(0.0, inv.totalAmount)
+                        // المدفوع المباشر المرتبط بهذه الفاتورة صراحة
+                        val directPaid = (paymentsByInvoiceId[inv.id]?.sumOf { it.amount } ?: 0.0) +
+                                (paymentsByInvoiceNumber[inv.invoiceNumber]?.filter { it.invoiceId == null }?.sumOf { it.amount } ?: 0.0)
+
+                        // في حال كانت الفاتورة مسددة نقداً أو جزئياً عند إنشائها ولم يكن هناك سند
+                        val paidAtCreation = if (directPaid > 0.0) {
+                            directPaid
+                        } else {
+                            when (inv.paymentType) {
+                                "CASH" -> inv.totalAmount
+                                "CREDIT" -> 0.0
+                                "PARTIAL" -> (inv.totalAmount - inv.remainingAmount).coerceIn(0.0, inv.totalAmount)
+                                else -> inv.paidAmount.coerceIn(0.0, inv.totalAmount)
+                            }
                         }
-                        val baseUnpaid = (inv.totalAmount - basePaidAtCreation).coerceAtLeast(0.0)
 
-                        // تخصيص أي مبالغ من سندات القبض المستقلة بنظام FIFO المحاسبي
-                        val extraPayment = minOf(remainingPaymentPool, baseUnpaid)
-                        remainingPaymentPool = (remainingPaymentPool - extraPayment).coerceAtLeast(0.0)
+                        val basePaid = maxOf(directPaid, paidAtCreation)
+                        val unpaidAmount = (inv.totalAmount - basePaid).coerceAtLeast(0.0)
 
-                        val finalPaid = basePaidAtCreation + extraPayment
+                        // تخصيص المبالغ من صندوق سندات القبض العامة بنظام FIFO
+                        val extraPayment = minOf(unallocatedPool, unpaidAmount)
+                        unallocatedPool = (unallocatedPool - extraPayment).coerceAtLeast(0.0)
+
+                        val finalPaid = (basePaid + extraPayment).coerceAtMost(inv.totalAmount)
                         val finalRemaining = (inv.totalAmount - finalPaid).coerceAtLeast(0.0)
                         val finalStatus = when {
                             finalRemaining <= 0.01 -> "PAID"
@@ -848,33 +898,37 @@ class NetworkRepository(private val db: AppDatabase) {
 
                         totalDebt += finalRemaining
                         if (finalRemaining > 0.01) {
-                            totalActiveCards += inv.totalCardsCount
+                            totalUnpaidCards += inv.totalCardsCount
                         }
                         totalPaid += finalPaid
                     }
 
-                    // في حال تبقت مبالغ من سندات القبض المستقلة تفوق كل الفواتير
-                    totalDebt = (totalDebt - remainingPaymentPool).coerceAtLeast(0.0)
-                    totalPaid += remainingPaymentPool
+                    // في حال تبقت مبالغ من سندات القبض العامة تفوق مديونية كافة الفواتير
+                    totalDebt = (totalDebt - unallocatedPool).coerceAtLeast(0.0)
+                    totalPaid += unallocatedPool
 
-                    // ضبط رصيد البقالة بدقة متناهية 100% ليطابق فواتيرها وسنداتها
+                    // الكروت الفيزيائية الموزعة من دفعات الكروت
+                    val physicalCards = db.cardDao().getDistributedCardsCountForRetailer(retailer.id)
+                    val finalActiveCards = maxOf(totalUnpaidCards, physicalCards)
+
+                    // تحديث بيانات البقالة بدقة 100%
                     if (Math.abs(retailer.balanceOwed - totalDebt) > 0.01 ||
-                        retailer.activeCardsCount != totalActiveCards ||
+                        retailer.activeCardsCount != finalActiveCards ||
                         Math.abs(retailer.totalPaid - totalPaid) > 0.01) {
                         db.retailerDao().updateRetailer(
                             retailer.copy(
                                 balanceOwed = totalDebt,
-                                activeCardsCount = totalActiveCards,
+                                activeCardsCount = finalActiveCards,
                                 totalPaid = totalPaid
                             )
                         )
                     }
                 } else {
-                    // إذا لم توجد فواتير مبيعات مسجلة للبقالة (مثلاً بقالة مسجلة حديثاً بدون حركات بعد)
-                    // نخصم أي سندات قبض مباشرة إن وجدت
-                    if (directPayments > 0.0) {
-                        val newDebt = (retailer.balanceOwed - directPayments).coerceAtLeast(0.0)
-                        val newPaid = retailer.totalPaid + directPayments
+                    // إذا لم تكن هناك فواتير مبيعات مسجلة للبقالة
+                    val directTotalReceipts = retailerReceipts.sumOf { it.amount }
+                    if (directTotalReceipts > 0.0) {
+                        val newDebt = (retailer.balanceOwed - directTotalReceipts).coerceAtLeast(0.0)
+                        val newPaid = retailer.totalPaid + directTotalReceipts
                         db.retailerDao().updateRetailer(
                             retailer.copy(balanceOwed = newDebt, totalPaid = newPaid)
                         )
@@ -886,53 +940,64 @@ class NetworkRepository(private val db: AppDatabase) {
         }
     }
 
+    /**
+     * محرك التسوية المحاسبية والربط الفوري والتزامن الشامل بين كافة التبويبات.
+     * يعمل كمعاملة ذرية مع ضمان تكامل البيانات 100%.
+     */
+    suspend fun reconcileAccountingLedger() = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            reconcileAccountingLedgerInternal()
+        }
+    }
+
     suspend fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity) = withContext(Dispatchers.IO) {
-        try {
-            // 1. استرجاع الكميات للمخزن مع تسجيل حركة الإلغاء
-            if (invoice.itemsJson.isNotBlank()) {
-                val jsonArray = org.json.JSONArray(invoice.itemsJson)
-                for (i in 0 until jsonArray.length()) {
-                    val obj = jsonArray.getJSONObject(i)
-                    val pkgName = obj.optString("packageName", "")
-                    val qty = obj.optInt("quantity", 0)
-                    if (pkgName.isNotBlank() && qty > 0) {
-                        val item = db.inventoryDao().getItemByPackageName(pkgName)
-                        if (item != null) {
-                            val newQty = item.quantityAvailable + qty
-                            db.inventoryDao().updateItem(item.copy(quantityAvailable = newQty))
-                            db.inventoryMovementDao().insertMovement(
-                                InventoryMovementEntity(
-                                    packageName = pkgName,
-                                    movementType = "RETURN",
-                                    quantityChange = qty,
-                                    resultingBalance = newQty,
-                                    referenceNumber = "CANCEL-${invoice.invoiceNumber}",
-                                    customerOrSupplier = invoice.customerName,
-                                    unitPrice = item.wholesalePrice,
-                                    notes = "استرجاع كميات بسبب حذف/إلغاء الفاتورة ${invoice.invoiceNumber}"
+        db.withTransaction {
+            try {
+                // 1. استرجاع الكميات للمخزن مع تسجيل حركة الإلغاء
+                if (invoice.itemsJson.isNotBlank()) {
+                    val jsonArray = org.json.JSONArray(invoice.itemsJson)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val pkgName = obj.optString("packageName", "")
+                        val qty = obj.optInt("quantity", 0)
+                        if (pkgName.isNotBlank() && qty > 0) {
+                            val item = db.inventoryDao().getItemByPackageName(pkgName)
+                            if (item != null) {
+                                val newQty = item.quantityAvailable + qty
+                                db.inventoryDao().updateItem(item.copy(quantityAvailable = newQty))
+                                db.inventoryMovementDao().insertMovement(
+                                    InventoryMovementEntity(
+                                        packageName = pkgName,
+                                        movementType = "RETURN",
+                                        quantityChange = qty,
+                                        resultingBalance = newQty,
+                                        referenceNumber = "CANCEL-${invoice.invoiceNumber}",
+                                        customerOrSupplier = invoice.customerName,
+                                        unitPrice = item.wholesalePrice,
+                                        notes = "استرجاع كميات بسبب حذف/إلغاء الفاتورة ${invoice.invoiceNumber}"
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
+
+                // 2. حذف سند القبض المالي المقيد مع الفاتورة صراحة بالمعرف ورقم الفاتورة
+                db.financialVoucherDao().deleteVouchersByInvoiceId(invoice.id)
+                if (invoice.invoiceNumber.isNotBlank()) {
+                    db.financialVoucherDao().deleteVouchersByInvoiceNumber(invoice.invoiceNumber)
+                }
+
+                // 3. حذف الفاتورة
+                db.cardSalesInvoiceDao().deleteInvoice(invoice)
+
+                // 4. تسوية الحسابات المحاسبية فورا
+                reconcileAccountingLedgerInternal()
+            } catch (e: Exception) {
+                android.util.Log.e("NetworkRepository", "deleteSalesInvoice error: ${e.message}", e)
+                db.cardSalesInvoiceDao().deleteInvoice(invoice)
+                reconcileAccountingLedgerInternal()
             }
-
-            // 2. حذف سند القبض المالي المقيد مع الفاتورة إن وجد
-            val vouchers = db.financialVoucherDao().getAllVouchers().first()
-            val linkedVoucher = vouchers.find { it.description.contains(invoice.invoiceNumber) }
-            if (linkedVoucher != null) {
-                db.financialVoucherDao().deleteVoucher(linkedVoucher)
-            }
-
-            // 3. حذف الفاتورة
-            db.cardSalesInvoiceDao().deleteInvoice(invoice)
-
-            // 4. تسوية الحسابات المحاسبية فورا
-            reconcileAccountingLedger()
-        } catch (e: Exception) {
-            android.util.Log.e("NetworkRepository", "deleteSalesInvoice error: ${e.message}", e)
-            db.cardSalesInvoiceDao().deleteInvoice(invoice)
-            reconcileAccountingLedger()
         }
     }
 
@@ -941,67 +1006,68 @@ class NetworkRepository(private val db: AppDatabase) {
         retailerId: Long,
         quantity: Int
     ): Boolean = withContext(Dispatchers.IO) {
-        val retailer = db.retailerDao().getRetailerById(retailerId) ?: return@withContext false
-        val item = db.inventoryDao().getItemById(inventoryId) ?: return@withContext false
-        if (item.quantityAvailable < quantity) return@withContext false
+        db.withTransaction {
+            val retailer = db.retailerDao().getRetailerById(retailerId) ?: return@withTransaction false
+            val item = db.inventoryDao().getItemById(inventoryId) ?: return@withTransaction false
+            if (item.quantityAvailable < quantity) return@withTransaction false
 
-        // Deduct from inventory
-        val updatedItem = item.copy(quantityAvailable = item.quantityAvailable - quantity)
-        db.inventoryDao().updateItem(updatedItem)
+            // Deduct from inventory
+            val updatedItem = item.copy(quantityAvailable = item.quantityAvailable - quantity)
+            db.inventoryDao().updateItem(updatedItem)
 
-        val totalDebt = item.wholesalePrice * quantity
-        val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
+            val totalDebt = item.wholesalePrice * quantity
+            val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
 
-        // قيد حركة مخزنية خارجة (خصم تسليم كروت)
-        db.inventoryMovementDao().insertMovement(
-            InventoryMovementEntity(
-                packageName = item.packageName,
-                movementType = "SALE",
-                quantityChange = -quantity,
-                resultingBalance = updatedItem.quantityAvailable,
-                referenceNumber = invoiceNumber,
-                customerOrSupplier = retailer.name,
-                unitPrice = item.wholesalePrice,
-                notes = "تسليم كروت للبقالة $invoiceNumber"
+            // قيد حركة مخزنية خارجة (خصم تسليم كروت)
+            db.inventoryMovementDao().insertMovement(
+                InventoryMovementEntity(
+                    packageName = item.packageName,
+                    movementType = "SALE",
+                    quantityChange = -quantity,
+                    resultingBalance = updatedItem.quantityAvailable,
+                    referenceNumber = invoiceNumber,
+                    customerOrSupplier = retailer.name,
+                    unitPrice = item.wholesalePrice,
+                    notes = "تسليم كروت للبقالة $invoiceNumber"
+                )
             )
-        )
 
-        // إنشاء فاتورة مبيعات كروت رسمية بالآجل
-        val jsonArray = org.json.JSONArray().apply {
-            put(org.json.JSONObject().apply {
-                put("id", java.util.UUID.randomUUID().toString())
-                put("packageName", item.packageName)
-                put("quantity", quantity)
-                put("unitPrice", item.wholesalePrice)
-                put("retailPrice", item.retailPrice)
-                put("lineTotal", totalDebt)
-            })
+            // إنشاء فاتورة مبيعات كروت رسمية بالآجل
+            val jsonArray = org.json.JSONArray().apply {
+                put(org.json.JSONObject().apply {
+                    put("id", java.util.UUID.randomUUID().toString())
+                    put("packageName", item.packageName)
+                    put("quantity", quantity)
+                    put("unitPrice", item.wholesalePrice)
+                    put("retailPrice", item.retailPrice)
+                    put("lineTotal", totalDebt)
+                })
+            }
+
+            val invoiceEntity = CardSalesInvoiceEntity(
+                invoiceNumber = invoiceNumber,
+                customerName = retailer.name,
+                customerPhone = retailer.phone,
+                retailerId = retailerId,
+                paymentType = "CREDIT",
+                totalAmount = totalDebt,
+                paidAmount = 0.0,
+                remainingAmount = totalDebt,
+                totalCardsCount = quantity,
+                itemsCount = 1,
+                itemsSummary = "$quantity كرت [${item.packageName}]",
+                itemsJson = jsonArray.toString(),
+                notes = "تسليم وتوزيع كروت بالآجل من المخزن",
+                issuerName = "مسؤول التوزيع",
+                status = "CREDIT"
+            )
+            db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
+            // إعادة التسوية الشاملة ذرياً
+            reconcileAccountingLedgerInternal()
+
+            true
         }
-
-        val invoiceEntity = CardSalesInvoiceEntity(
-            invoiceNumber = invoiceNumber,
-            customerName = retailer.name,
-            customerPhone = retailer.phone,
-            retailerId = retailerId,
-            paymentType = "CREDIT",
-            totalAmount = totalDebt,
-            paidAmount = 0.0,
-            remainingAmount = totalDebt,
-            totalCardsCount = quantity,
-            itemsCount = 1,
-            itemsSummary = "$quantity كرت [${item.packageName}]",
-            itemsJson = jsonArray.toString(),
-            notes = "تسليم وتوزيع كروت بالآجل من المخزن",
-            issuerName = "مسؤول التوزيع",
-            status = "CREDIT"
-        )
-        db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
-
-        // إضافة المديونية والكروت وإعادة التسوية الشاملة
-        db.retailerDao().updateBalanceAndCards(retailerId, totalDebt, quantity)
-        reconcileAccountingLedger()
-
-        true
     }
 
     // Distribute Cards to Retailer (تسليم دفعة كروت للبقالة)
@@ -1010,54 +1076,55 @@ class NetworkRepository(private val db: AppDatabase) {
         retailerId: Long,
         quantity: Int
     ): Boolean = withContext(Dispatchers.IO) {
-        val retailer = db.retailerDao().getRetailerById(retailerId) ?: return@withContext false
-        val availableCards = db.cardDao().getAvailableCardsForBatch(batchId, quantity)
-        if (availableCards.isEmpty()) return@withContext false
+        db.withTransaction {
+            val retailer = db.retailerDao().getRetailerById(retailerId) ?: return@withTransaction false
+            val availableCards = db.cardDao().getAvailableCardsForBatch(batchId, quantity)
+            if (availableCards.isEmpty()) return@withTransaction false
 
-        val countToDistribute = availableCards.size
-        val cardIds = availableCards.map { it.id }
-        val now = System.currentTimeMillis()
+            val countToDistribute = availableCards.size
+            val cardIds = availableCards.map { it.id }
+            val now = System.currentTimeMillis()
 
-        db.cardDao().assignCardsToRetailer(cardIds, retailerId, retailer.name, now)
+            db.cardDao().assignCardsToRetailer(cardIds, retailerId, retailer.name, now)
 
-        val totalWholesaleDebt = availableCards.sumOf { it.wholesalePrice }
-        val categoryName = availableCards.firstOrNull()?.categoryName ?: "كروت شبكة"
-        val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
+            val totalWholesaleDebt = availableCards.sumOf { it.wholesalePrice }
+            val categoryName = availableCards.firstOrNull()?.categoryName ?: "كروت شبكة"
+            val invoiceNumber = "INV-2026-${Random.nextInt(1000, 9999)}"
 
-        val jsonArray = org.json.JSONArray().apply {
-            put(org.json.JSONObject().apply {
-                put("id", java.util.UUID.randomUUID().toString())
-                put("packageName", categoryName)
-                put("quantity", countToDistribute)
-                put("unitPrice", if (countToDistribute > 0) totalWholesaleDebt / countToDistribute else 0.0)
-                put("retailPrice", availableCards.firstOrNull()?.retailPrice ?: 0.0)
-                put("lineTotal", totalWholesaleDebt)
-            })
+            val jsonArray = org.json.JSONArray().apply {
+                put(org.json.JSONObject().apply {
+                    put("id", java.util.UUID.randomUUID().toString())
+                    put("packageName", categoryName)
+                    put("quantity", countToDistribute)
+                    put("unitPrice", if (countToDistribute > 0) totalWholesaleDebt / countToDistribute else 0.0)
+                    put("retailPrice", availableCards.firstOrNull()?.retailPrice ?: 0.0)
+                    put("lineTotal", totalWholesaleDebt)
+                })
+            }
+
+            val invoiceEntity = CardSalesInvoiceEntity(
+                invoiceNumber = invoiceNumber,
+                customerName = retailer.name,
+                customerPhone = retailer.phone,
+                retailerId = retailerId,
+                paymentType = "CREDIT",
+                totalAmount = totalWholesaleDebt,
+                paidAmount = 0.0,
+                remainingAmount = totalWholesaleDebt,
+                totalCardsCount = countToDistribute,
+                itemsCount = 1,
+                itemsSummary = "$countToDistribute كرت [$categoryName]",
+                itemsJson = jsonArray.toString(),
+                notes = "تسليم دفعة كروت بالآجل للبقالة",
+                issuerName = "مسؤول التوزيع",
+                status = "CREDIT"
+            )
+            db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
+            reconcileAccountingLedgerInternal()
+
+            true
         }
-
-        val invoiceEntity = CardSalesInvoiceEntity(
-            invoiceNumber = invoiceNumber,
-            customerName = retailer.name,
-            customerPhone = retailer.phone,
-            retailerId = retailerId,
-            paymentType = "CREDIT",
-            totalAmount = totalWholesaleDebt,
-            paidAmount = 0.0,
-            remainingAmount = totalWholesaleDebt,
-            totalCardsCount = countToDistribute,
-            itemsCount = 1,
-            itemsSummary = "$countToDistribute كرت [$categoryName]",
-            itemsJson = jsonArray.toString(),
-            notes = "تسليم دفعة كروت بالآجل للبقالة",
-            issuerName = "مسؤول التوزيع",
-            status = "CREDIT"
-        )
-        db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
-
-        db.retailerDao().updateBalanceAndCards(retailerId, totalWholesaleDebt, countToDistribute)
-        reconcileAccountingLedger()
-
-        true
     }
 
     suspend fun markCardSold(cardId: Long) = withContext(Dispatchers.IO) {
@@ -1092,67 +1159,68 @@ class NetworkRepository(private val db: AppDatabase) {
         issuerName: String = "المهندس حسن",
         notes: String = ""
     ): Long = withContext(Dispatchers.IO) {
-        val retailer = db.retailerDao().getRetailerById(retailerId)
-        val retailerName = retailer?.name ?: "نقطة توزيع"
-        val totalWholesale = packageEntity.wholesalePrice * quantity
-        val totalRetail = packageEntity.retailPrice * quantity
-        val retailerProfit = (packageEntity.retailPrice - packageEntity.wholesalePrice) * quantity
+        db.withTransaction {
+            val retailer = db.retailerDao().getRetailerById(retailerId)
+            val retailerName = retailer?.name ?: "نقطة توزيع"
+            val totalWholesale = packageEntity.wholesalePrice * quantity
+            val totalRetail = packageEntity.retailPrice * quantity
+            val retailerProfit = (packageEntity.retailPrice - packageEntity.wholesalePrice) * quantity
 
-        val randomNum = Random.nextInt(1000, 9999)
-        val voucherNumber = "INV-2026-$randomNum"
+            val randomNum = Random.nextInt(1000, 9999)
+            val invoiceNumber = "INV-2026-$randomNum"
+            val isCash = paymentMethod.contains("نقد")
 
-        val descriptionText = buildString {
-            append("فاتورة بيع $quantity كرت [${packageEntity.name}]")
-            append(" بسعر جملة ${packageEntity.wholesalePrice.toInt()} ر.ي (إجمالي الجملة: ${totalWholesale.toInt()} ر.ي)")
-            append(" - سعر البيع للمستهلك: ${packageEntity.retailPrice.toInt()} ر.ي (إجمالي: ${totalRetail.toInt()} ر.ي)")
-            append(" - ربح البقالة المقدر: ${retailerProfit.toInt()} ر.ي")
-            if (notes.isNotBlank()) append(" | ملاحظة: $notes")
+            val invoiceEntity = CardSalesInvoiceEntity(
+                invoiceNumber = invoiceNumber,
+                customerName = retailerName,
+                customerPhone = retailer?.phone ?: "",
+                retailerId = retailerId,
+                paymentType = if (isCash) "CASH" else "CREDIT",
+                totalAmount = totalWholesale,
+                paidAmount = if (isCash) totalWholesale else 0.0,
+                remainingAmount = if (isCash) 0.0 else totalWholesale,
+                totalCardsCount = quantity,
+                itemsCount = 1,
+                itemsSummary = "$quantity كرت [${packageEntity.name}]",
+                itemsJson = "",
+                notes = notes.ifBlank { "فاتورة مبيعات باقة ${packageEntity.name}" },
+                issuerName = issuerName,
+                status = if (isCash) "PAID" else "CREDIT"
+            )
+            val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
+
+            val descriptionText = buildString {
+                append("فاتورة بيع $quantity كرت [${packageEntity.name}]")
+                append(" بسعر جملة ${packageEntity.wholesalePrice.toInt()} ر.ي (إجمالي الجملة: ${totalWholesale.toInt()} ر.ي)")
+                append(" - سعر البيع للمستهلك: ${packageEntity.retailPrice.toInt()} ر.ي (إجمالي: ${totalRetail.toInt()} ر.ي)")
+                append(" - ربح البقالة المقدر: ${retailerProfit.toInt()} ر.ي")
+                if (notes.isNotBlank()) append(" | ملاحظة: $notes")
+            }
+
+            var voucherId = 0L
+            if (isCash) {
+                val voucher = FinancialVoucherEntity(
+                    voucherNumber = "REC-2026-${Random.nextInt(1000, 9999)}",
+                    voucherType = "RECEIPT",
+                    amount = totalWholesale,
+                    partyName = retailerName,
+                    retailerId = retailerId,
+                    invoiceId = invoiceId,
+                    invoiceNumber = invoiceNumber,
+                    allocatedAmount = totalWholesale,
+                    category = "مبيعات كروت",
+                    paymentMethod = paymentMethod,
+                    description = descriptionText,
+                    issuerName = issuerName,
+                    notes = notes
+                )
+                voucherId = db.financialVoucherDao().insertVoucher(voucher)
+            }
+
+            reconcileAccountingLedgerInternal()
+
+            if (voucherId > 0) voucherId else invoiceId
         }
-
-        val voucher = FinancialVoucherEntity(
-            voucherNumber = voucherNumber,
-            voucherType = "RECEIPT",
-            amount = totalWholesale,
-            partyName = retailerName,
-            retailerId = retailerId,
-            category = "مبيعات كروت",
-            paymentMethod = paymentMethod,
-            description = descriptionText,
-            issuerName = issuerName,
-            notes = notes
-        )
-
-        val voucherId = db.financialVoucherDao().insertVoucher(voucher)
-
-        val isCash = paymentMethod.contains("نقد")
-        val invoiceEntity = CardSalesInvoiceEntity(
-            invoiceNumber = voucherNumber,
-            customerName = retailerName,
-            customerPhone = retailer?.phone ?: "",
-            retailerId = retailerId,
-            paymentType = if (isCash) "CASH" else "CREDIT",
-            totalAmount = totalWholesale,
-            paidAmount = if (isCash) totalWholesale else 0.0,
-            remainingAmount = if (isCash) 0.0 else totalWholesale,
-            totalCardsCount = quantity,
-            itemsCount = 1,
-            itemsSummary = "$quantity كرت [${packageEntity.name}]",
-            itemsJson = "",
-            notes = notes.ifBlank { "فاتورة مبيعات باقة ${packageEntity.name}" },
-            issuerName = issuerName,
-            status = if (isCash) "PAID" else "CREDIT"
-        )
-        db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
-
-        // تحديث رصيد البقالة بالمديونية الجديدة وزيادة عدد الكروت المستلمة
-        if (retailer != null) {
-            val debtToAdd = if (isCash) 0.0 else totalWholesale
-            db.retailerDao().updateBalanceAndCards(retailerId, debtToAdd, quantity)
-        }
-
-        reconcileAccountingLedger()
-
-        voucherId
     }
 
     // Retailers
@@ -1187,39 +1255,43 @@ class NetworkRepository(private val db: AppDatabase) {
         category: String,
         paymentMethod: String,
         description: String,
-        issuerName: String
+        issuerName: String,
+        invoiceId: Long? = null,
+        invoiceNumber: String = ""
     ): Long = withContext(Dispatchers.IO) {
-        val prefix = if (voucherType == "RECEIPT") "REC" else "PAY"
-        val randomNum = Random.nextInt(1000, 9999)
-        val voucherNumber = "$prefix-2026-$randomNum"
+        db.withTransaction {
+            val prefix = if (voucherType == "RECEIPT") "REC" else "PAY"
+            val randomNum = Random.nextInt(1000, 9999)
+            val voucherNumberGenerated = "$prefix-2026-$randomNum"
 
-        val voucher = FinancialVoucherEntity(
-            voucherNumber = voucherNumber,
-            voucherType = voucherType,
-            amount = amount,
-            partyName = partyName,
-            retailerId = retailerId,
-            category = category,
-            paymentMethod = paymentMethod,
-            description = description,
-            issuerName = issuerName
-        )
+            val voucher = FinancialVoucherEntity(
+                voucherNumber = voucherNumberGenerated,
+                voucherType = voucherType,
+                amount = amount,
+                partyName = partyName,
+                retailerId = retailerId,
+                invoiceId = invoiceId,
+                invoiceNumber = invoiceNumber,
+                allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else 0.0,
+                category = category,
+                paymentMethod = paymentMethod,
+                description = description,
+                issuerName = issuerName
+            )
 
-        val id = db.financialVoucherDao().insertVoucher(voucher)
+            val id = db.financialVoucherDao().insertVoucher(voucher)
 
-        // If it's a receipt from a retailer, reduce their balance
-        if (voucherType == "RECEIPT" && retailerId != null) {
-            db.retailerDao().recordPayment(retailerId, amount)
+            reconcileAccountingLedgerInternal()
+
+            id
         }
-
-        reconcileAccountingLedger()
-
-        id
     }
 
     suspend fun deleteVoucher(voucher: FinancialVoucherEntity) = withContext(Dispatchers.IO) {
-        db.financialVoucherDao().deleteVoucher(voucher)
-        reconcileAccountingLedger()
+        db.withTransaction {
+            db.financialVoucherDao().deleteVoucher(voucher)
+            reconcileAccountingLedgerInternal()
+        }
     }
 
     suspend fun insertVoucher(voucher: FinancialVoucherEntity): Long = withContext(Dispatchers.IO) {
@@ -1244,102 +1316,12 @@ class NetworkRepository(private val db: AppDatabase) {
     }
 
     companion object {
-        val SUPER_ADMIN_EMAILS = setOf("mosthassan.ye@gmail.com", "mosthassan.ye2@gmail.com")
-
         fun isSuperAdminEmail(email: String?): Boolean {
-            if (email.isNullOrBlank()) return false
-            return SUPER_ADMIN_EMAILS.contains(email.trim().lowercase())
+            return !email.isNullOrBlank()
         }
     }
 
-    suspend fun ensureSuperAdminExists(): UserEntity = withContext(Dispatchers.IO) {
-        val targetEmail = "mosthassan.ye@gmail.com"
-        val existing = db.userDao().getUserByEmail(targetEmail)
-        if (existing != null) {
-            val updated = existing.copy(
-                role = "OWNER",
-                fullName = if (existing.fullName.isNotBlank() && existing.fullName != "مستخدم جوجل") existing.fullName else "المهندس حسن (المدير العام والمسؤول الأعلى)",
-                email = targetEmail,
-                isGoogleUser = true
-            )
-            db.userDao().updateUser(updated)
-            updated
-        } else {
-            val newAdmin = UserEntity(
-                username = "mosthassan",
-                fullName = "المهندس حسن (المدير العام والمسؤول الأعلى)",
-                role = "OWNER",
-                email = targetEmail,
-                phone = "770000001",
-                isGoogleUser = true
-            )
-            val id = db.userDao().insertUser(newAdmin)
-            newAdmin.copy(id = id)
-        }
-    }
-
-    suspend fun registerOrUpdateGoogleUser(
-        email: String,
-        displayName: String,
-        photoUrl: String
-    ): UserEntity = withContext(Dispatchers.IO) {
-        val normalizedEmail = email.trim().lowercase()
-        val isSuperAdmin = isSuperAdminEmail(normalizedEmail)
-        val existing = db.userDao().getUserByEmail(normalizedEmail)
-            ?: if (email != normalizedEmail) db.userDao().getUserByEmail(email) else null
-
-        if (existing != null) {
-            val updated = existing.copy(
-                fullName = if (isSuperAdmin) {
-                    displayName.ifBlank { "المهندس حسن (المدير العام والمسؤول الأعلى)" }
-                } else if (existing.fullName.isNotBlank()) existing.fullName else displayName,
-                photoUrl = photoUrl,
-                email = normalizedEmail,
-                role = if (isSuperAdmin) "OWNER" else existing.role,
-                isGoogleUser = true
-            )
-            db.userDao().updateUser(updated)
-            updated
-        } else {
-            // Check if user was registered in Firestore cloud by Administrator as a Distributor
-            val cloudDistributor = try {
-                com.example.data.firebase.FirebaseDbService().fetchAuthorizedUserByEmail(normalizedEmail)
-            } catch (e: Exception) {
-                null
-            }
-
-            if (cloudDistributor != null && !isSuperAdmin) {
-                val newUser = cloudDistributor.copy(
-                    fullName = if (cloudDistributor.fullName.isNotBlank()) cloudDistributor.fullName else displayName,
-                    photoUrl = photoUrl,
-                    email = normalizedEmail,
-                    isGoogleUser = true
-                )
-                val newId = db.userDao().insertUser(newUser)
-                newUser.copy(id = newId)
-            } else {
-                // If this is super admin, always make them OWNER. Otherwise check if owner already exists
-                val hasOwner = db.userDao().getUsersByRole("OWNER").first().isNotEmpty()
-                val assignedRole = if (isSuperAdmin) "OWNER" else if (hasOwner) "DISTRIBUTOR" else "OWNER"
-
-                val newUser = UserEntity(
-                    username = if (isSuperAdmin) "mosthassan" else normalizedEmail.substringBefore("@"),
-                    fullName = if (isSuperAdmin) {
-                        displayName.ifBlank { "المهندس حسن (المدير العام والمسؤول الأعلى)" }
-                    } else displayName.ifBlank { if (assignedRole == "OWNER") "مالك الشبكة" else "موزع كروت جديد" },
-                    role = assignedRole,
-                    email = normalizedEmail,
-                    photoUrl = photoUrl,
-                    isGoogleUser = true
-                )
-                val newId = db.userDao().insertUser(newUser)
-                newUser.copy(id = newId)
-            }
-        }
-    }
-
-    suspend fun resetToProductionEnvironment(activeGoogleUser: UserEntity? = null): UserEntity = withContext(Dispatchers.IO) {
-        // 1. Purge all operational and demo data
+    suspend fun purgeAllOperationalData() = withContext(Dispatchers.IO) {
         db.cardDao().deleteAllCards()
         db.cardDao().deleteAllBatches()
         db.financialVoucherDao().deleteAllVouchers()
@@ -1353,29 +1335,105 @@ class NetworkRepository(private val db: AppDatabase) {
         db.inventoryMovementDao().deleteAllMovements()
         db.cardSalesInvoiceDao().deleteAllInvoices()
         db.cardPackageDao().deleteAllPackages()
-
-        // 2. Clear previous demo users
         db.userDao().deleteAllUsers()
+    }
 
-        // 3. Create or preserve the authentic production administrator
+    suspend fun switchUserWorkspace(
+        email: String,
+        displayName: String,
+        photoUrl: String = ""
+    ): UserEntity = withContext(Dispatchers.IO) {
+        purgeAllOperationalData()
+
+        val cleanEmail = email.trim().lowercase()
+        val cleanName = displayName.trim().ifBlank { cleanEmail.substringBefore("@") }
+
+        val newOwner = UserEntity(
+            username = cleanEmail.substringBefore("@"),
+            fullName = cleanName,
+            role = "OWNER",
+            email = cleanEmail,
+            photoUrl = photoUrl,
+            isGoogleUser = true
+        )
+        val id = db.userDao().insertUser(newOwner)
+
+        val freshIdentity = NetworkIdentityEntity(
+            id = 1L,
+            networkName = "شبكة $cleanName",
+            ownerName = cleanName,
+            supportEmail = cleanEmail
+        )
+        db.networkIdentityDao().insertOrUpdate(freshIdentity)
+
+        newOwner.copy(id = id)
+    }
+
+    suspend fun registerOrUpdateGoogleUser(
+        email: String,
+        displayName: String,
+        photoUrl: String
+    ): UserEntity = withContext(Dispatchers.IO) {
+        val normalizedEmail = email.trim().lowercase()
+        val existing = db.userDao().getUserByEmail(normalizedEmail)
+            ?: if (email != normalizedEmail) db.userDao().getUserByEmail(email) else null
+
+        if (existing != null) {
+            val updated = existing.copy(
+                fullName = if (existing.fullName.isNotBlank()) existing.fullName else displayName,
+                photoUrl = photoUrl,
+                email = normalizedEmail,
+                role = "OWNER",
+                isGoogleUser = true
+            )
+            db.userDao().updateUser(updated)
+            updated
+        } else {
+            val cleanName = displayName.ifBlank { normalizedEmail.substringBefore("@") }
+            val newUser = UserEntity(
+                username = normalizedEmail.substringBefore("@"),
+                fullName = cleanName,
+                role = "OWNER",
+                email = normalizedEmail,
+                photoUrl = photoUrl,
+                isGoogleUser = true
+            )
+            val newId = db.userDao().insertUser(newUser)
+            newUser.copy(id = newId)
+        }
+    }
+
+    suspend fun resetToProductionEnvironment(activeGoogleUser: UserEntity? = null): UserEntity = withContext(Dispatchers.IO) {
+        // 1. Purge all operational and demo data
+        purgeAllOperationalData()
+
+        // 2. Create or preserve the authentic production administrator
         val productionAdmin = if (activeGoogleUser != null && activeGoogleUser.email.isNotBlank()) {
-            val isAdmin = isSuperAdminEmail(activeGoogleUser.email)
             activeGoogleUser.copy(
                 id = 0,
                 role = "OWNER",
-                fullName = if (isAdmin) "المهندس حسن (المدير العام والمسؤول الأعلى)" else activeGoogleUser.fullName
+                fullName = activeGoogleUser.fullName.ifBlank { activeGoogleUser.email.substringBefore("@") }
             )
         } else {
             UserEntity(
-                username = "mosthassan",
-                fullName = "المهندس حسن (المدير العام والمسؤول الأعلى)",
+                username = "owner",
+                fullName = "مالك الشبكة الجديد",
                 role = "OWNER",
-                phone = "770000001",
-                email = "mosthassan.ye@gmail.com",
-                isGoogleUser = true
+                email = "",
+                isGoogleUser = false
             )
         }
         val adminId = db.userDao().insertUser(productionAdmin)
+
+        // 3. Reset network identity to clean slate
+        val freshIdentity = NetworkIdentityEntity(
+            id = 1L,
+            networkName = "شبكتي الخاصة",
+            ownerName = productionAdmin.fullName,
+            supportEmail = productionAdmin.email
+        )
+        db.networkIdentityDao().insertOrUpdate(freshIdentity)
+
         productionAdmin.copy(id = adminId)
     }
 

@@ -656,20 +656,20 @@ class FirebaseDbService {
         try {
             val idDocRef = getNetworkIdentityDocRef(userEmail)
             var idSnap = idDocRef?.let { getDocumentAsync(it) }
-            if (idSnap == null || !idSnap.exists()) {
-                // Fallback to global identity if user partition has none
+            if ((idSnap == null || !idSnap.exists()) && userEmail.isNullOrBlank()) {
+                // Fallback to global identity ONLY if user is not logged in (offline guest)
                 val globalIdDoc = fs.collection("settings").document("network_identity")
                 idSnap = getDocumentAsync(globalIdDoc)
             }
             if (idSnap != null && idSnap.exists()) {
                 pulledIdentity = NetworkIdentityEntity(
                     id = 1L,
-                    networkName = idSnap.getString("networkName") ?: "شبكة سام ميكروتك",
-                    ownerName = idSnap.getString("ownerName") ?: "المهندس حسن",
-                    supportPhone = idSnap.getString("supportPhone") ?: "770000001",
-                    supportWhatsapp = idSnap.getString("supportWhatsapp") ?: "770000001",
-                    supportEmail = idSnap.getString("supportEmail") ?: "mosthassan.ye@gmail.com",
-                    networkLocation = idSnap.getString("networkLocation") ?: "صنعاء - اليمن",
+                    networkName = idSnap.getString("networkName") ?: "شبكة المايكروتك الذكية",
+                    ownerName = idSnap.getString("ownerName") ?: (userEmail?.substringBefore("@") ?: "مالك الشبكة"),
+                    supportPhone = idSnap.getString("supportPhone") ?: "770000000",
+                    supportWhatsapp = idSnap.getString("supportWhatsapp") ?: "770000000",
+                    supportEmail = idSnap.getString("supportEmail") ?: (userEmail ?: ""),
+                    networkLocation = idSnap.getString("networkLocation") ?: "اليمن",
                     routerModel = idSnap.getString("routerModel") ?: "CCR2004-16G-2S+",
                     routerOsVersion = idSnap.getString("routerOsVersion") ?: "RouterOS v7.18",
                     approvedDeviceSubnet = idSnap.getString("approvedDeviceSubnet") ?: "192.168.88.0/24",
@@ -679,7 +679,7 @@ class FirebaseDbService {
                     hotspotSubnet = idSnap.getString("hotspotSubnet") ?: "10.10.10.0/24",
                     hotspotGatewayIp = idSnap.getString("hotspotGatewayIp") ?: "10.10.10.1",
                     dnsServers = idSnap.getString("dnsServers") ?: "8.8.8.8, 1.1.1.1",
-                    welcomeNotice = idSnap.getString("welcomeNotice") ?: "مرحباً بكم في شبكة سام ميكروتك السحابية",
+                    welcomeNotice = idSnap.getString("welcomeNotice") ?: "مرحباً بكم في شبكة المايكروتك",
                     updatedAt = idSnap.getLong("updatedAt") ?: System.currentTimeMillis()
                 )
             }
@@ -687,16 +687,19 @@ class FirebaseDbService {
             Log.e(tag, "Error pulling network identity", e)
         }
 
-        // Helper to query documents with user partition first, then optional global fallback
+        // Helper to query documents with strict user partition isolation
         suspend fun readCollections(
             userRef: CollectionReference?,
             globalRef: CollectionReference?,
             onDoc: (com.google.firebase.firestore.DocumentSnapshot) -> Unit
         ) {
-            val userSnap = userRef?.let { getCollectionAsync(it) }
-            if (userSnap != null && !userSnap.isEmpty) {
-                userSnap.documents.forEach { onDoc(it) }
+            if (userRef != null) {
+                // If user is authenticated, query ONLY their isolated partition.
+                // Do NOT fall back to global collections so other tenants' data is NEVER leaked!
+                val userSnap = getCollectionAsync(userRef)
+                userSnap?.documents?.forEach { onDoc(it) }
             } else if (globalRef != null) {
+                // Unauthenticated fallback only
                 val globalSnap = getCollectionAsync(globalRef)
                 globalSnap?.documents?.forEach { onDoc(it) }
             }
@@ -875,6 +878,31 @@ class FirebaseDbService {
                 Log.w(tag, "Firestore write note: ${exception.message}")
                 if (continuation.isActive) continuation.resume(Unit)
             }
+    }
+
+    suspend fun clearUserCloudPartition(userEmail: String): Boolean = withContext(Dispatchers.IO) {
+        if (userEmail.isBlank()) return@withContext false
+        val fs = firestore ?: return@withContext false
+        val userKey = sanitizeEmail(userEmail)
+        val userDoc = fs.collection("users").document(userKey)
+        val collections = listOf("devices", "retailers", "vouchers", "card_packages", "inventory_items", "card_sales_invoices")
+        try {
+            for (col in collections) {
+                val snap = getCollectionAsync(userDoc.collection(col))
+                snap?.documents?.forEach { doc ->
+                    try { doc.reference.delete() } catch (_: Exception) {}
+                }
+            }
+            try {
+                userDoc.collection("settings").document("network_identity").delete()
+            } catch (_: Exception) {}
+            try { userDoc.delete() } catch (_: Exception) {}
+            Log.i(tag, "Successfully cleared cloud partition for $userEmail")
+            true
+        } catch (e: Exception) {
+            Log.e(tag, "Error clearing cloud partition for $userEmail", e)
+            false
+        }
     }
 
     private suspend fun deleteDocAsync(

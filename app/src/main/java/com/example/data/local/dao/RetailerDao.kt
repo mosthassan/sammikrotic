@@ -14,6 +14,9 @@ interface RetailerDao {
     @Query("SELECT * FROM retailers ORDER BY balanceOwed DESC")
     fun getAllRetailers(): Flow<List<RetailerEntity>>
 
+    @Query("SELECT * FROM retailers ORDER BY balanceOwed DESC")
+    suspend fun getRetailersList(): List<RetailerEntity>
+
     @Query("SELECT * FROM retailers WHERE id = :id")
     suspend fun getRetailerById(id: Long): RetailerEntity?
 

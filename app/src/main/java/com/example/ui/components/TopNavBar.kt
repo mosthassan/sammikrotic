@@ -483,7 +483,7 @@ fun TopNavBar(
                                 )
                             }
 
-                            if (!isProductionMode) {
+                            if (!isProductionMode || currentUser?.role == "OWNER") {
                                 HorizontalDivider(
                                     color = Color(0xFF2E4064),
                                     modifier = Modifier.padding(vertical = 4.dp)
@@ -502,7 +502,7 @@ fun TopNavBar(
                                     text = {
                                         Column {
                                             Text(
-                                                text = "تهيئة بيئة العمل الفعلية 🚀",
+                                                text = "تهيئة وتصفير النظام 🚀",
                                                 color = PaymentRed,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp

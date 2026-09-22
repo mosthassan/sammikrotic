@@ -29,6 +29,9 @@ interface CardDao {
     @Query("SELECT * FROM cards WHERE retailerId = :retailerId")
     fun getCardsByRetailer(retailerId: Long): Flow<List<CardEntity>>
 
+    @Query("SELECT COUNT(*) FROM cards WHERE retailerId = :retailerId AND status = 'DISTRIBUTED'")
+    suspend fun getDistributedCardsCountForRetailer(retailerId: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBatch(batch: CardBatchEntity): Long
 

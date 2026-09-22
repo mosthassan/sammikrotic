@@ -179,6 +179,8 @@ fun CreateCardSalesInvoiceDialog(
         mutableStateOf(false)
     }
 
+    var stockWarningInfo by remember { mutableStateOf<Pair<String, Pair<Int, Int>>?>(null) }
+
     // Computed totals
     val totalInvoiceCards = invoiceItems.sumOf { it.quantity }
     val grandTotalAmount = invoiceItems.sumOf { it.lineTotal }
@@ -709,6 +711,33 @@ fun CreateCardSalesInvoiceDialog(
                                 return@Button
                             }
 
+                            val executeFinalSave = {
+                                isSaving = true
+                                if (isEditMode && invoiceToEdit != null && onConfirmEdit != null) {
+                                    onConfirmEdit(
+                                        invoiceToEdit,
+                                        customerNameText.trim(),
+                                        customerPhoneText.trim(),
+                                        selectedRetailer?.id,
+                                        validItems,
+                                        paymentType,
+                                        calculatedPaidAmount,
+                                        notesText.trim()
+                                    )
+                                } else {
+                                    onConfirmInvoice(
+                                        customerNameText.trim(),
+                                        customerPhoneText.trim(),
+                                        selectedRetailer?.id,
+                                        validItems,
+                                        paymentType,
+                                        calculatedPaidAmount,
+                                        notesText.trim(),
+                                        if (deleteOldInvoiceOnSave) initialInvoiceToClone else null
+                                    )
+                                }
+                            }
+
                             // Check stock availability
                             val stockIssue = validItems.firstOrNull { item ->
                                 val baseAvailable = inventoryItems.find { it.packageName == item.packageName }?.quantityAvailable ?: 0
@@ -724,34 +753,11 @@ fun CreateCardSalesInvoiceDialog(
                                     sourceItems?.filter { it.packageName == stockIssue.packageName }?.sumOf { it.quantity } ?: 0
                                 } else 0
                                 val effectiveAvailable = baseAvailable + refundedQty
-                                Toast.makeText(context, "الكمية المطلوبة من (${stockIssue.packageName}) هي ${stockIssue.quantity} والرصيد المتاح $effectiveAvailable كرت!", Toast.LENGTH_LONG).show()
+                                stockWarningInfo = Pair(stockIssue.packageName, Pair(stockIssue.quantity, effectiveAvailable))
                                 return@Button
                             }
 
-                            isSaving = true
-                            if (isEditMode && invoiceToEdit != null && onConfirmEdit != null) {
-                                onConfirmEdit(
-                                    invoiceToEdit,
-                                    customerNameText.trim(),
-                                    customerPhoneText.trim(),
-                                    selectedRetailer?.id,
-                                    validItems,
-                                    paymentType,
-                                    calculatedPaidAmount,
-                                    notesText.trim()
-                                )
-                            } else {
-                                onConfirmInvoice(
-                                    customerNameText.trim(),
-                                    customerPhoneText.trim(),
-                                    selectedRetailer?.id,
-                                    validItems,
-                                    paymentType,
-                                    calculatedPaidAmount,
-                                    notesText.trim(),
-                                    if (deleteOldInvoiceOnSave) initialInvoiceToClone else null
-                                )
-                            }
+                            executeFinalSave()
                         },
                         enabled = !isSaving,
                         colors = ButtonDefaults.buttonColors(
@@ -799,6 +805,78 @@ fun CreateCardSalesInvoiceDialog(
                 }
             }
         }
+    }
+
+    // نافذة تأكيد تجاوز رصيد المخزن والمتابعة
+    stockWarningInfo?.let { warning ->
+        val pkgName = warning.first
+        val reqQty = warning.second.first
+        val availQty = warning.second.second
+
+        AlertDialog(
+            onDismissRequest = { stockWarningInfo = null },
+            icon = {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(32.dp))
+            },
+            title = {
+                Text(
+                    text = "تنبيه توفر الكروت بالمخزن",
+                    fontFamily = CairoFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "الكمية المطلوبة من الصنف ($pkgName) هي $reqQty كرت، بينما الرصيد الحالي بالمخزن هو $availQty كرت.\n\nهل ترغب في متابعة إصدار الفاتورة وتحديث رصيد المخزن وضبط الحسابات؟",
+                    fontFamily = CairoFontFamily,
+                    fontSize = 13.sp,
+                    color = TextSecondaryDark
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        stockWarningInfo = null
+                        isSaving = true
+                        val validItems = invoiceItems.filter { it.quantity > 0 }
+                        if (isEditMode && invoiceToEdit != null && onConfirmEdit != null) {
+                            onConfirmEdit(
+                                invoiceToEdit,
+                                customerNameText.trim(),
+                                customerPhoneText.trim(),
+                                selectedRetailer?.id,
+                                validItems,
+                                paymentType,
+                                calculatedPaidAmount,
+                                notesText.trim()
+                            )
+                        } else {
+                            onConfirmInvoice(
+                                customerNameText.trim(),
+                                customerPhoneText.trim(),
+                                selectedRetailer?.id,
+                                validItems,
+                                paymentType,
+                                calculatedPaidAmount,
+                                notesText.trim(),
+                                if (deleteOldInvoiceOnSave) initialInvoiceToClone else null
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald)
+                ) {
+                    Text("متابعة وحفظ الفاتورة ✓", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { stockWarningInfo = null }) {
+                    Text("العودة لتعديل الكمية", fontFamily = CairoFontFamily, color = TextSecondaryDark)
+                }
+            },
+            containerColor = CyberDarkSurface
+        )
     }
 }
 

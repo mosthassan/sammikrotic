@@ -14,6 +14,9 @@ data class FinancialVoucherEntity(
     val originalAmount: Double = 0.0,    // المبلغ بالعملة الأصلية إن وجدت
     val partyName: String,               // استلمنا من / صرفنا إلى (مثلا "بقالة النور", "شركة الألياف الضوئية", "صيانة الأبراج")
     val retailerId: Long? = null,        // إذا كان السند مرتبط بحساب بقالة معينة
+    val invoiceId: Long? = null,         // معرف الفاتورة المرتبطة إن وجد
+    val invoiceNumber: String = "",       // رقم الفاتورة المرتبطة إن وجد
+    val allocatedAmount: Double = 0.0,    // المبلغ المخصص للفواتير
     val category: String,                // "مبيعات كروت", "اشتراك نت رئيسي", "ديزل وطاقة شمسية", "صيانة ومعدات", "رواتب مهندسين", "مصاريف أخرى"
     val paymentMethod: String = "نقداً", // "نقداً", "تحويل كاش / بنكي", "حوالة صرافة"
     val description: String,             // البيان والتفاصيل

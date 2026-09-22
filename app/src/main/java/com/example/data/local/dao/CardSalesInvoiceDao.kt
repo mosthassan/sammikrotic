@@ -14,8 +14,17 @@ interface CardSalesInvoiceDao {
     @Query("SELECT * FROM card_sales_invoices ORDER BY invoiceDateMillis DESC")
     fun getAllSalesInvoices(): Flow<List<CardSalesInvoiceEntity>>
 
+    @Query("SELECT * FROM card_sales_invoices ORDER BY invoiceDateMillis DESC")
+    suspend fun getSalesInvoicesList(): List<CardSalesInvoiceEntity>
+
+    @Query("SELECT * FROM card_sales_invoices WHERE retailerId = :retailerId ORDER BY invoiceDateMillis DESC")
+    suspend fun getInvoicesForRetailerList(retailerId: Long): List<CardSalesInvoiceEntity>
+
     @Query("SELECT * FROM card_sales_invoices WHERE id = :id")
     suspend fun getInvoiceById(id: Long): CardSalesInvoiceEntity?
+
+    @Query("SELECT * FROM card_sales_invoices WHERE invoiceNumber = :invoiceNumber LIMIT 1")
+    suspend fun getInvoiceByNumber(invoiceNumber: String): CardSalesInvoiceEntity?
 
     @Query("SELECT * FROM card_sales_invoices WHERE retailerId = :retailerId ORDER BY invoiceDateMillis DESC")
     fun getInvoicesForRetailer(retailerId: Long): Flow<List<CardSalesInvoiceEntity>>

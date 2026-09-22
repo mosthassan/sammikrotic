@@ -148,21 +148,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             val result = authManager.signInWithGoogle(activity = activity)
             if (result.success && !result.email.isNullOrBlank()) {
-                val registeredUser = repository.registerOrUpdateGoogleUser(
+                handleUserSignInSuccess(
                     email = result.email,
-                    displayName = result.displayName ?: "مستخدم جوجل",
-                    photoUrl = result.photoUrl ?: ""
+                    displayName = result.displayName,
+                    photoUrl = result.photoUrl,
+                    uid = result.uid,
+                    authProvider = result.authProvider
                 )
-                _currentUser.value = registeredUser
-                _googleSignInState.value = GoogleSignInUiState(
-                    isLoading = false,
-                    successMessage = "تم التحقق وتسجيل الدخول الرسمي بحساب ${result.email}",
-                    activeFirebaseEmail = result.email,
-                    activeFirebaseUid = result.uid,
-                    activeAuthProvider = result.authProvider
-                )
-                // Automatically sync cloud partition with verified email
-                triggerCloudSync()
                 onComplete(true)
             } else if (result.isCancelled) {
                 _googleSignInState.value = _googleSignInState.value.copy(
@@ -190,9 +182,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun signOutGoogle() {
         viewModelScope.launch {
             authManager.signOut()
+            // تفريغ البيانات المحلية التشغيلية لمنع تسريب بيانات الحساب السابق إلى أي جلسة لاحقة
+            repository.purgeAllOperationalData()
+            prefs.edit().remove("last_active_email").putBoolean("is_production_mode", false).apply()
             _currentUser.value = null
+            _isProductionMode.value = false
             _googleSignInState.value = GoogleSignInUiState(
-                successMessage = "تم تسجيل الخروج من حساب Google و Firebase"
+                successMessage = "تم تسجيل الخروج وتجهيز التطبيق لحساب مستخدم جديد ✓"
             )
         }
     }
@@ -206,20 +202,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             val result = authManager.signInWithEmailAndPassword(email, pass)
             if (result.success && !result.email.isNullOrBlank()) {
-                val registeredUser = repository.registerOrUpdateGoogleUser(
+                handleUserSignInSuccess(
                     email = result.email,
-                    displayName = result.displayName ?: result.email.substringBefore("@"),
-                    photoUrl = ""
+                    displayName = result.displayName,
+                    photoUrl = "",
+                    uid = result.uid,
+                    authProvider = "password"
                 )
-                _currentUser.value = registeredUser
-                _googleSignInState.value = GoogleSignInUiState(
-                    isLoading = false,
-                    successMessage = "تم تسجيل الدخول بنجاح عبر Firebase (${result.email})",
-                    activeFirebaseEmail = result.email,
-                    activeFirebaseUid = result.uid,
-                    activeAuthProvider = "password"
-                )
-                triggerCloudSync()
                 onComplete(true)
             } else {
                 _googleSignInState.value = _googleSignInState.value.copy(
@@ -240,20 +229,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             val result = authManager.signUpWithEmailAndPassword(email, pass, name)
             if (result.success && !result.email.isNullOrBlank()) {
-                val registeredUser = repository.registerOrUpdateGoogleUser(
+                handleUserSignInSuccess(
                     email = result.email,
-                    displayName = result.displayName ?: name,
-                    photoUrl = ""
+                    displayName = name.ifBlank { result.displayName },
+                    photoUrl = "",
+                    uid = result.uid,
+                    authProvider = "password"
                 )
-                _currentUser.value = registeredUser
-                _googleSignInState.value = GoogleSignInUiState(
-                    isLoading = false,
-                    successMessage = "تم إنشاء الحساب وتسجيل الدخول في Firebase: ${result.email}",
-                    activeFirebaseEmail = result.email,
-                    activeFirebaseUid = result.uid,
-                    activeAuthProvider = "password"
-                )
-                triggerCloudSync()
                 onComplete(true)
             } else {
                 _googleSignInState.value = _googleSignInState.value.copy(
@@ -265,15 +247,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * معالجة دخول مستخدم جديد أو التبديل بين الحسابات لضمان العزل التام للبيانات كمنتج رقمي
+     */
+    private suspend fun handleUserSignInSuccess(
+        email: String,
+        displayName: String?,
+        photoUrl: String?,
+        uid: String?,
+        authProvider: String
+    ) {
+        val cleanEmail = email.trim().lowercase()
+        val lastActiveEmail = prefs.getString("last_active_email", null)?.trim()?.lowercase()
+        val isDifferentAccount = lastActiveEmail != null && lastActiveEmail != cleanEmail
+
+        val registeredUser = if (isDifferentAccount || lastActiveEmail == null) {
+            // حساب جديد أو تبديل مستخدم: تهيئة مساحة عمل معزولة خاصة به كمالك للشبكة
+            repository.switchUserWorkspace(
+                email = cleanEmail,
+                displayName = displayName ?: cleanEmail.substringBefore("@"),
+                photoUrl = photoUrl ?: ""
+            )
+        } else {
+            repository.registerOrUpdateGoogleUser(
+                email = cleanEmail,
+                displayName = displayName ?: cleanEmail.substringBefore("@"),
+                photoUrl = photoUrl ?: ""
+            )
+        }
+
+        prefs.edit().putString("last_active_email", cleanEmail).apply()
+        _currentUser.value = registeredUser
+
+        // سحب بيانات هذا الحساب فقط من السحابة إذا كان لديه سحابة سابقة
+        val cloudData = firebaseService.pullFromCloud(cleanEmail)
+        val hasCloudData = cloudData.devices.isNotEmpty() || cloudData.retailers.isNotEmpty() ||
+                cloudData.vouchers.isNotEmpty() || cloudData.cardPackages.isNotEmpty() ||
+                cloudData.inventoryItems.isNotEmpty() || cloudData.salesInvoices.isNotEmpty()
+
+        if (hasCloudData) {
+            repository.restoreFromCloudData(cloudData)
+            _isProductionMode.value = true
+        } else {
+            // حساب جديد تماماً: لا بيانات سابقة، ويظهر زر التهيئة ليخصص شبكته
+            _isProductionMode.value = false
+        }
+
+        _googleSignInState.value = GoogleSignInUiState(
+            isLoading = false,
+            successMessage = "تم تسجيل الدخول بنجاح بحساب $cleanEmail كمالك للشبكة ✓",
+            activeFirebaseEmail = cleanEmail,
+            activeFirebaseUid = uid,
+            activeAuthProvider = authProvider
+        )
+    }
+
     fun dismissGoogleMessage() {
         _googleSignInState.value = _googleSignInState.value.copy(errorMessage = null, successMessage = null)
     }
 
-    // Reset To Production Environment (حذف كافة البيانات التجريبية وتهيئة التطبيق للعمل الفعلي)
+    // Reset To Production Environment (حذف كافة البيانات وتصفير التطبيق للبدء من الصفر كمالك جديد)
     private val prefs = application.getSharedPreferences("sam_mikrotik_prefs", android.content.Context.MODE_PRIVATE)
 
     private val _isProductionMode = MutableStateFlow(
-        prefs.getBoolean("is_production_mode", true)
+        prefs.getBoolean("is_production_mode", false)
     )
     val isProductionMode: StateFlow<Boolean> = _isProductionMode.asStateFlow()
 
@@ -283,15 +320,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun resetToProductionEnvironment(onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             val activeUser = currentUser.value
+            val activeEmail = activeUser?.email?.takeIf { it.isNotBlank() } ?: authManager.getActiveEmail()
+
+            // تنظيف مساحة السحابة لهذا الحساب لضمان تصفير تام
+            if (!activeEmail.isNullOrBlank()) {
+                firebaseService.clearUserCloudPartition(activeEmail)
+            }
+
             val productionAdmin = repository.resetToProductionEnvironment(
                 activeGoogleUser = if (activeUser?.isGoogleUser == true) activeUser else null
             )
             _currentUser.value = productionAdmin
-            // تثبيت حالة الوضع الفعلي بحيث يختفي زر التهيئة نهائياً
             prefs.edit().putBoolean("is_production_mode", true).apply()
             _isProductionMode.value = true
-            _resetProductionState.value = "تمت تهيئة بيئة العمل الفعلية بنجاح وحذف كافة البيانات الافتراضية والتحول للوضع الفعلي."
-            triggerCloudSync()
+            _resetProductionState.value = "تمت تهيئة النظام بنجاح وتصفير كافة الكروت والسندات والأجهزة للبدء من الصفر كمالك جديد."
             onComplete()
         }
     }
@@ -888,24 +930,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         category: String,
         paymentMethod: String,
         description: String,
+        invoiceId: Long? = null,
+        invoiceNumber: String = "",
         onComplete: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
             val issuer = _currentUser.value?.fullName ?: "المهندس سام"
             val id = repository.createVoucher(
-                voucherType, amount, partyName, retailerId,
-                category, paymentMethod, description, issuer
+                voucherType = voucherType,
+                amount = amount,
+                partyName = partyName,
+                retailerId = retailerId,
+                category = category,
+                paymentMethod = paymentMethod,
+                description = description,
+                issuerName = issuer,
+                invoiceId = invoiceId,
+                invoiceNumber = invoiceNumber
             )
-            val voucherNumber = "${if (voucherType == "RECEIPT") "REC" else "PAY"}-2026-${id}"
+            val voucherNumberGenerated = "${if (voucherType == "RECEIPT") "REC" else "PAY"}-2026-${id}"
             val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
             firebaseService.pushVoucher(
                 FinancialVoucherEntity(
                     id = id,
-                    voucherNumber = voucherNumber,
+                    voucherNumber = voucherNumberGenerated,
                     voucherType = voucherType,
                     amount = amount,
                     partyName = partyName,
                     retailerId = retailerId,
+                    invoiceId = invoiceId,
+                    invoiceNumber = invoiceNumber,
+                    allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else 0.0,
                     category = category,
                     paymentMethod = paymentMethod,
                     description = description,
@@ -913,7 +968,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ),
                 userEmail
             )
-            onComplete(voucherNumber)
+            onComplete(voucherNumberGenerated)
         }
     }
 
@@ -1224,18 +1279,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            try {
-                // إزالة البيانات الافتراضية التجريبية المؤقتة فقط
-                repository.purgeDefaultDataOnly()
-            } catch (e: Throwable) {
-                Log.e("MainViewModel", "Error purging default data: ${e.message}")
-            }
+            val activeEmail = authManager.getActiveEmail()?.trim()?.lowercase()
+            val lastActiveEmail = prefs.getString("last_active_email", null)?.trim()?.lowercase()
 
-            try {
-                // Ensure mosthassan.ye@gmail.com is registered as OWNER in database (Role & Permission only, NOT active session)
-                repository.ensureSuperAdminExists()
-            } catch (e: Throwable) {
-                Log.e("MainViewModel", "Error ensuring super admin: ${e.message}")
+            if (!activeEmail.isNullOrBlank()) {
+                if (lastActiveEmail != null && lastActiveEmail != activeEmail) {
+                    // تم تسجيل الدخول بحساب مختلف تماماً أثناء توقف التطبيق -> تهيئة مساحة عمل معزولة خاصة به
+                    val activeFirebaseUser = authManager.getCurrentUser()
+                    val registeredUser = repository.switchUserWorkspace(
+                        email = activeEmail,
+                        displayName = activeFirebaseUser?.displayName ?: activeEmail.substringBefore("@"),
+                        photoUrl = activeFirebaseUser?.photoUrl?.toString() ?: ""
+                    )
+                    _currentUser.value = registeredUser
+                    prefs.edit().putString("last_active_email", activeEmail).apply()
+                }
+
+                // سحب البيانات الخاصة بحساب هذا المستخدم فقط من السحابة
+                try {
+                    val cloudData = firebaseService.pullFromCloud(activeEmail)
+                    if (cloudData.devices.isNotEmpty() || cloudData.retailers.isNotEmpty() || cloudData.vouchers.isNotEmpty()) {
+                        repository.restoreFromCloudData(cloudData)
+                        _isProductionMode.value = true
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "Auto cloud pull note: ${e.message}")
+                }
             }
 
             try {
@@ -1243,19 +1312,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.reconcileAccountingLedger()
             } catch (e: Throwable) {
                 Log.e("MainViewModel", "Error reconciling ledger: ${e.message}")
-            }
-
-            // سحب تلقائي للبيانات السحابية إذا كان المستخدم مسجل دخوله مسبقاً
-            val activeEmail = authManager.getActiveEmail()?.trim()?.lowercase()
-            if (!activeEmail.isNullOrBlank()) {
-                try {
-                    val cloudData = firebaseService.pullFromCloud(activeEmail)
-                    if (cloudData.devices.isNotEmpty() || cloudData.retailers.isNotEmpty() || cloudData.vouchers.isNotEmpty()) {
-                        repository.restoreFromCloudData(cloudData)
-                    }
-                } catch (e: Throwable) {
-                    Log.w("MainViewModel", "Auto cloud pull note: ${e.message}")
-                }
             }
 
             repository.allUsers.collect { list ->

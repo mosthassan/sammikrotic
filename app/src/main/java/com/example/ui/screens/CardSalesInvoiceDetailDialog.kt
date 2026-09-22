@@ -45,7 +45,9 @@ import java.util.Locale
 fun CardSalesInvoiceDetailDialog(
     invoice: CardSalesInvoiceEntity,
     viewModel: MainViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCloneInvoice: ((CardSalesInvoiceEntity) -> Unit)? = null,
+    onDeleteInvoice: ((CardSalesInvoiceEntity) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -436,11 +438,51 @@ fun CardSalesInvoiceDetailDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Actions: Share PDF, Print PDF, Quick WhatsApp Text, Copy, Close
+                // Actions: Clone, Delete, Share PDF, Print PDF, Quick WhatsApp Text, Copy, Close
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Row 0: Clone & Delete Action Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (onCloneInvoice != null) {
+                            Button(
+                                onClick = {
+                                    onDismiss()
+                                    onCloneInvoice(invoice)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F2942)),
+                                border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1.3f)
+                            ) {
+                                Icon(Icons.Default.CopyAll, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("استنساخ الفاتورة (رقم جديد)", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                            }
+                        }
+
+                        if (onDeleteInvoice != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    onDismiss()
+                                    onDeleteInvoice(invoice)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.7f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                                modifier = Modifier.weight(0.7f)
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFEF4444))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("حذف", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                            }
+                        }
+                    }
+
                     // Row 1: Primary PDF Actions
                     Row(
                         modifier = Modifier.fillMaxWidth(),

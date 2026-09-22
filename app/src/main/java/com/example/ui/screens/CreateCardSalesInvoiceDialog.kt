@@ -28,15 +28,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.InventoryItemEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.data.model.CardSalesInvoiceItem
 import com.example.ui.theme.*
+import org.json.JSONArray
 import java.util.UUID
 
 /**
- * نافذة إصدار فاتورة مبيعات كروت احترافية متعددة الأصناف
- * - تدعم إضافة عدة أصناف في الفاتورة الواحدة
+ * نافذة إصدار أو استنساخ فاتورة مبيعات كروت احترافية متعددة الأصناف
+ * - تدعم استنساخ الفواتير السابقة بنفس التفاصيل وتوليد رقم جديد
+ * - تتيح خيار حذف الفاتورة القديمة تلقائياً بعد نجاح الحفظ
  * - تحسب عدد الكروت وسعر الكرت والإجمالي لكل صنف وللفاتورة ككل تلقائياً
  * - تتيح تحديد نوع السداد: نقد، آجل، أو مبلغ مقدم ومتبقي
  * - تخصم الكميات تلقائياً من مخزن الكروت وتسجل حركة بيع
@@ -48,6 +51,7 @@ fun CreateCardSalesInvoiceDialog(
     retailers: List<RetailerEntity>,
     initialRetailer: RetailerEntity? = null,
     preSelectedPackageName: String? = null,
+    initialInvoiceToClone: CardSalesInvoiceEntity? = null,
     onDismiss: () -> Unit,
     onConfirmInvoice: (
         customerName: String,
@@ -56,17 +60,71 @@ fun CreateCardSalesInvoiceDialog(
         items: List<CardSalesInvoiceItem>,
         paymentType: String,
         paidAmount: Double,
-        notes: String
+        notes: String,
+        oldInvoiceToDelete: CardSalesInvoiceEntity?
     ) -> Unit
 ) {
     val context = LocalContext.current
 
-    val defaultRetailer = initialRetailer ?: retailers.firstOrNull()
+    // Parse items if cloning an existing invoice
+    val clonedItems = remember(initialInvoiceToClone) {
+        if (initialInvoiceToClone != null && initialInvoiceToClone.itemsJson.isNotBlank()) {
+            try {
+                val list = mutableListOf<CardSalesInvoiceItem>()
+                val arr = JSONArray(initialInvoiceToClone.itemsJson)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        CardSalesInvoiceItem(
+                            id = UUID.randomUUID().toString(),
+                            packageName = obj.optString("packageName", ""),
+                            quantity = obj.optInt("quantity", 1),
+                            unitPrice = obj.optDouble("unitPrice", 0.0),
+                            retailPrice = obj.optDouble("retailPrice", 0.0)
+                        )
+                    )
+                }
+                if (list.isNotEmpty()) list else null
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+    }
+
+    val defaultRetailer = initialRetailer
+        ?: if (initialInvoiceToClone?.retailerId != null) retailers.find { it.id == initialInvoiceToClone.retailerId }
+           else retailers.find { it.name.trim().equals(initialInvoiceToClone?.customerName?.trim(), ignoreCase = true) }
+        ?: retailers.firstOrNull()
+
     // Customer Info
-    var selectedRetailer by remember(initialRetailer) { mutableStateOf<RetailerEntity?>(defaultRetailer) }
-    var isDirectCustomer by remember(initialRetailer) { mutableStateOf(false) }
-    var customerNameText by remember(initialRetailer) { mutableStateOf(defaultRetailer?.name ?: "عميل مباشر") }
-    var customerPhoneText by remember(initialRetailer) { mutableStateOf(defaultRetailer?.phone ?: "") }
+    var selectedRetailer by remember(initialRetailer, initialInvoiceToClone) {
+        mutableStateOf<RetailerEntity?>(
+            if (initialInvoiceToClone != null) {
+                if (initialInvoiceToClone.retailerId != null) retailers.find { it.id == initialInvoiceToClone.retailerId }
+                else retailers.find { it.name.trim().equals(initialInvoiceToClone.customerName.trim(), ignoreCase = true) }
+            } else defaultRetailer
+        )
+    }
+
+    var isDirectCustomer by remember(initialRetailer, initialInvoiceToClone) {
+        mutableStateOf(
+            if (initialInvoiceToClone != null) {
+                initialInvoiceToClone.retailerId == null && retailers.none { it.name.trim().equals(initialInvoiceToClone.customerName.trim(), ignoreCase = true) }
+            } else false
+        )
+    }
+
+    var customerNameText by remember(initialRetailer, initialInvoiceToClone) {
+        mutableStateOf(
+            initialInvoiceToClone?.customerName ?: defaultRetailer?.name ?: "عميل مباشر"
+        )
+    }
+
+    var customerPhoneText by remember(initialRetailer, initialInvoiceToClone) {
+        mutableStateOf(
+            initialInvoiceToClone?.customerPhone ?: defaultRetailer?.phone ?: ""
+        )
+    }
 
     // Multi-Item Invoice Rows
     // Initial row
@@ -79,13 +137,33 @@ fun CreateCardSalesInvoiceDialog(
         retailPrice = initialPackage?.retailPrice ?: 200.0
     )
 
-    var invoiceItems by remember { mutableStateOf(listOf(initialItem)) }
+    var invoiceItems by remember(initialInvoiceToClone) {
+        mutableStateOf(clonedItems ?: listOf(initialItem))
+    }
     var isSaving by remember { mutableStateOf(false) }
 
     // Payment Type: CASH (نقد), CREDIT (آجل), PARTIAL (مقدم ومتبقي)
-    var paymentType by remember(initialRetailer) { mutableStateOf(if (defaultRetailer != null) "CREDIT" else "CASH") }
-    var customPaidAmountText by remember { mutableStateOf("") }
-    var notesText by remember { mutableStateOf("") }
+    var paymentType by remember(initialRetailer, initialInvoiceToClone) {
+        mutableStateOf(
+            initialInvoiceToClone?.paymentType ?: (if (defaultRetailer != null) "CREDIT" else "CASH")
+        )
+    }
+
+    var customPaidAmountText by remember(initialInvoiceToClone) {
+        mutableStateOf(
+            if (initialInvoiceToClone != null && initialInvoiceToClone.paidAmount > 0) {
+                initialInvoiceToClone.paidAmount.toInt().toString()
+            } else ""
+        )
+    }
+
+    var notesText by remember(initialInvoiceToClone) {
+        mutableStateOf(initialInvoiceToClone?.notes ?: "")
+    }
+
+    var deleteOldInvoiceOnSave by remember(initialInvoiceToClone) {
+        mutableStateOf(initialInvoiceToClone != null)
+    }
 
     // Computed totals
     val totalInvoiceCards = invoiceItems.sumOf { it.quantity }
@@ -107,7 +185,7 @@ fun CreateCardSalesInvoiceDialog(
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = CyberDarkSurface,
-            border = BorderStroke(1.dp, MikroTikPrimary.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, if (initialInvoiceToClone != null) ProfitEmerald.copy(alpha = 0.5f) else MikroTikPrimary.copy(alpha = 0.5f)),
             modifier = Modifier.padding(12.dp)
         ) {
             Column(
@@ -126,25 +204,30 @@ fun CreateCardSalesInvoiceDialog(
                             modifier = Modifier
                                 .size(38.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(MikroTikPrimary.copy(alpha = 0.2f)),
+                                .background(if (initialInvoiceToClone != null) ProfitEmerald.copy(alpha = 0.2f) else MikroTikPrimary.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(22.dp))
+                            Icon(
+                                if (initialInvoiceToClone != null) Icons.Default.CopyAll else Icons.Default.ReceiptLong,
+                                contentDescription = null,
+                                tint = if (initialInvoiceToClone != null) ProfitEmerald else Color(0xFF38BDF8),
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "فاتورة مبيعات كروت جديدة",
+                                text = if (initialInvoiceToClone != null) "استنساخ وتجديد الفاتورة" else "فاتورة مبيعات كروت جديدة",
                                 fontFamily = CairoFontFamily,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                             Text(
-                                text = "خصم تلقائي من المخزن وحسابات محاسبية دقيقة",
+                                text = if (initialInvoiceToClone != null) "رقم جديد وتفاصيل مستنسخة من #${initialInvoiceToClone.invoiceNumber}" else "خصم تلقائي من المخزن وحسابات محاسبية دقيقة",
                                 fontFamily = CairoFontFamily,
                                 fontSize = 10.5.sp,
-                                color = Color(0xFF38BDF8)
+                                color = if (initialInvoiceToClone != null) ProfitEmerald else Color(0xFF38BDF8)
                             )
                         }
                     }
@@ -162,6 +245,81 @@ fun CreateCardSalesInvoiceDialog(
                         .heightIn(max = 520.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    // 0. Cloned Invoice Banner & Delete Toggle
+                    if (initialInvoiceToClone != null) {
+                        item {
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = ProfitEmerald.copy(alpha = 0.08f)),
+                                border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.45f))
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(ProfitEmerald.copy(alpha = 0.2f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.CopyAll, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(16.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "استنساخ من الفاتورة #${initialInvoiceToClone.invoiceNumber}",
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ProfitEmerald
+                                            )
+                                            Text(
+                                                text = "نسخة جديدة برقم وتاريخ جديد مع كافة البنود والأسعار",
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 10.sp,
+                                                color = Color(0xFFCBD5E1)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "حذف الفاتورة القديمة تلقائياً بعد الحفظ",
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = "لحذف الفاتورة السابقة وتجنب تكرار الكروت أو الحسابات",
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 9.5.sp,
+                                                color = TextSecondaryDark
+                                            )
+                                        }
+                                        Switch(
+                                            checked = deleteOldInvoiceOnSave,
+                                            onCheckedChange = { deleteOldInvoiceOnSave = it },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = ProfitEmerald
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // 1. Customer Selection
                     item {
                         Card(
@@ -482,12 +640,20 @@ fun CreateCardSalesInvoiceDialog(
 
                             // Check stock availability
                             val stockIssue = validItems.firstOrNull { item ->
-                                val available = inventoryItems.find { it.packageName == item.packageName }?.quantityAvailable ?: 0
-                                item.quantity > available
+                                val baseAvailable = inventoryItems.find { it.packageName == item.packageName }?.quantityAvailable ?: 0
+                                val refundedQty = if (deleteOldInvoiceOnSave && initialInvoiceToClone != null) {
+                                    clonedItems?.filter { it.packageName == item.packageName }?.sumOf { it.quantity } ?: 0
+                                } else 0
+                                val effectiveAvailable = baseAvailable + refundedQty
+                                item.quantity > effectiveAvailable
                             }
                             if (stockIssue != null) {
-                                val available = inventoryItems.find { it.packageName == stockIssue.packageName }?.quantityAvailable ?: 0
-                                Toast.makeText(context, "الكمية المطلوبة من (${stockIssue.packageName}) هي ${stockIssue.quantity} والرصيد المتاح فقط $available كرت!", Toast.LENGTH_LONG).show()
+                                val baseAvailable = inventoryItems.find { it.packageName == stockIssue.packageName }?.quantityAvailable ?: 0
+                                val refundedQty = if (deleteOldInvoiceOnSave && initialInvoiceToClone != null) {
+                                    clonedItems?.filter { it.packageName == stockIssue.packageName }?.sumOf { it.quantity } ?: 0
+                                } else 0
+                                val effectiveAvailable = baseAvailable + refundedQty
+                                Toast.makeText(context, "الكمية المطلوبة من (${stockIssue.packageName}) هي ${stockIssue.quantity} والرصيد المتاح $effectiveAvailable كرت!", Toast.LENGTH_LONG).show()
                                 return@Button
                             }
 
@@ -499,11 +665,14 @@ fun CreateCardSalesInvoiceDialog(
                                 validItems,
                                 paymentType,
                                 calculatedPaidAmount,
-                                notesText.trim()
+                                notesText.trim(),
+                                if (deleteOldInvoiceOnSave) initialInvoiceToClone else null
                             )
                         },
                         enabled = !isSaving,
-                        colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (initialInvoiceToClone != null && deleteOldInvoiceOnSave) ProfitEmerald else MikroTikPrimary
+                        ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1.3f)
                     ) {
@@ -514,11 +683,25 @@ fun CreateCardSalesInvoiceDialog(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("جاري الحفظ وإصدار الفاتورة...", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("جاري الحفظ...", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
                         } else {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(
+                                if (initialInvoiceToClone != null) Icons.Default.CopyAll else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("إصدار الفاتورة وخصم المخزن", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (initialInvoiceToClone != null && deleteOldInvoiceOnSave) {
+                                    "حفظ الفاتورة وحذف السابقة ✓"
+                                } else if (initialInvoiceToClone != null) {
+                                    "حفظ كفاتورة جديدة مستنسخة ✓"
+                                } else {
+                                    "إصدار الفاتورة وخصم المخزن"
+                                },
+                                fontFamily = CairoFontFamily,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

@@ -44,6 +44,7 @@ import java.util.UUID
 fun CardSalesInvoicesSubScreen(
     viewModel: MainViewModel,
     onOpenCreateInvoice: () -> Unit,
+    onCloneInvoice: ((CardSalesInvoiceEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -58,6 +59,7 @@ fun CardSalesInvoicesSubScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") } // ALL, CASH, CREDIT, PARTIAL
     var selectedInvoiceForDetail by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
+    var invoiceToDelete by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
 
     val filteredInvoices = invoices.filter { inv ->
         val matchesSearch = searchQuery.isBlank() ||
@@ -294,10 +296,8 @@ fun CardSalesInvoicesSubScreen(
                     CardSalesInvoiceRow(
                         invoice = invoice,
                         onClick = { selectedInvoiceForDetail = invoice },
-                        onDelete = {
-                            viewModel.deleteSalesInvoice(invoice)
-                            Toast.makeText(context, "تم حذف الفاتورة ${invoice.invoiceNumber}", Toast.LENGTH_SHORT).show()
-                        }
+                        onClone = { onCloneInvoice?.invoke(invoice) },
+                        onDelete = { invoiceToDelete = invoice }
                     )
                 }
             }
@@ -309,7 +309,55 @@ fun CardSalesInvoicesSubScreen(
         CardSalesInvoiceDetailDialog(
             invoice = inv,
             viewModel = viewModel,
-            onDismiss = { selectedInvoiceForDetail = null }
+            onDismiss = { selectedInvoiceForDetail = null },
+            onCloneInvoice = { invoiceToClone ->
+                selectedInvoiceForDetail = null
+                onCloneInvoice?.invoke(invoiceToClone)
+            },
+            onDeleteInvoice = { invoiceToDel ->
+                selectedInvoiceForDetail = null
+                invoiceToDelete = invoiceToDel
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    invoiceToDelete?.let { inv ->
+        AlertDialog(
+            onDismissRequest = { invoiceToDelete = null },
+            title = {
+                Text("تأكيد حذف الفاتورة", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Text(
+                    "هل أنت متأكد من حذف الفاتورة #${inv.invoiceNumber} الخاصة بـ (${inv.customerName})؟\n\n" +
+                    "• سيتم استرجاع الكروت (${inv.totalCardsCount} كرت) إلى المخزن تلقائياً.\n" +
+                    "• سيتم إلغاء السند المالي وضبط حساب البقالة محاسبياً.",
+                    fontFamily = CairoFontFamily,
+                    fontSize = 13.sp,
+                    color = TextSecondaryDark
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = inv
+                        invoiceToDelete = null
+                        viewModel.deleteSalesInvoice(toDelete) {
+                            Toast.makeText(context, "تم حذف الفاتورة ${toDelete.invoiceNumber} واسترجاع المخزن بنجاح ✓", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("تأكيد الحذف", fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { invoiceToDelete = null }) {
+                    Text("إلغاء", fontFamily = CairoFontFamily)
+                }
+            },
+            containerColor = CyberDarkSurface
         )
     }
 }
@@ -321,6 +369,7 @@ fun CardSalesInvoicesSubScreen(
 private fun CardSalesInvoiceRow(
     invoice: CardSalesInvoiceEntity,
     onClick: () -> Unit,
+    onClone: () -> Unit,
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
@@ -386,6 +435,19 @@ private fun CardSalesInvoiceRow(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Quick Clone
+                    IconButton(
+                        onClick = onClone,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CopyAll,
+                            contentDescription = "استنساخ الفاتورة",
+                            tint = ProfitEmerald,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
                     // Quick PDF Share
                     IconButton(
                         onClick = {
@@ -416,6 +478,19 @@ private fun CardSalesInvoiceRow(
                             Icons.Default.PictureAsPdf,
                             contentDescription = "مشاركة كـ PDF",
                             tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    // Quick Delete
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = "حذف الفاتورة",
+                            tint = Color(0xFFEF4444).copy(alpha = 0.85f),
                             modifier = Modifier.size(17.dp)
                         )
                     }

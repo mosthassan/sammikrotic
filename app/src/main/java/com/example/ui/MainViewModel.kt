@@ -61,9 +61,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
     private val repository = NetworkRepository(db)
-    private val aiService = GeminiAiService()
+    private val aiService = GeminiAiService(application.applicationContext)
     private val firebaseService = FirebaseDbService()
     val authManager = GoogleAuthManager(application)
+
+    fun isAiApiKeyConfigured(): Boolean = aiService.isApiKeyConfigured()
+    fun getAiApiKey(): String = aiService.getActiveApiKey()
+    fun setAiApiKey(key: String) = aiService.setCustomApiKey(key)
+    fun clearAiApiKey() = aiService.clearCustomApiKey()
 
     // Google Sign-In state
     private val _googleSignInState = MutableStateFlow(
@@ -558,9 +563,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity) {
+    fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity, onComplete: (() -> Unit)? = null) {
         viewModelScope.launch {
             repository.deleteSalesInvoice(invoice)
+            onComplete?.invoke()
+        }
+    }
+
+    /**
+     * استبدال واستنساخ الفاتورة:
+     * يقوم بحذف الفاتورة السابقة وإصدار الفاتورة الجديدة بنظام متسلسل يضمن استقرار المخزن وضبط الأرصدة
+     */
+    fun replaceSalesInvoice(
+        oldInvoice: CardSalesInvoiceEntity,
+        customerName: String,
+        customerPhone: String,
+        retailerId: Long?,
+        items: List<CardSalesInvoiceItem>,
+        paymentType: String,
+        paidAmount: Double,
+        notes: String,
+        issuer: String = "المهندس حسن",
+        onComplete: (Long) -> Unit
+    ) {
+        viewModelScope.launch {
+            repository.deleteSalesInvoice(oldInvoice)
+            val newInvoiceId = repository.issueMultiItemSalesInvoice(
+                customerName = customerName,
+                customerPhone = customerPhone,
+                retailerId = retailerId,
+                items = items,
+                paymentType = paymentType,
+                paidAmount = paidAmount,
+                notes = notes,
+                issuerName = issuer
+            )
+            onComplete(newInvoiceId)
         }
     }
 

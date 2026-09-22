@@ -1,7 +1,11 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
@@ -10,6 +14,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.launch
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,12 +47,18 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -67,6 +80,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -127,39 +142,100 @@ fun SmartInvoiceScannerDialog(
     var invoiceNumber by remember { mutableStateOf("") }
     var invoiceDate by remember { mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())) }
     var targetType by remember { mutableStateOf(initialTargetType) }
+    var currency by remember { mutableStateOf("YER") }
     var paymentMethod by remember { mutableStateOf("نقداً") }
     var notes by remember { mutableStateOf("") }
     var saveAsAssets by remember { mutableStateOf(initialTargetType == "ASSETS") }
     var saveAsVoucher by remember { mutableStateOf(true) }
 
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var tempPhotoFile by remember { mutableStateOf<File?>(null) }
+    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
     // Dynamic Items List
     val itemsList = remember { mutableStateListOf<InvoiceItem>() }
 
-    // Launchers for Camera & Gallery
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null) {
-            capturedBitmap = bitmap
-            viewModel.scanInvoiceWithAi(
-                bitmap = bitmap,
-                onResult = { parsed ->
-                    populateFieldsFromParsed(
-                        parsed = parsed,
-                        setSupplier = { supplierName = it },
-                        setNumber = { invoiceNumber = it },
-                        setDate = { if (it.isNotBlank()) invoiceDate = it },
-                        setTarget = { targetType = it },
-                        setNotes = { notes = it },
-                        itemsList = itemsList
-                    )
-                    hasParsedInvoice = true
-                    Toast.makeText(context, "تم تحليل الفاتورة بنجاح بواسطة الذكاء الاصطناعي!", Toast.LENGTH_SHORT).show()
-                },
-                onError = { err ->
-                    Toast.makeText(context, "تنبيه: $err (تم توليد بيانات نموذجية للمراجعة)", Toast.LENGTH_LONG).show()
+    fun processInvoiceBitmap(bitmap: Bitmap) {
+        if (!viewModel.isAiApiKeyConfigured()) {
+            showApiKeyDialog = true
+            return
+        }
+        viewModel.scanInvoiceWithAi(
+            bitmap = bitmap,
+            onResult = { parsed ->
+                populateFieldsFromParsed(
+                    parsed = parsed,
+                    setSupplier = { supplierName = it },
+                    setNumber = { invoiceNumber = it },
+                    setDate = { if (it.isNotBlank()) invoiceDate = it },
+                    setTarget = { targetType = it },
+                    setNotes = { notes = it },
+                    setCurrency = { currency = it },
+                    itemsList = itemsList
+                )
+                hasParsedInvoice = true
+                if (parsed.items.isEmpty()) {
+                    Toast.makeText(context, "لم يتم العثور على أصناف واضحة في الصورة، يمكنك إضافتها يدوياً", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "تم استخراج وقراءة بيانات الفاتورة الفعلية (${parsed.items.size} أصناف) بنجاح! ✓", Toast.LENGTH_SHORT).show()
                 }
-            )
+            },
+            onError = { err ->
+                if (err.contains("مفتاح") || err.contains("API") || err.contains("key") || err.contains("400") || err.contains("403")) {
+                    showApiKeyDialog = true
+                }
+                Toast.makeText(context, "تنبيه: $err", Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    // High-Resolution Camera Launcher via FileProvider
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempPhotoFile != null && tempPhotoFile!!.exists()) {
+            val bitmap = BitmapFactory.decodeFile(tempPhotoFile!!.absolutePath)
+            if (bitmap != null) {
+                capturedBitmap = bitmap
+                processInvoiceBitmap(bitmap)
+            }
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                val invoicesDir = File(context.cacheDir, "invoices").apply { mkdirs() }
+                val photoFile = File(invoicesDir, "inv_capture_${System.currentTimeMillis()}.jpg")
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+                tempPhotoFile = photoFile
+                tempPhotoUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "تعذر تشغيل الكاميرا: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "يلزم منح إذن الكاميرا لتصوير الفاتورة بدقة عالية", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun launchCamera() {
+        val hasCam = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (hasCam) {
+            try {
+                val invoicesDir = File(context.cacheDir, "invoices").apply { mkdirs() }
+                val photoFile = File(invoicesDir, "inv_capture_${System.currentTimeMillis()}.jpg")
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+                tempPhotoFile = photoFile
+                tempPhotoUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "تعذر تشغيل الكاميرا: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -170,25 +246,7 @@ fun SmartInvoiceScannerDialog(
             val bitmap = uriToBitmap(context, uri)
             if (bitmap != null) {
                 capturedBitmap = bitmap
-                viewModel.scanInvoiceWithAi(
-                    bitmap = bitmap,
-                    onResult = { parsed ->
-                        populateFieldsFromParsed(
-                            parsed = parsed,
-                            setSupplier = { supplierName = it },
-                            setNumber = { invoiceNumber = it },
-                            setDate = { if (it.isNotBlank()) invoiceDate = it },
-                            setTarget = { targetType = it },
-                            setNotes = { notes = it },
-                            itemsList = itemsList
-                        )
-                        hasParsedInvoice = true
-                        Toast.makeText(context, "تم تحليل الفاتورة بنجاح بواسطة الذكاء الاصطناعي!", Toast.LENGTH_SHORT).show()
-                    },
-                    onError = { err ->
-                        Toast.makeText(context, "تنبيه: $err (تم توليد بيانات نموذجية للمراجعة)", Toast.LENGTH_LONG).show()
-                    }
-                )
+                processInvoiceBitmap(bitmap)
             }
         }
     }
@@ -260,7 +318,65 @@ fun SmartInvoiceScannerDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // AI Key Status Banner
+                val isAiConfigured = viewModel.isAiApiKeyConfigured()
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showApiKeyDialog = true },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isAiConfigured) Color(0xFF064E3B).copy(alpha = 0.5f) else Color(0xFF78350F).copy(alpha = 0.5f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isAiConfigured) ProfitEmerald.copy(alpha = 0.6f) else InvestmentGold.copy(alpha = 0.6f)
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = if (isAiConfigured) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = if (isAiConfigured) ProfitEmerald else InvestmentGold,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = if (isAiConfigured) "وكيل الذكاء الاصطناعي (Gemini Vision) جاهز ومفعل ✓" else "تفعيل مفتاح الذكاء الاصطناعي لقراءة الفواتير الحقيقية",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (isAiConfigured) "انقر لمراجعة أو تغيير المفتاح" else "انقر هنا لإدخال مفتاح Gemini API لمنع أي بيانات وهمية",
+                                    fontSize = 10.sp,
+                                    color = if (isAiConfigured) Color(0xFFA7F3D0) else Color(0xFFFDE68A)
+                                )
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { showApiKeyDialog = true },
+                            modifier = Modifier.height(30.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isAiConfigured) ProfitEmerald else InvestmentGold),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isAiConfigured) ProfitEmerald else InvestmentGold)
+                        ) {
+                            Text(if (isAiConfigured) "تعديل ⚙️" else "إدخال المفتاح 🔑", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // If currently scanning with AI: show animated spinner
                 if (isScanning) {
@@ -343,7 +459,7 @@ fun SmartInvoiceScannerDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Button(
-                                onClick = { cameraLauncher.launch() },
+                                onClick = { launchCamera() },
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
@@ -380,40 +496,29 @@ fun SmartInvoiceScannerDialog(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // Quick Test / Demo button
-                        TextButton(
+                        // Manual entry button without taking a picture
+                        OutlinedButton(
                             onClick = {
-                                // Provide instant sample invoice for rapid testing
-                                val sample = ParsedInvoiceData(
-                                    supplierName = "مؤسسة الرواد للشبكات والأجهزة",
-                                    invoiceNumber = "INV-${(1000..9999).random()}",
-                                    invoiceDate = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date()),
-                                    invoiceType = initialTargetType,
-                                    totalAmount = 264000.0,
-                                    currency = "YER",
-                                    notes = "فاتورة مشتريات وتجهيزات محطة السبعين",
-                                    items = listOf(
-                                        InvoiceItem(name = "راوتر MikroTik CCR2004-16G-2S+", quantity = 1.0, unitPrice = 165000.0, subtotal = 165000.0, category = "SERVERS"),
-                                        InvoiceItem(name = "لفة كابل شبكة Cat6 خارجي 305 متر", quantity = 2.0, unitPrice = 32000.0, subtotal = 64000.0, category = "CABLES"),
-                                        InvoiceItem(name = "بطارية جل 150 أمبير للطاقة البديلة", quantity = 1.0, unitPrice = 35000.0, subtotal = 35000.0, category = "SOLAR_POWER")
-                                    )
-                                )
-                                populateFieldsFromParsed(
-                                    parsed = sample,
-                                    setSupplier = { supplierName = it },
-                                    setNumber = { invoiceNumber = it },
-                                    setDate = { if (it.isNotBlank()) invoiceDate = it },
-                                    setTarget = { targetType = it },
-                                    setNotes = { notes = it },
-                                    itemsList = itemsList
-                                )
                                 hasParsedInvoice = true
-                                Toast.makeText(context, "تم تحميل فاتورة تجريبية ذكية للمراجعة والتعديل", Toast.LENGTH_SHORT).show()
-                            }
+                                if (itemsList.isEmpty()) {
+                                    itemsList.add(
+                                        InvoiceItem(
+                                            name = "",
+                                            quantity = 1.0,
+                                            unitPrice = 0.0,
+                                            subtotal = 0.0,
+                                            category = if (targetType == "ASSETS") "SERVERS" else "MAINTENANCE"
+                                        )
+                                    )
+                                }
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFCBD5E1)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                            shape = RoundedCornerShape(10.dp)
                         ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = InvestmentGold, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Edit, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("أو جرب فاتورة جاهزة للتجربة والتقييم السريع", color = InvestmentGold, fontSize = 12.sp)
+                            Text("إدخال بنود الفاتورة يدوياً بدون تصوير", fontSize = 12.sp)
                         }
                     }
                 } else {
@@ -475,7 +580,7 @@ fun SmartInvoiceScannerDialog(
                                     }
 
                                     Row {
-                                        IconButton(onClick = { cameraLauncher.launch() }) {
+                                        IconButton(onClick = { launchCamera() }) {
                                             Icon(Icons.Default.CameraAlt, contentDescription = "إعادة التصوير", tint = MikroTikCyan)
                                         }
                                         IconButton(onClick = {
@@ -537,6 +642,44 @@ fun SmartInvoiceScannerDialog(
                                             modifier = Modifier.weight(1f).testTag("invoice_date_input"),
                                             colors = darkTextFieldColors()
                                         )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Currency Selector
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "عملة الفاتورة:",
+                                            fontSize = 12.sp,
+                                            color = Color(0xFFCBD5E1),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        listOf(
+                                            "YER" to "ريال يمني",
+                                            "SAR" to "ريال سعودي",
+                                            "USD" to "دولار أمريكي"
+                                        ).forEach { (code, label) ->
+                                            val isSelected = currency == code
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isSelected) MikroTikCyan.copy(alpha = 0.2f) else MikroTikNavyLight)
+                                                    .border(1.dp, if (isSelected) MikroTikCyan else Color(0xFF334155), RoundedCornerShape(8.dp))
+                                                    .clickable { currency = code }
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MikroTikCyan else Color(0xFF94A3B8)
+                                                )
+                                            }
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.height(12.dp))
@@ -735,6 +878,8 @@ fun SmartInvoiceScannerDialog(
                                     },
                                     targetType = targetType,
                                     totalAmount = totalCalculated,
+                                    currency = currency,
+                                    originalAmount = totalCalculated,
                                     paidAmount = totalCalculated,
                                     paymentMethod = paymentMethod,
                                     notes = notes
@@ -777,6 +922,140 @@ fun SmartInvoiceScannerDialog(
                 }
             }
         }
+    }
+
+    // Dialog for Entering / Managing Gemini API Key
+    if (showApiKeyDialog) {
+        var apiKeyInput by remember { mutableStateOf(viewModel.getAiApiKey()) }
+        var isKeyVisible by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showApiKeyDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.VpnKey, contentDescription = null, tint = InvestmentGold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "مفتاح وكيل الذكاء الاصطناعي (Gemini API)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "لقراءة وتفريغ فواتير المشتريات الحقيقية واستخراج أسماء الأجهزة والكميات والأسعار الفعلية بدقة 100% ومنع أي بيانات وهمية، يرجى تفعيل مفتاح Google Gemini API.",
+                        fontSize = 13.sp,
+                        color = Color(0xFFCBD5E1),
+                        lineHeight = 20.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = apiKeyInput,
+                        onValueChange = { apiKeyInput = it },
+                        label = { Text("مفتاح API Key") },
+                        placeholder = { Text("AIzaSy...") },
+                        singleLine = true,
+                        visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
+                                    Icon(
+                                        imageVector = if (isKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "إظهار أو إخفاء",
+                                        tint = MikroTikCyan
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    val clip = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
+                                    if (!clip.isNullOrBlank()) {
+                                        apiKeyInput = clip
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentPaste,
+                                        contentDescription = "لصق من الحافظة",
+                                        tint = ProfitEmerald
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MikroTikNavyLight),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "💡 يمكنك الحصول على مفتاح مجاني وسريع من:",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                            Text(
+                                text = "aistudio.google.com/apikey",
+                                fontSize = 12.sp,
+                                color = MikroTikCyan,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = apiKeyInput.trim()
+                        if (trimmed.isNotBlank()) {
+                            viewModel.setAiApiKey(trimmed)
+                            Toast.makeText(context, "تم حفظ وتفعيل مفتاح الذكاء الاصطناعي بنجاح! ✓", Toast.LENGTH_SHORT).show()
+                            showApiKeyDialog = false
+                            if (capturedBitmap != null) {
+                                processInvoiceBitmap(capturedBitmap!!)
+                            }
+                        } else {
+                            Toast.makeText(context, "يرجى كتابة أو لصق المفتاح أولاً", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald)
+                ) {
+                    Text("حفظ وتفعيل", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Row {
+                    if (capturedBitmap != null && !hasParsedInvoice) {
+                        TextButton(onClick = {
+                            showApiKeyDialog = false
+                            hasParsedInvoice = true
+                            if (itemsList.isEmpty()) {
+                                itemsList.add(
+                                    InvoiceItem(
+                                        name = "صنف جديد",
+                                        quantity = 1.0,
+                                        unitPrice = 0.0,
+                                        subtotal = 0.0,
+                                        category = if (targetType == "ASSETS") "SERVERS" else "MAINTENANCE"
+                                    )
+                                )
+                            }
+                        }) {
+                            Text("إدخال يدوي", color = Color(0xFF94A3B8))
+                        }
+                    }
+                    TextButton(onClick = { showApiKeyDialog = false }) {
+                        Text("إلغاء", color = Color.White)
+                    }
+                }
+            },
+            containerColor = MikroTikDarkSurface,
+            textContentColor = Color.White
+        )
     }
 }
 
@@ -951,13 +1230,15 @@ private fun populateFieldsFromParsed(
     setDate: (String) -> Unit,
     setTarget: (String) -> Unit,
     setNotes: (String) -> Unit,
+    setCurrency: (String) -> Unit,
     itemsList: MutableList<InvoiceItem>
 ) {
-    setSupplier(parsed.supplierName)
-    setNumber(parsed.invoiceNumber)
-    setDate(parsed.invoiceDate)
-    setTarget(parsed.invoiceType)
-    setNotes(parsed.notes)
+    if (parsed.supplierName.isNotBlank()) setSupplier(parsed.supplierName)
+    if (parsed.invoiceNumber.isNotBlank()) setNumber(parsed.invoiceNumber)
+    if (parsed.invoiceDate.isNotBlank()) setDate(parsed.invoiceDate)
+    if (parsed.invoiceType.isNotBlank()) setTarget(parsed.invoiceType)
+    if (parsed.currency.isNotBlank()) setCurrency(parsed.currency)
+    if (parsed.notes.isNotBlank()) setNotes(parsed.notes)
     itemsList.clear()
     itemsList.addAll(parsed.items)
 }

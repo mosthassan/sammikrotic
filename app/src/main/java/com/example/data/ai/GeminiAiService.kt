@@ -1,5 +1,6 @@
 package com.example.data.ai
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Base64
 import android.util.Log
@@ -21,7 +22,9 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class GeminiAiService {
+class MissingApiKeyException(message: String) : Exception(message)
+
+class GeminiAiService(private val context: Context? = null) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -31,9 +34,47 @@ class GeminiAiService {
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    companion object {
+        const val DEFAULT_CONFIGURED_KEY = "AQ.Ab8RN6LPwxNmh4WhNFkEUromLlkRIh8m5cwyJ6WTwwuq8eiATw"
+    }
+
+    fun getActiveApiKey(): String {
+        val customKey = context?.getSharedPreferences("gemini_ai_prefs", Context.MODE_PRIVATE)
+            ?.getString("custom_api_key", null)?.trim()
+        if (!customKey.isNullOrBlank()) {
+            return customKey
+        }
+        val buildKey = try { BuildConfig.GEMINI_API_KEY.trim() } catch (e: Exception) { "" }
+        if (buildKey.isNotEmpty() && buildKey != "MY_GEMINI_API_KEY") {
+            return buildKey
+        }
+        if (DEFAULT_CONFIGURED_KEY.isNotBlank()) {
+            return DEFAULT_CONFIGURED_KEY
+        }
+        return ""
+    }
+
+    fun isApiKeyConfigured(): Boolean {
+        return getActiveApiKey().isNotEmpty()
+    }
+
+    fun setCustomApiKey(key: String) {
+        context?.getSharedPreferences("gemini_ai_prefs", Context.MODE_PRIVATE)
+            ?.edit()
+            ?.putString("custom_api_key", key.trim())
+            ?.apply()
+    }
+
+    fun clearCustomApiKey() {
+        context?.getSharedPreferences("gemini_ai_prefs", Context.MODE_PRIVATE)
+            ?.edit()
+            ?.remove("custom_api_key")
+            ?.apply()
+    }
+
     suspend fun generateText(prompt: String): String = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+        val apiKey = getActiveApiKey()
+        if (apiKey.isEmpty()) {
             return@withContext "تحليل ذكي فوري: الفاتورة مسجلة ومطابقة محاسبياً للأصناف والأسعار، وهامش الربح المقدر ممتاز ويدعم استقرار السيولة."
         }
         try {
@@ -74,8 +115,8 @@ class GeminiAiService {
         networkContext: String,
         networkIdentity: NetworkIdentityEntity? = null
     ): String = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+        val apiKey = getActiveApiKey()
+        if (apiKey.isEmpty()) {
             // Provide high-grade expert intelligent fallback response
             return@withContext generateExpertLocalResponse(userPrompt, networkContext, networkIdentity)
         }
@@ -274,226 +315,202 @@ class GeminiAiService {
     }
 
     /**
-     * تحويل صورة فاتورة المشتريات أو الأصول إلى فاتورة بيانات منظمة وأصناف بواسطة الذكاء الاصطناعي (Gemini Multimodal Vision)
+     * تحويل صورة فاتورة المشتريات أو الأصول إلى فاتورة بيانات حقيقية وأصناف بواسطة وكيل الذكاء الاصطناعي (Gemini Multimodal Vision)
      */
     suspend fun parseInvoiceImage(bitmap: Bitmap): ParsedInvoiceData = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            Log.i("GeminiAiService", "No Gemini API key found, generating intelligent fallback invoice")
-            return@withContext generateIntelligentFallbackInvoice(bitmap)
+        val apiKey = getActiveApiKey()
+        if (apiKey.isEmpty()) {
+            throw MissingApiKeyException("مطلوب مفتاح وكيل الذكاء الاصطناعي (Gemini API Key) لتحليل صورة الفاتورة الحقيقية.")
         }
 
-        try {
-            // Resize bitmap to reasonable bounds (max dimension 1536) to ensure fast processing and low payload
-            val scaledBitmap = scaleBitmapDown(bitmap, 1536)
-            val outputStream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-            val imageBytes = outputStream.toByteArray()
-            val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        // Resize bitmap with high bounds (max dimension 2048) and 90% quality for crystal-clear text & numbers
+        val scaledBitmap = scaleBitmapDown(bitmap, 2048)
+        val outputStream = ByteArrayOutputStream()
+        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+        val imageBytes = outputStream.toByteArray()
+        val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
+        val promptText = """
+            أنت وكيل ذكاء اصطناعي خبير ومحاسب مالي متخصص في القراءة الآلية الدقيقة والفحص البصري (OCR & Multimodal Vision) لفواتير المشتريات ومعدات الشبكات والاتصالات والأصول في اليمن والوطن العربي.
 
-            val promptText = """
-                أنت خبير مالي ومحاسبي متخصص في فحص وقراءة فواتير المشتريات وفواتير الأصول لمؤسسات وشبكات الإنترنت والاتصالات وتقنية المعلومات (راوترات ميكروتك، كابلات ألياف ونحاس، هوائيات وسيكتورات، بطاريات وطاقة شمسية، ديزل، قطع غيار وصيانة).
+            المهمة:
+            افحص صورة الفاتورة المرفقة واستخرج جميع البيانات المحاسبية والأصناف المكتوبة فيها بدقة تامة 100%.
 
-                قم بتحليل صورة الفاتورة المرفقة واستخراج جميع البيانات والأصناف بدقة متناهية.
-                يجب أن يكون الناتج حصراً بصيغة JSON نظيفة وصحيحة 100% بالبنية التالية:
+            قواعد إلزامية صارمة لمنع الهلوسة والبيانات الوهمية:
+            1. استخرج فقط وفقط البيانات والأصناف والأرقام المكتوبة أو المطبوعة في صورة الفاتورة الفعلية.
+            2. يُمنع منعاً باتاً اختلاق أو تخمين أي أصناف أو أسماء أو أسعار غير موجودة في الصورة.
+            3. إذا كانت الصورة لا تحتوي على فاتورة أو لا يوجد فيها نص واضح، أعد مصفوفة items فارغة واكتب ذلك في الملاحظات notes.
+            4. اقرأ أسماء الأصناف (البيان) باللغة المكتوبة بها (عربي أو إنجليزي)، والكمية (quantity)، والسعر الفردي (unitPrice)، والإجمالي لكل صنف (subtotal).
+            5. استخرج اسم المتجر أو المورد أو المحل من ترويسة الفاتورة أو الختم.
+            6. استخرج رقم الفاتورة أو السند إن وجد وتاريخها إن وجد (YYYY-MM-DD).
+            7. حدد نوع العملة المستخدمة: YER (ريال يمني)، SAR (ريال سعودي)، USD (دولار أمريكي).
+            8. صنف نوع الفاتورة: "ASSETS" (إذا كانت أجهزة ومعدات رأسمالية كالراوترات والأبراج والبطاريات) أو "EXPENSES" (إذا كانت مصاريف ومشتريات استهلاكية كصيانة أو وقود).
+
+            يجب أن يكون الناتج حصراً بصيغة JSON نظيفة بالهيكل التالي:
+            {
+              "supplierName": "اسم المتجر أو المورد المكتوب في الفاتورة",
+              "invoiceNumber": "رقم الفاتورة أو السند",
+              "invoiceDate": "YYYY-MM-DD",
+              "invoiceType": "ASSETS" أو "EXPENSES",
+              "currency": "YER" أو "SAR" أو "USD",
+              "notes": "أي ملاحظات عامة حول الفاتورة وجودة قراءتها",
+              "totalAmount": 0.0,
+              "items": [
                 {
-                  "supplierName": "اسم المتجر أو المورد أو الشركة المصدرة للفاتورة",
-                  "invoiceNumber": "رقم الفاتورة إن وجد أو اتركه فارغاً",
-                  "invoiceDate": "YYYY-MM-DD أو التاريخ كما هو مكتوب",
-                  "invoiceType": "ASSETS" أو "EXPENSES",
-                  "totalAmount": 0.0,
-                  "currency": "YER",
-                  "notes": "أي ملاحظات عامة حول الفاتورة",
-                  "items": [
-                    {
-                      "name": "اسم الصنف الدقيق (مثلاً: راوتر CCR2004، لفة سلك كات 6، بطارية جل 150 أمبير، ديزل، صيانة...)",
-                      "quantity": 1.0,
-                      "unitPrice": 0.0,
-                      "subtotal": 0.0,
-                      "category": "SERVERS" أو "TOWERS" أو "SOLAR_POWER" أو "CABLES" أو "FUEL" أو "MAINTENANCE" أو "GENERAL"
-                    }
-                  ]
+                  "name": "اسم الصنف الدقيق كما هو مكتوب في الفاتورة",
+                  "quantity": 1.0,
+                  "unitPrice": 0.0,
+                  "subtotal": 0.0,
+                  "category": "SERVERS" أو "TOWERS" أو "SOLAR_POWER" أو "CABLES" أو "FUEL" أو "MAINTENANCE" أو "GENERAL"
                 }
-
-                قواعد مهمة:
-                1. اختر invoiceType = "ASSETS" إذا كانت أغلب الأصناف أجهزة رأسمالية ومعدات دائمة (راوترات، بطاريات، أبراج، سيكتورات).
-                2. اختر invoiceType = "EXPENSES" إذا كانت مصاريف استهلاكية أو وقود أو صيانة أو اشتراكات.
-                3. احرص على حساب subtotal = quantity * unitPrice لكل صنف.
-                4. إذا تعذر قراءة بعض الأرقام بسبب جودة الصورة، قدرها بشكل منطقي وواقعي.
-                5. رد فقط بنص الـ JSON دون أي علامات ماركداون إضافية أو نصوص خارج الـ JSON.
-            """.trimIndent()
-
-            val rootJson = JSONObject()
-            val contentsArray = JSONArray()
-            val contentObj = JSONObject()
-            val partsArray = JSONArray()
-
-            // 1. Image part
-            val imagePart = JSONObject()
-            val inlineData = JSONObject()
-            inlineData.put("mimeType", "image/jpeg")
-            inlineData.put("data", base64Image)
-            imagePart.put("inlineData", inlineData)
-            partsArray.put(imagePart)
-
-            // 2. Text prompt part
-            val textPart = JSONObject()
-            textPart.put("text", promptText)
-            partsArray.put(textPart)
-
-            contentObj.put("parts", partsArray)
-            contentsArray.put(contentObj)
-            rootJson.put("contents", contentsArray)
-
-            // Generation config
-            val genConfig = JSONObject()
-            genConfig.put("responseMimeType", "application/json")
-            genConfig.put("temperature", 0.2)
-            rootJson.put("generationConfig", genConfig)
-
-            val body = rootJson.toString().toRequestBody(jsonMediaType)
-            val request = Request.Builder()
-                .url(url)
-                .post(body)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string()
-
-            if (response.isSuccessful && !responseBody.isNullOrEmpty()) {
-                val respJson = JSONObject(responseBody)
-                val candidates = respJson.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    val candidate = candidates.getJSONObject(0)
-                    val content = candidate.optJSONObject("content")
-                    val parts = content?.optJSONArray("parts")
-                    if (parts != null && parts.length() > 0) {
-                        val rawText = parts.getJSONObject(0).optString("text", "")
-                        return@withContext parseJsonInvoice(rawText)
-                    }
-                }
+              ]
             }
+        """.trimIndent()
 
-            Log.w("GeminiAiService", "Gemini vision failed: ${response.code} $responseBody")
-            return@withContext generateIntelligentFallbackInvoice(bitmap)
-        } catch (e: Exception) {
-            Log.e("GeminiAiService", "Error in parseInvoiceImage", e)
-            return@withContext generateIntelligentFallbackInvoice(bitmap)
+        val rootJson = JSONObject().apply {
+            val contentsArray = JSONArray().apply {
+                val contentObj = JSONObject().apply {
+                    val partsArray = JSONArray().apply {
+                        // 1. Image part
+                        val imagePart = JSONObject().apply {
+                            val inlineData = JSONObject().apply {
+                                put("mimeType", "image/jpeg")
+                                put("data", base64Image)
+                            }
+                            put("inlineData", inlineData)
+                        }
+                        put(imagePart)
+
+                        // 2. Text prompt part
+                        val textPart = JSONObject().apply {
+                            put("text", promptText)
+                        }
+                        put(textPart)
+                    }
+                    put("parts", partsArray)
+                }
+                put(contentObj)
+            }
+            put("contents", contentsArray)
+
+            val genConfig = JSONObject().apply {
+                put("responseMimeType", "application/json")
+                put("temperature", 0.1)
+            }
+            put("generationConfig", genConfig)
         }
+
+        val requestBody = rootJson.toString().toRequestBody(jsonMediaType)
+
+        // Try primary model gemini-2.5-flash, fallback to gemini-3.5-flash
+        val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash")
+        var lastError: Exception? = null
+
+        for (modelName in modelsToTry) {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string()
+
+                if (response.isSuccessful && !responseBody.isNullOrEmpty()) {
+                    val respJson = JSONObject(responseBody)
+                    val candidates = respJson.optJSONArray("candidates")
+                    if (candidates != null && candidates.length() > 0) {
+                        val candidate = candidates.getJSONObject(0)
+                        val content = candidate.optJSONObject("content")
+                        val parts = content?.optJSONArray("parts")
+                        if (parts != null && parts.length() > 0) {
+                            val rawText = parts.getJSONObject(0).optString("text", "")
+                            if (rawText.isNotBlank()) {
+                                return@withContext parseJsonInvoice(rawText)
+                            }
+                        }
+                    }
+                } else {
+                    Log.w("GeminiAiService", "Model $modelName returned error: ${response.code} $responseBody")
+                    if (response.code == 400 || response.code == 403) {
+                        val errObj = try { JSONObject(responseBody ?: "") } catch (e: Exception) { null }
+                        val errMsg = errObj?.optJSONObject("error")?.optString("message") ?: "خطأ في الاتصال بالذكاء الاصطناعي (${response.code})"
+                        lastError = Exception(errMsg)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("GeminiAiService", "Error calling $modelName", e)
+                lastError = e
+            }
+        }
+
+        throw lastError ?: Exception("تعذر قراءة الفاتورة بواسطة الذكاء الاصطناعي. يرجى التحقق من اتصال الإنترنت وصلاحية مفتاح API.")
     }
 
     private fun parseJsonInvoice(jsonString: String): ParsedInvoiceData {
-        try {
-            // Clean markdown code blocks if any
-            var cleaned = jsonString.trim()
-            if (cleaned.startsWith("```json")) {
-                cleaned = cleaned.removePrefix("```json")
-            }
-            if (cleaned.startsWith("```")) {
-                cleaned = cleaned.removePrefix("```")
-            }
-            if (cleaned.endsWith("```")) {
-                cleaned = cleaned.removeSuffix("```")
-            }
-            cleaned = cleaned.trim()
-
-            val json = JSONObject(cleaned)
-            val supplierName = json.optString("supplierName", "مورد أجهزة ومعدات شبكات")
-            val invoiceNumber = json.optString("invoiceNumber", "INV-${System.currentTimeMillis() % 100000}")
-            val invoiceDate = json.optString("invoiceDate", SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date()))
-            val invoiceType = json.optString("invoiceType", "ASSETS")
-            val currency = json.optString("currency", "YER")
-            val notes = json.optString("notes", "تم استخراج الفاتورة بواسطة الذكاء الاصطناعي")
-
-            val itemsList = mutableListOf<InvoiceItem>()
-            val itemsArray = json.optJSONArray("items")
-            if (itemsArray != null) {
-                for (i in 0 until itemsArray.length()) {
-                    val itemObj = itemsArray.getJSONObject(i)
-                    val name = itemObj.optString("name", "صنف ${i + 1}")
-                    val quantity = itemObj.optDouble("quantity", 1.0)
-                    val unitPrice = itemObj.optDouble("unitPrice", 0.0)
-                    val subtotal = if (itemObj.has("subtotal") && itemObj.optDouble("subtotal", 0.0) > 0) {
-                        itemObj.optDouble("subtotal")
-                    } else {
-                        quantity * unitPrice
-                    }
-                    val category = itemObj.optString("category", "GENERAL")
-                    itemsList.add(
-                        InvoiceItem(
-                            name = name,
-                            quantity = quantity,
-                            unitPrice = unitPrice,
-                            subtotal = subtotal,
-                            category = category
-                        )
-                    )
-                }
-            }
-
-            var totalAmount = json.optDouble("totalAmount", 0.0)
-            if (totalAmount <= 0) {
-                totalAmount = itemsList.sumOf { it.subtotal }
-            }
-
-            return ParsedInvoiceData(
-                supplierName = supplierName,
-                invoiceNumber = invoiceNumber,
-                invoiceDate = invoiceDate,
-                invoiceType = invoiceType,
-                totalAmount = totalAmount,
-                currency = currency,
-                notes = notes,
-                items = itemsList,
-                rawAiAnalysis = "تم تحليل وقراءة الفاتورة بنجاح بواسطة Gemini AI Vision."
-            )
-        } catch (e: Exception) {
-            Log.e("GeminiAiService", "Error parsing JSON from Gemini: $jsonString", e)
-            return generateIntelligentFallbackInvoice(null)
+        var cleaned = jsonString.trim()
+        if (cleaned.startsWith("```json")) {
+            cleaned = cleaned.removePrefix("```json")
         }
-    }
+        if (cleaned.startsWith("```")) {
+            cleaned = cleaned.removePrefix("```")
+        }
+        if (cleaned.endsWith("```")) {
+            cleaned = cleaned.removeSuffix("```")
+        }
+        cleaned = cleaned.trim()
 
-    private fun generateIntelligentFallbackInvoice(bitmap: Bitmap?): ParsedInvoiceData {
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH)
-        val today = dateFormat.format(Date())
-        val randomNum = (1000..9999).random()
+        val json = JSONObject(cleaned)
+        val supplierName = json.optString("supplierName", "").trim()
+        val invoiceNumber = json.optString("invoiceNumber", "").trim()
+        val invoiceDate = json.optString("invoiceDate", SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date()))
+        val invoiceType = json.optString("invoiceType", "ASSETS")
+        val currency = json.optString("currency", "YER").uppercase()
+        val notes = json.optString("notes", "")
 
-        val sampleItems = listOf(
-            InvoiceItem(
-                name = "راوتر MikroTik CCR2004-16G-2S+ مع الكابلات",
-                quantity = 1.0,
-                unitPrice = 145000.0,
-                subtotal = 145000.0,
-                category = "SERVERS"
-            ),
-            InvoiceItem(
-                name = "لفة كابل شبكة Cat6 خارجي نحاس نقي 305 متر",
-                quantity = 2.0,
-                unitPrice = 28000.0,
-                subtotal = 56000.0,
-                category = "CABLES"
-            ),
-            InvoiceItem(
-                name = "محولات طاقة PoE ومشتتات صواعق أصلية",
-                quantity = 4.0,
-                unitPrice = 4500.0,
-                subtotal = 18000.0,
-                category = "MAINTENANCE"
-            )
-        )
+        val itemsList = mutableListOf<InvoiceItem>()
+        val itemsArray = json.optJSONArray("items")
+        if (itemsArray != null) {
+            for (i in 0 until itemsArray.length()) {
+                val itemObj = itemsArray.getJSONObject(i)
+                val name = itemObj.optString("name", "").trim()
+                if (name.isBlank()) continue
+                val quantity = itemObj.optDouble("quantity", 1.0)
+                val unitPrice = itemObj.optDouble("unitPrice", 0.0)
+                val subtotal = if (itemObj.has("subtotal") && itemObj.optDouble("subtotal", 0.0) > 0) {
+                    itemObj.optDouble("subtotal")
+                } else {
+                    quantity * unitPrice
+                }
+                val category = itemObj.optString("category", "GENERAL").uppercase()
+                itemsList.add(
+                    InvoiceItem(
+                        name = name,
+                        quantity = if (quantity > 0) quantity else 1.0,
+                        unitPrice = unitPrice,
+                        subtotal = subtotal,
+                        category = category
+                    )
+                )
+            }
+        }
+
+        var totalAmount = json.optDouble("totalAmount", 0.0)
+        if (totalAmount <= 0) {
+            totalAmount = itemsList.sumOf { it.subtotal }
+        }
 
         return ParsedInvoiceData(
-            supplierName = "مؤسسة الأفق لتوريد معدات الشبكات والاتصالات",
-            invoiceNumber = "INV-2026-$randomNum",
-            invoiceDate = today,
-            invoiceType = "ASSETS",
-            totalAmount = sampleItems.sumOf { it.subtotal },
-            currency = "YER",
-            notes = "فاتورة مشتريات وتجهيزات مستخرجة بالذكاء الاصطناعي (يمكنك تعديل أي صنف أو كمية)",
-            items = sampleItems,
-            rawAiAnalysis = "تم التعرف على بنود الفاتورة وحساب الأسعار التقديرية بنجاح."
+            supplierName = supplierName,
+            invoiceNumber = invoiceNumber,
+            invoiceDate = invoiceDate,
+            invoiceType = invoiceType,
+            totalAmount = totalAmount,
+            currency = currency,
+            notes = if (itemsList.isEmpty() && notes.isBlank()) "لم يتم العثور على أصناف واضحة في الصورة، يرجى التأكد من وضوح الفاتورة أو إدخال الأصناف يدوياً." else notes,
+            items = itemsList,
+            rawAiAnalysis = "تم تحليل وقراءة الفاتورة الحقيقية بواسطة Gemini AI Vision."
         )
     }
 

@@ -718,19 +718,36 @@ fun CardsScreen(
                     showCreateInvoiceDialog = false
                     preselectedPackageForInvoice = null
                 },
-                onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes ->
-                    viewModel.issueMultiItemSalesInvoice(
-                        customerName = customerName,
-                        customerPhone = customerPhone,
-                        retailerId = retailerId,
-                        items = items,
-                        paymentType = paymentType,
-                        paidAmount = paidAmount,
-                        notes = notes
-                    ) { invoiceId ->
-                        showCreateInvoiceDialog = false
-                        preselectedPackageForInvoice = null
-                        Toast.makeText(context, "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes, oldInvoiceToDelete ->
+                    if (oldInvoiceToDelete != null) {
+                        viewModel.replaceSalesInvoice(
+                            oldInvoice = oldInvoiceToDelete,
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            retailerId = retailerId,
+                            items = items,
+                            paymentType = paymentType,
+                            paidAmount = paidAmount,
+                            notes = notes
+                        ) { invoiceId ->
+                            showCreateInvoiceDialog = false
+                            preselectedPackageForInvoice = null
+                            Toast.makeText(context, "تم استنساخ الفاتورة وحذف السابقة بنجاح ✓", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        viewModel.issueMultiItemSalesInvoice(
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            retailerId = retailerId,
+                            items = items,
+                            paymentType = paymentType,
+                            paidAmount = paidAmount,
+                            notes = notes
+                        ) { invoiceId ->
+                            showCreateInvoiceDialog = false
+                            preselectedPackageForInvoice = null
+                            Toast.makeText(context, "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             )

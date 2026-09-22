@@ -82,6 +82,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.RetailerEntity
 import com.example.ui.MainViewModel
 import com.example.ui.theme.CairoFontFamily
@@ -123,9 +124,11 @@ fun DistributionScreen(
     var retailerToDelete by remember { mutableStateOf<RetailerEntity?>(null) }
     var retailerForWhatsAppMenu by remember { mutableStateOf<RetailerEntity?>(null) }
 
+    var isReconciling by remember { mutableStateOf(false) }
     var distributionSubTab by remember { mutableIntStateOf(0) } // 0: نقاط البيع والديون, 1: فواتير المبيعات, 2: مخزن الأصناف بالعدد
     var showCreateInvoiceDialog by remember { mutableStateOf(false) }
     var selectedRetailerForInvoice by remember { mutableStateOf<RetailerEntity?>(null) }
+    var invoiceToClone by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
 
     // حساب الأرصدة والكروت الحقيقية بشكل فوري ومباشر 100% من واقع الفواتير والسندات
     val dynamicRetailers = remember(retailers, salesInvoices, vouchers) {
@@ -284,6 +287,12 @@ fun DistributionScreen(
                     CardSalesInvoicesSubScreen(
                         viewModel = viewModel,
                         onOpenCreateInvoice = {
+                            invoiceToClone = null
+                            selectedRetailerForInvoice = null
+                            showCreateInvoiceDialog = true
+                        },
+                        onCloneInvoice = { inv ->
+                            invoiceToClone = inv
                             selectedRetailerForInvoice = null
                             showCreateInvoiceDialog = true
                         },
@@ -346,18 +355,34 @@ fun DistributionScreen(
 
                             OutlinedButton(
                                 onClick = {
+                                    isReconciling = true
                                     viewModel.reconcileAccountingLedger {
+                                        isReconciling = false
                                         Toast.makeText(context, "تم تدقيق ومطابقة الديون مع فواتير المبيعات بنجاح 100% ✓", Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 shape = RoundedCornerShape(8.dp),
                                 border = BorderStroke(1.dp, ProfitEmerald),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                modifier = Modifier.height(30.dp)
+                                modifier = Modifier.height(30.dp),
+                                enabled = !isReconciling
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
+                                if (isReconciling) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        color = ProfitEmerald,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
+                                }
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("تدقيق ومطابقة", fontSize = 10.5.sp, color = ProfitEmerald, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = if (isReconciling) "جاري التدقيق..." else "تدقيق ومطابقة",
+                                    fontSize = 10.5.sp,
+                                    color = ProfitEmerald,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
@@ -461,6 +486,7 @@ fun DistributionScreen(
                                         retailerToEdit = retailer
                                     },
                                     onInvoice = {
+                                        invoiceToClone = null
                                         selectedRetailerForInvoice = retailer
                                         showCreateInvoiceDialog = true
                                     },
@@ -585,6 +611,7 @@ fun DistributionScreen(
                         paymentMethod = method,
                         description = desc
                     ) { voucherNumber ->
+                        viewModel.reconcileAccountingLedger()
                         showQuickPayDialog = null
                         Toast.makeText(context, "تم إنشاء سند قبض بمبلغ $amount ريال وتخفيض مديونية البقالة ✓", Toast.LENGTH_LONG).show()
 
@@ -634,13 +661,14 @@ fun DistributionScreen(
                         )
 
                         // 1. كشف حساب ومطابقة رصيد
+                        val dynamicR = dynamicRetailers.find { it.id == r.id } ?: r
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = WhatsAppGreen.copy(alpha = 0.08f),
                             border = BorderStroke(1.dp, WhatsAppGreen.copy(alpha = 0.3f)),
                             onClick = {
-                                val msg = WhatsAppHelper.generateRetailerStatementMessage(r)
-                                WhatsAppHelper.sendWhatsAppMessage(context, r.phone, msg)
+                                val msg = WhatsAppHelper.generateRetailerStatementMessage(dynamicR)
+                                WhatsAppHelper.sendWhatsAppMessage(context, dynamicR.phone, msg)
                                 retailerForWhatsAppMenu = null
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -653,7 +681,7 @@ fun DistributionScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text("إرسال كشف حساب ومطابقة رصيد", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = WhatsAppDarkGreen)
-                                    Text("المستحق: ${r.balanceOwed.toInt()} ر.ي • الكروت: ${r.activeCardsCount} كرت", fontSize = 11.sp, color = Color.DarkGray)
+                                    Text("المستحق: ${dynamicR.balanceOwed.toInt()} ر.ي • الكروت: ${dynamicR.activeCardsCount} كرت", fontSize = 11.sp, color = Color.DarkGray)
                                 }
                             }
                         }
@@ -719,30 +747,56 @@ fun DistributionScreen(
             )
         }
 
-        // نافذة إصدار فاتورة مبيعات كروت احترافية
+        // نافذة إصدار أو استنساخ فاتورة مبيعات كروت احترافية
         if (showCreateInvoiceDialog) {
             CreateCardSalesInvoiceDialog(
                 inventoryItems = inventoryItems,
                 retailers = retailers,
                 initialRetailer = selectedRetailerForInvoice,
                 preSelectedPackageName = null,
+                initialInvoiceToClone = invoiceToClone,
                 onDismiss = {
                     showCreateInvoiceDialog = false
                     selectedRetailerForInvoice = null
+                    invoiceToClone = null
                 },
-                onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes ->
-                    viewModel.issueMultiItemSalesInvoice(
-                        customerName = customerName,
-                        customerPhone = customerPhone,
-                        retailerId = retailerId,
-                        items = items,
-                        paymentType = paymentType,
-                        paidAmount = paidAmount,
-                        notes = notes
-                    ) { invoiceId ->
-                        showCreateInvoiceDialog = false
-                        selectedRetailerForInvoice = null
-                        Toast.makeText(context, "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓", Toast.LENGTH_LONG).show()
+                onConfirmInvoice = { customerName, customerPhone, retailerId, items, paymentType, paidAmount, notes, oldInvoiceToDelete ->
+                    if (oldInvoiceToDelete != null) {
+                        viewModel.replaceSalesInvoice(
+                            oldInvoice = oldInvoiceToDelete,
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            retailerId = retailerId,
+                            items = items,
+                            paymentType = paymentType,
+                            paidAmount = paidAmount,
+                            notes = notes
+                        ) { newInvoiceId ->
+                            showCreateInvoiceDialog = false
+                            selectedRetailerForInvoice = null
+                            invoiceToClone = null
+                            Toast.makeText(context, "تم استنساخ الفاتورة وحذف السابقة وضبط الحسابات بنجاح ✓", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        viewModel.issueMultiItemSalesInvoice(
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            retailerId = retailerId,
+                            items = items,
+                            paymentType = paymentType,
+                            paidAmount = paidAmount,
+                            notes = notes
+                        ) { invoiceId ->
+                            showCreateInvoiceDialog = false
+                            selectedRetailerForInvoice = null
+                            invoiceToClone = null
+                            val successMsg = if (invoiceToClone != null) {
+                                "تم استنساخ الفاتورة وإصدارها برقم جديد بنجاح ✓"
+                            } else {
+                                "تم إصدار فاتورة المبيعات وخصم الكميات من المخزن بنجاح ✓"
+                            }
+                            Toast.makeText(context, successMsg, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             )

@@ -111,6 +111,8 @@ fun DistributionScreen(
 ) {
     val retailers by viewModel.retailers.collectAsState()
     val inventoryItems by viewModel.inventoryItems.collectAsState()
+    val salesInvoices by viewModel.salesInvoices.collectAsState()
+    val vouchers by viewModel.vouchers.collectAsState()
     val context = LocalContext.current
 
     var showAddRetailerDialog by remember { mutableStateOf(false) }
@@ -125,8 +127,40 @@ fun DistributionScreen(
     var showCreateInvoiceDialog by remember { mutableStateOf(false) }
     var selectedRetailerForInvoice by remember { mutableStateOf<RetailerEntity?>(null) }
 
-    val totalDebt = retailers.sumOf { it.balanceOwed }
-    val totalActiveCardsWithRetailers = retailers.sumOf { it.activeCardsCount }
+    // حساب الأرصدة والكروت الحقيقية بشكل فوري ومباشر 100% من واقع الفواتير والسندات
+    val dynamicRetailers = remember(retailers, salesInvoices, vouchers) {
+        val nonSyntheticInvoices = salesInvoices.filter { !it.invoiceNumber.startsWith("INV-DELIV-") }
+        retailers.map { r ->
+            val matchingInvoices = nonSyntheticInvoices.filter {
+                it.retailerId == r.id || it.customerName.trim().equals(r.name.trim(), ignoreCase = true)
+            }
+            if (matchingInvoices.isNotEmpty()) {
+                val debtFromInvoices = matchingInvoices.sumOf { it.remainingAmount }
+                val cardsFromInvoices = matchingInvoices.filter { it.remainingAmount > 0.01 }.sumOf { it.totalCardsCount }
+                val paidFromInvoices = matchingInvoices.sumOf { it.paidAmount }
+
+                // خصم أي سندات قبض مستقلة على البقالة لم تخصم من الفاتورة
+                val independentReceipts = vouchers.filter {
+                    (it.retailerId == r.id || it.partyName.trim().equals(r.name.trim(), ignoreCase = true)) &&
+                    it.voucherType == "RECEIPT" &&
+                    !it.description.contains("INV-") &&
+                    !it.category.contains("فاتورة")
+                }.sumOf { it.amount }
+
+                val finalDebt = (debtFromInvoices - independentReceipts).coerceAtLeast(0.0)
+                r.copy(
+                    balanceOwed = finalDebt,
+                    activeCardsCount = cardsFromInvoices,
+                    totalPaid = paidFromInvoices + minOf(independentReceipts, debtFromInvoices)
+                )
+            } else {
+                r
+            }
+        }
+    }
+
+    val totalDebt = dynamicRetailers.sumOf { it.balanceOwed }
+    val totalActiveCardsWithRetailers = dynamicRetailers.sumOf { it.activeCardsCount }
 
     Box(modifier = modifier.fillMaxSize().testTag("distribution_screen")) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -387,7 +421,7 @@ fun DistributionScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     // Retailers List
-                    if (retailers.isEmpty()) {
+                    if (dynamicRetailers.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxWidth().weight(1f),
                             contentAlignment = Alignment.Center
@@ -399,7 +433,7 @@ fun DistributionScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            items(retailers, key = { it.id }) { retailer ->
+                            items(dynamicRetailers, key = { it.id }) { retailer ->
                                 RetailerCard(
                                     retailer = retailer,
                                     onCall = {

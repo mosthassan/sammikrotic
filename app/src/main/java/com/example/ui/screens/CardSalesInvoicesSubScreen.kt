@@ -47,10 +47,13 @@ fun CardSalesInvoicesSubScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val invoices by viewModel.salesInvoices.collectAsState()
-    val totalSalesAmount by viewModel.totalSalesAmount.collectAsState()
-    val totalSoldCards by viewModel.totalSoldCardsCount.collectAsState()
-    val totalCreditRemaining by viewModel.totalCreditRemaining.collectAsState()
+    val rawInvoices by viewModel.salesInvoices.collectAsState()
+    val invoices = remember(rawInvoices) {
+        rawInvoices.filter { !it.invoiceNumber.startsWith("INV-DELIV-") }
+    }
+    val totalSalesAmount = remember(invoices) { invoices.sumOf { it.totalAmount } }
+    val totalSoldCards = remember(invoices) { invoices.sumOf { it.totalCardsCount } }
+    val totalCreditRemaining = remember(invoices) { invoices.sumOf { it.remainingAmount } }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") } // ALL, CASH, CREDIT, PARTIAL

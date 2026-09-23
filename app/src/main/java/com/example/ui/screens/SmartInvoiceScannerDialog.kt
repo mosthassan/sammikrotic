@@ -1346,6 +1346,7 @@ fun SmartInvoiceScannerDialog(
 
     if (showJsonImportDialog) {
         JsonInvoiceImportDialog(
+            viewModel = viewModel,
             onDismissRequest = { showJsonImportDialog = false },
             onInvoiceImported = { importedData ->
                 populateFieldsFromParsed(

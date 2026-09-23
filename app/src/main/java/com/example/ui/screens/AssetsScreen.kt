@@ -463,6 +463,7 @@ fun AssetsScreen(
     // Direct JSON Invoice Import Dialog
     if (showJsonImportDialog) {
         JsonInvoiceImportDialog(
+            viewModel = viewModel,
             onDismissRequest = { showJsonImportDialog = false },
             onInvoiceImported = { importedData ->
                 parsedInvoiceForAssets = importedData

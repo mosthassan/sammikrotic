@@ -409,6 +409,7 @@ fun PurchaseInvoicesSubScreen(
 
     if (showJsonImportDialog) {
         JsonInvoiceImportDialog(
+            viewModel = viewModel,
             onDismissRequest = { showJsonImportDialog = false },
             onInvoiceImported = { data ->
                 directParsedInvoice = data

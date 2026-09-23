@@ -71,9 +71,11 @@ fun CardSalesInvoicesSubScreen(
     val listState = rememberLazyListState()
     val rawInvoices by viewModel.salesInvoices.collectAsState()
 
-    // استبعاد الفواتير التلقائية للتسليم الداخلي
+    // استبعاد الفواتير التلقائية للتسليم الداخلي وترتيبها بالأحدث أولاً
     val invoices = remember(rawInvoices) {
-        rawInvoices.filter { !it.invoiceNumber.startsWith("INV-DELIV-") }
+        rawInvoices
+            .filter { !it.invoiceNumber.startsWith("INV-DELIV-") }
+            .sortedByDescending { it.invoiceDateMillis }
     }
 
     // مؤشرات KPI المالية العامة
@@ -83,6 +85,7 @@ fun CardSalesInvoicesSubScreen(
     val totalSoldCards = remember(invoices) { invoices.sumOf { it.totalCardsCount } }
 
     var searchQuery by remember { mutableStateOf("") }
+    var isSearchExpanded by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("ALL") } // ALL, CREDIT, CASH, PARTIAL
     var selectedInvoiceForDetail by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
     var invoiceToDelete by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
@@ -119,92 +122,71 @@ fun CardSalesInvoicesSubScreen(
         }
     }
 
-    // تقسيم الفواتير زمنياً (اليوم، أمس، سابقة)
-    val groupedInvoices = remember(filteredInvoices) {
-        val todayList = mutableListOf<CardSalesInvoiceEntity>()
-        val yesterdayList = mutableListOf<CardSalesInvoiceEntity>()
-        val earlierList = mutableListOf<CardSalesInvoiceEntity>()
-
-        filteredInvoices.forEach { inv ->
-            when {
-                isToday(inv.invoiceDateMillis) -> todayList.add(inv)
-                isYesterday(inv.invoiceDateMillis) -> yesterdayList.add(inv)
-                else -> earlierList.add(inv)
-            }
-        }
-        listOf(
-            "فواتير اليوم" to todayList,
-            "فواتير أمس" to yesterdayList,
-            "فواتير سابقة" to earlierList
-        ).filter { it.second.isNotEmpty() }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .testTag("card_sales_invoices_sub_screen")
     ) {
-        // 1. شريط إحصائي تنفيذي مدمج وأنيق (Compact KPI Strip)
+        // 1. شريط إحصائي تنفيذي فائق الضغط والأناقة (Compact Financial Strip) - لا يستهلك مساحة
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(8.dp),
             color = CyberDarkSurface,
-            border = BorderStroke(1.dp, CyberBorder),
+            border = BorderStroke(0.8.dp, CyberBorder),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .padding(horizontal = 4.dp, vertical = 2.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // مبيعات
-                CompactStatPill(
-                    title = "المبيعات",
-                    value = "${totalSalesAmount.toInt()} ر.ي",
-                    color = Color(0xFF38BDF8),
-                    icon = Icons.Default.ReceiptLong
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("المبيعات: ", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                    Text("${totalSalesAmount.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                }
                 // المحصل
-                CompactStatPill(
-                    title = "المحصل",
-                    value = "${totalPaidAmount.toInt()} ر.ي",
-                    color = ProfitEmerald,
-                    icon = Icons.Default.Payments
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Payments, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("المحصل: ", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                    Text("${totalPaidAmount.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitEmerald)
+                }
                 // الآجل
-                CompactStatPill(
-                    title = "الآجل",
-                    value = "${totalCreditRemaining.toInt()} ر.ي",
-                    color = if (totalCreditRemaining > 0) Color(0xFFEF4444) else ProfitEmerald,
-                    icon = Icons.Default.AccountBalanceWallet
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = if (totalCreditRemaining > 0) Color(0xFFEF4444) else ProfitEmerald, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("الآجل: ", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
+                    Text("${totalCreditRemaining.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (totalCreditRemaining > 0) Color(0xFFEF4444) else ProfitEmerald)
+                }
                 // الكروت
-                CompactStatPill(
-                    title = "الكروت",
-                    value = "$totalSoldCards",
-                    color = InvestmentGold,
-                    icon = Icons.Default.ConfirmationNumber
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = InvestmentGold, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("$totalSoldCards كرت", fontFamily = CairoFontFamily, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = InvestmentGold)
+                }
             }
         }
 
         // إشعار النجاح عند استنساخ الفاتورة فوراً
         newlyClonedNumberBanner?.let { bannerMessage ->
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = Color(0xFF064E3B),
                 border = BorderStroke(1.dp, ProfitEmerald),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -212,7 +194,7 @@ fun CardSalesInvoicesSubScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = bannerMessage,
@@ -224,7 +206,7 @@ fun CardSalesInvoicesSubScreen(
                     }
                     IconButton(
                         onClick = { newlyClonedNumberBanner = null },
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White, modifier = Modifier.size(13.dp))
                     }
@@ -232,70 +214,30 @@ fun CardSalesInvoicesSubScreen(
             }
         }
 
-        // 2. شريط البحث والفلترة مع زر الفاتورة الجديدة
+        // 2. شريط الأكشن والفلترة المتكامل المدمج (Single Unified Action Bar)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // حقل البحث
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = {
-                    Text("بحث باسم العميل، الرقم، الهاتف...", fontFamily = CairoFontFamily, fontSize = 11.5.sp, color = TextSecondaryDark)
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondaryDark, modifier = Modifier.size(16.dp))
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = null, tint = TextSecondaryDark, modifier = Modifier.size(15.dp))
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF38BDF8),
-                    unfocusedBorderColor = CyberBorder,
-                    focusedContainerColor = CyberDarkSurface,
-                    unfocusedContainerColor = CyberDarkSurface,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
-                ),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-            )
-
-            // زر إصدار فاتورة جديدة
-            Button(
-                onClick = onOpenCreateInvoice,
-                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                modifier = Modifier.height(48.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("فاتورة جديدة", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-            }
-        }
-
-        // 3. كبسولات الفلاتر السريعة
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
+                .padding(horizontal = 4.dp, vertical = 3.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // زر إصدار فاتورة جديدة مدمج
+            Button(
+                onClick = onOpenCreateInvoice,
+                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.height(34.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("فاتورة جديدة", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            }
+
+            // فلاتر الحالة السريعة
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CompactFilterChip(
@@ -305,14 +247,14 @@ fun CardSalesInvoicesSubScreen(
                     onClick = { selectedFilter = "ALL" }
                 )
                 CompactFilterChip(
-                    title = "آجلة ⏳",
+                    title = "آجلة",
                     count = creditCount,
                     selected = selectedFilter == "CREDIT",
                     color = Color(0xFFEF4444),
                     onClick = { selectedFilter = "CREDIT" }
                 )
                 CompactFilterChip(
-                    title = "نقدية ✓",
+                    title = "نقدية",
                     count = cashCount,
                     selected = selectedFilter == "CASH",
                     color = ProfitEmerald,
@@ -327,23 +269,76 @@ fun CardSalesInvoicesSubScreen(
                 )
             }
 
-            // زر التدقيق السريع
-            TextButton(
-                onClick = {
-                    viewModel.reconcileAccountingLedger {
-                        Toast.makeText(context, "تم تدقيق ومطابقة فواتير المبيعات مع دفاتر البقالات بنجاح 100% ✓", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                modifier = Modifier.height(30.dp)
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
-                Spacer(modifier = Modifier.width(3.dp))
-                Text("تدقيق", fontFamily = CairoFontFamily, fontSize = 10.5.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+            // أزرار البحث والتدقيق
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { isSearchExpanded = !isSearchExpanded },
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "بحث",
+                        tint = if (searchQuery.isNotBlank() || isSearchExpanded) Color(0xFF38BDF8) else TextSecondaryDark,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = {
+                        viewModel.reconcileAccountingLedger {
+                            Toast.makeText(context, "تم تدقيق ومطابقة فواتير المبيعات مع دفاتر البقالات بنجاح 100% ✓", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "تدقيق", tint = Color(0xFF38BDF8), modifier = Modifier.size(17.dp))
+                }
             }
         }
 
-        // 4. قائمة الفواتير الحقيقية عالية الانسيابية والملاءمة لشاشات الهواتف
+        // حقل البحث القابل للتوسيع (يظهر فقط عند النقر على أيقونة البحث أو وجود نص بحث)
+        AnimatedVisibility(visible = isSearchExpanded || searchQuery.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text("بحث باسم العميل، الرقم، الهاتف، الملاحظات...", fontFamily = CairoFontFamily, fontSize = 11.sp, color = TextSecondaryDark)
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            searchQuery = ""
+                            isSearchExpanded = false
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = TextSecondaryDark, modifier = Modifier.size(15.dp))
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = CyberBorder,
+                        focusedContainerColor = CyberDarkSurface,
+                        unfocusedContainerColor = CyberDarkSurface,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                )
+            }
+        }
+
+        // 3. قائمة الفواتير المباشرة والواضحة في واجهة الشاشة
         if (filteredInvoices.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -355,26 +350,26 @@ fun CardSalesInvoicesSubScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(52.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF1E293B)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(26.dp))
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = if (searchQuery.isNotBlank()) "لا توجد فواتير مطابقة للبحث" else "لا توجد فواتير مبيعات مسجلة حتى الآن",
                         fontFamily = CairoFontFamily,
-                        fontSize = 14.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (searchQuery.isNotBlank()) "جرب كتابة جزء من اسم المحل أو رقم الفاتورة" else "اضغط على (فاتورة جديدة) لإصدار فاتورة وتوزيع الكروت فوراً",
+                        text = if (searchQuery.isNotBlank()) "جرب كتابة جزء من اسم المحل أو رقم الفاتورة" else "اضغط على زر (فاتورة جديدة) بالأعلى لإصدار فاتورة فوراً",
                         fontFamily = CairoFontFamily,
-                        fontSize = 11.5.sp,
+                        fontSize = 11.sp,
                         color = TextSecondaryDark,
                         textAlign = TextAlign.Center
                     )
@@ -386,59 +381,27 @@ fun CardSalesInvoicesSubScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(bottom = 75.dp)
             ) {
-                groupedInvoices.forEach { (sectionTitle, sectionInvoices) ->
-                    item(key = "header_$sectionTitle") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF38BDF8))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "$sectionTitle (${sectionInvoices.size})",
-                                fontFamily = CairoFontFamily,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF94A3B8)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            HorizontalDivider(
-                                modifier = Modifier.weight(1f),
-                                color = CyberBorder.copy(alpha = 0.5f),
-                                thickness = 0.8.dp
-                            )
-                        }
-                    }
+                items(filteredInvoices, key = { it.id }) { invoice ->
+                    val isRecent = invoice.id == newlyCreatedInvoiceId ||
+                            (System.currentTimeMillis() - invoice.invoiceDateMillis < 90_000L)
+                    val isExpanded = expandedInvoiceId == invoice.id
 
-                    items(sectionInvoices, key = { it.id }) { invoice ->
-                        val isRecent = invoice.id == newlyCreatedInvoiceId ||
-                                (System.currentTimeMillis() - invoice.invoiceDateMillis < 90_000L)
-                        val isExpanded = expandedInvoiceId == invoice.id
-
-                        CardSalesInvoiceListItem(
-                            invoice = invoice,
-                            isHighlighted = isRecent,
-                            isExpanded = isExpanded,
-                            onClick = {
-                                expandedInvoiceId = if (isExpanded) null else invoice.id
-                            },
-                            onViewDetail = { selectedInvoiceForDetail = invoice },
-                            onEdit = { onEditInvoice?.invoke(invoice) },
-                            onClone = { invoiceForCloneChoice = invoice },
-                            onDelete = { invoiceToDelete = invoice }
-                        )
-                    }
+                    CardSalesInvoiceListItem(
+                        invoice = invoice,
+                        isHighlighted = isRecent,
+                        isExpanded = isExpanded,
+                        onClick = {
+                            expandedInvoiceId = if (isExpanded) null else invoice.id
+                        },
+                        onViewDetail = { selectedInvoiceForDetail = invoice },
+                        onEdit = { onEditInvoice?.invoke(invoice) },
+                        onClone = { invoiceForCloneChoice = invoice },
+                        onDelete = { invoiceToDelete = invoice }
+                    )
                 }
             }
         }

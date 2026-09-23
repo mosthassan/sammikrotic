@@ -167,39 +167,47 @@ fun DistributionScreen(
     val totalActiveCardsWithRetailers = dynamicRetailers.sumOf { it.activeCardsCount }
 
     Box(modifier = modifier.fillMaxSize().testTag("distribution_screen")) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
             // Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "المبيعات وتوزيع الكروت للمحلات",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = "المبيعات وتوزيع الكروت",
+                        fontFamily = CairoFontFamily,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = Color.White
                     )
                     Text(
-                        text = "فواتير احترافية، متابعة نقاط البيع، وتسليم الدفعات",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "فواتير ومتابعة نقاط البيع وتسليم الدفعات",
+                        fontFamily = CairoFontFamily,
+                        fontSize = 11.sp,
+                        color = TextSecondaryDark
                     )
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        onClick = {
-                            selectedRetailerForInvoice = null
-                            showCreateInvoiceDialog = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.Black)
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("فاتورة مبيعات", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                    if (distributionSubTab != 1) {
+                        Button(
+                            onClick = {
+                                selectedRetailerForInvoice = null
+                                showCreateInvoiceDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Black)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("فاتورة", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        }
                     }
 
                     Button(
@@ -207,22 +215,28 @@ fun DistributionScreen(
                             selectedRetailerForDistribution = retailers.firstOrNull()
                             showDistributeDialog = true
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary.copy(alpha = 0.25f), contentColor = MikroTikPrimary),
                         shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp),
                         enabled = retailers.isNotEmpty() && inventoryItems.isNotEmpty()
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("تسليم كروت", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Text("تسليم", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
             // Sub Navigation Tabs Bar
+            val salesInvoicesCount = remember(salesInvoices) {
+                salesInvoices.count { !it.invoiceNumber.startsWith("INV-DELIV-") }
+            }
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Surface(
@@ -237,9 +251,9 @@ fun DistributionScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Store, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (distributionSubTab == 0) Color.White else TextSecondaryDark)
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("نقاط البيع (${retailers.size})", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 0) Color.White else TextSecondaryDark)
+                        Icon(Icons.Default.Store, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (distributionSubTab == 0) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("نقاط البيع (${retailers.size})", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 0) Color.White else TextSecondaryDark)
                     }
                 }
 
@@ -255,9 +269,9 @@ fun DistributionScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (distributionSubTab == 1) Color.White else TextSecondaryDark)
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("فواتير المبيعات", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 1) Color.White else TextSecondaryDark)
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (distributionSubTab == 1) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("فواتير المبيعات ($salesInvoicesCount)", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 1) Color.White else TextSecondaryDark)
                     }
                 }
 
@@ -273,14 +287,14 @@ fun DistributionScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (distributionSubTab == 2) Color.White else TextSecondaryDark)
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("المخزن بالعدد", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 2) Color.White else TextSecondaryDark)
+                        Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (distributionSubTab == 2) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("المخزن بالعدد", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (distributionSubTab == 2) Color.White else TextSecondaryDark)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             when (distributionSubTab) {
                 1 -> {

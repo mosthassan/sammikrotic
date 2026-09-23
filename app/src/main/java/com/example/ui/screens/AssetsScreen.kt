@@ -2,53 +2,26 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Cable
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Router
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SolarPower
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,8 +42,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NetworkAssetEntity
+import com.example.data.model.ParsedInvoiceData
 import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
+import com.example.ui.theme.CairoFontFamily
 import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikNavy
@@ -97,6 +72,8 @@ fun AssetsScreen(
     var selectedCategoryFilter by remember { mutableStateOf("الكل") }
     var showAddAssetDialog by remember { mutableStateOf(false) }
     var showInvoiceScannerDialog by remember { mutableStateOf(false) }
+    var showJsonImportDialog by remember { mutableStateOf(false) }
+    var parsedInvoiceForAssets by remember { mutableStateOf<ParsedInvoiceData?>(null) }
     var assetToEdit by remember { mutableStateOf<NetworkAssetEntity?>(null) }
     var assetToDelete by remember { mutableStateOf<NetworkAssetEntity?>(null) }
 
@@ -232,24 +209,18 @@ fun AssetsScreen(
                 }
             }
 
-            // AI Invoice Scanning Quick Banner
+            // AI & JSON Invoice Scanning Quick Banner
             item {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showInvoiceScannerDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = AssetPurple.copy(alpha = 0.15f)),
                     border = androidx.compose.foundation.BorderStroke(1.dp, AssetPurple.copy(alpha = 0.4f))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
@@ -266,13 +237,14 @@ fun AssetsScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "تصوير ومسح فاتورة أصول بالذكاء الاصطناعي",
+                                        text = "إدخال وتفريغ فواتير الأصول والمعدات",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
-                                        color = Color.White
+                                        color = Color.White,
+                                        fontFamily = CairoFontFamily
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Icon(
@@ -283,20 +255,50 @@ fun AssetsScreen(
                                     )
                                 }
                                 Text(
-                                    text = "صور فاتورة الأجهزة لتحويلها تلقائياً إلى أصول ومعدات معتمدة",
+                                    text = "صور الفاتورة بالذكاء الاصطناعي أو استورد ملف JSON لتوفير رصيد التوكن",
                                     fontSize = 11.sp,
-                                    color = Color(0xFFCBD5E1)
+                                    color = Color(0xFFCBD5E1),
+                                    fontFamily = CairoFontFamily
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = { showInvoiceScannerDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = AssetPurple),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("scan_asset_invoice_button")
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("مسح الآن", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Button(
+                                onClick = {
+                                    parsedInvoiceForAssets = null
+                                    showInvoiceScannerDialog = true
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AssetPurple),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .testTag("scan_asset_invoice_button")
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("مسح بالذكاء 📸", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
+                            }
+
+                            Button(
+                                onClick = { showJsonImportDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .height(38.dp)
+                                    .testTag("import_asset_json_button")
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("استيراد JSON (بدون توكن) ⚡", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = CairoFontFamily)
+                            }
                         }
                     }
                 }
@@ -445,12 +447,28 @@ fun AssetsScreen(
         }
     }
 
-    // Smart Invoice AI Scanner Dialog
+    // Smart Invoice AI / JSON Scanner Dialog
     if (showInvoiceScannerDialog) {
         SmartInvoiceScannerDialog(
             viewModel = viewModel,
             initialTargetType = "ASSETS",
-            onDismissRequest = { showInvoiceScannerDialog = false }
+            initialParsedData = parsedInvoiceForAssets,
+            onDismissRequest = {
+                showInvoiceScannerDialog = false
+                parsedInvoiceForAssets = null
+            }
+        )
+    }
+
+    // Direct JSON Invoice Import Dialog
+    if (showJsonImportDialog) {
+        JsonInvoiceImportDialog(
+            onDismissRequest = { showJsonImportDialog = false },
+            onInvoiceImported = { importedData ->
+                parsedInvoiceForAssets = importedData
+                showInvoiceScannerDialog = true
+                showJsonImportDialog = false
+            }
         )
     }
 
@@ -696,230 +714,301 @@ fun AddEditAssetDialog(
     val rawEnteredCost = purchaseCostText.toDoubleOrNull() ?: 0.0
     val equivalentYerCost = CurrencyHelper.convertToYer(rawEnteredCost, selectedCurrency, sarToYerRate, usdToYerRate)
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (assetToEdit == null || assetToEdit.id == 0L) {
-                    if (assetToEdit?.id == 0L) "استنساخ وتسجيل أصل جديد" else "إضافة أصل رأسمالي جديد"
-                } else "تعديل بيانات الأصل",
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("اسم الأصل والموديل *") },
-                    placeholder = { Text("مثال: راوتر CCR2004، بطارية 200A...") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("input_asset_name")
-                )
-
-                // Category Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = isCategoryDropdownExpanded,
-                    onExpandedChange = { isCategoryDropdownExpanded = it }
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, AssetPurple.copy(alpha = 0.5f)),
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.92f)
+                .padding(vertical = 8.dp)
+                .imePadding()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = categoryMap.firstOrNull { it.first == category }?.second ?: category,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("تصنيف الأصل") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = isCategoryDropdownExpanded,
-                        onDismissRequest = { isCategoryDropdownExpanded = false }
-                    ) {
-                        categoryMap.forEach { (catKey, catLabel) ->
-                            DropdownMenuItem(
-                                text = { Text(catLabel) },
-                                onClick = {
-                                    category = catKey
-                                    isCategoryDropdownExpanded = false
-                                }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AssetPurple.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Storage, contentDescription = null, tint = AssetPurple, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = if (assetToEdit == null || assetToEdit.id == 0L) {
+                                    if (assetToEdit?.id == 0L) "استنساخ وتسجيل أصل جديد" else "إضافة أصل رأسمالي جديد"
+                                } else "تعديل بيانات الأصل",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "تسجيل الأصول الثابتة وحساب الإهلاك والقيمة الرأسمالية",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
+
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
 
-                // Currency selector chips
-                Column {
-                    Text("عملة الشراء والفاتورة:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Scrollable Form Content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("اسم الأصل والموديل *") },
+                        placeholder = { Text("مثال: راوتر CCR2004، بطارية 200A...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("input_asset_name")
+                    )
+
+                    // Category Dropdown
+                    ExposedDropdownMenuBox(
+                        expanded = isCategoryDropdownExpanded,
+                        onExpandedChange = { isCategoryDropdownExpanded = it }
                     ) {
-                        listOf(
-                            CurrencyHelper.CURRENCY_YER to "ريال يمني",
-                            CurrencyHelper.CURRENCY_SAR to "ريال سعودي",
-                            CurrencyHelper.CURRENCY_USD to "دولار أمريكي"
-                        ).forEach { (cKey, cLabel) ->
-                            val isSelected = selectedCurrency == cKey
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) AssetPurple else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .clickable {
-                                        selectedCurrency = cKey
+                        OutlinedTextField(
+                            value = categoryMap.firstOrNull { it.first == category }?.second ?: category,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("تصنيف الأصل") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = isCategoryDropdownExpanded,
+                            onDismissRequest = { isCategoryDropdownExpanded = false }
+                        ) {
+                            categoryMap.forEach { (catKey, catLabel) ->
+                                DropdownMenuItem(
+                                    text = { Text(catLabel) },
+                                    onClick = {
+                                        category = catKey
+                                        isCategoryDropdownExpanded = false
                                     }
-                                    .padding(vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = cLabel,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
                     }
+
+                    // Currency selector chips
+                    Column {
+                        Text("عملة الشراء والفاتورة:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                CurrencyHelper.CURRENCY_YER to "ريال يمني",
+                                CurrencyHelper.CURRENCY_SAR to "ريال سعودي",
+                                CurrencyHelper.CURRENCY_USD to "دولار أمريكي"
+                            ).forEach { (cKey, cLabel) ->
+                                val isSelected = selectedCurrency == cKey
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) AssetPurple else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .clickable {
+                                            selectedCurrency = cKey
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = cLabel,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = purchaseCostText,
+                            onValueChange = {
+                                purchaseCostText = it
+                                val entered = it.toDoubleOrNull() ?: 0.0
+                                val inYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
+                                if (currentValueText.isEmpty()) currentValueText = inYer.toInt().toString()
+                            },
+                            label = { Text("سعر الشراء (${CurrencyHelper.getCurrencySymbol(selectedCurrency)}) *") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_asset_cost")
+                        )
+
+                        OutlinedTextField(
+                            value = currentValueText,
+                            onValueChange = { currentValueText = it },
+                            label = { Text("القيمة الحالية (ريال يمني)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // Currency conversion notice card
+                    if (selectedCurrency != CurrencyHelper.CURRENCY_YER && rawEnteredCost > 0) {
+                        val rate = if (selectedCurrency == CurrencyHelper.CURRENCY_USD) usdToYerRate else sarToYerRate
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = ProfitEmerald.copy(alpha = 0.1f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "المعادل بالريال اليمني (سعر الصرف: $rate):",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${String.format(Locale.US, "%,.0f", equivalentYerCost)} ر.ي",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = ProfitEmerald
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = location,
+                        onValueChange = { location = it },
+                        label = { Text("موقع التركيب (البرج / الغرفة)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = serialNumber,
+                        onValueChange = { serialNumber = it },
+                        label = { Text("الرقم التسلسلي S/N (اختياري)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("ملاحظات والضمان") },
+                        singleLine = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Sticky Bottom Action Bar (ثابت دائماً في أسفل الشاشة ولا يختفي أبداً)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = purchaseCostText,
-                        onValueChange = {
-                            purchaseCostText = it
-                            val entered = it.toDoubleOrNull() ?: 0.0
-                            val inYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
-                            if (currentValueText.isEmpty()) currentValueText = inYer.toInt().toString()
-                        },
-                        label = { Text("سعر الشراء (${CurrencyHelper.getCurrencySymbol(selectedCurrency)}) *") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f).testTag("input_asset_cost")
-                    )
-
-                    OutlinedTextField(
-                        value = currentValueText,
-                        onValueChange = { currentValueText = it },
-                        label = { Text("القيمة الحالية (ريال يمني)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // Currency conversion notice card
-                if (selectedCurrency != CurrencyHelper.CURRENCY_YER && rawEnteredCost > 0) {
-                    val rate = if (selectedCurrency == CurrencyHelper.CURRENCY_USD) usdToYerRate else sarToYerRate
-                    Card(
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = ProfitEmerald.copy(alpha = 0.1f)),
-                        modifier = Modifier.fillMaxWidth()
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(0.8f)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "المعادل بالريال اليمني (سعر الصرف: $rate):",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Text("إلغاء")
+                    }
+
+                    Button(
+                        onClick = {
+                            if (!isSaving && name.isNotBlank()) {
+                                isSaving = true
+                                val entered = purchaseCostText.toDoubleOrNull() ?: 0.0
+                                val costInYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
+                                val currentVal = currentValueText.toDoubleOrNull() ?: costInYer
+                                val originalCost = if (selectedCurrency != CurrencyHelper.CURRENCY_YER) entered else 0.0
+
+                                val asset = assetToEdit?.copy(
+                                    assetName = name,
+                                    category = category,
+                                    purchaseCost = costInYer,
+                                    estimatedCurrentValue = currentVal,
+                                    currency = selectedCurrency,
+                                    originalCost = originalCost,
+                                    location = location,
+                                    serialNumber = serialNumber,
+                                    notes = notes
+                                ) ?: NetworkAssetEntity(
+                                    assetName = name,
+                                    category = category,
+                                    purchaseCost = costInYer,
+                                    estimatedCurrentValue = currentVal,
+                                    currency = selectedCurrency,
+                                    originalCost = originalCost,
+                                    location = location,
+                                    serialNumber = serialNumber,
+                                    notes = notes
+                                )
+                                onSave(asset)
+                            }
+                        },
+                        enabled = !isSaving && name.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = AssetPurple),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1.4f)
+                            .testTag("btn_save_asset")
+                    ) {
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("جاري الحفظ...", color = Color.White, fontWeight = FontWeight.Bold)
+                        } else {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "${String.format(Locale.US, "%,.0f", equivalentYerCost)} ر.ي",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = ProfitEmerald
+                                if (assetToEdit != null && assetToEdit.id != 0L) "تحديث بيانات الأصل" else "حفظ الأصل الرأسمالي ✓",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
-
-                OutlinedTextField(
-                    value = location,
-                    onValueChange = { location = it },
-                    label = { Text("موقع التركيب (البرج / الغرفة)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = serialNumber,
-                    onValueChange = { serialNumber = it },
-                    label = { Text("الرقم التسلسلي S/N (اختياري)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("ملاحظات والضمان") },
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (!isSaving && name.isNotBlank()) {
-                        isSaving = true
-                        val entered = purchaseCostText.toDoubleOrNull() ?: 0.0
-                        val costInYer = CurrencyHelper.convertToYer(entered, selectedCurrency, sarToYerRate, usdToYerRate)
-                        val currentVal = currentValueText.toDoubleOrNull() ?: costInYer
-                        val originalCost = if (selectedCurrency != CurrencyHelper.CURRENCY_YER) entered else 0.0
-
-                        val asset = assetToEdit?.copy(
-                            assetName = name,
-                            category = category,
-                            purchaseCost = costInYer,
-                            estimatedCurrentValue = currentVal,
-                            currency = selectedCurrency,
-                            originalCost = originalCost,
-                            location = location,
-                            serialNumber = serialNumber,
-                            notes = notes
-                        ) ?: NetworkAssetEntity(
-                            assetName = name,
-                            category = category,
-                            purchaseCost = costInYer,
-                            estimatedCurrentValue = currentVal,
-                            currency = selectedCurrency,
-                            originalCost = originalCost,
-                            location = location,
-                            serialNumber = serialNumber,
-                            notes = notes
-                        )
-                        onSave(asset)
-                    }
-                },
-                enabled = !isSaving && name.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = AssetPurple),
-                modifier = Modifier.testTag("btn_save_asset")
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("جاري الحفظ...", color = Color.White, fontWeight = FontWeight.Bold)
-                } else {
-                    Text(
-                        if (assetToEdit != null && assetToEdit.id != 0L) "تحديث بيانات الأصل" else "حفظ الأصل",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("إلغاء")
             }
         }
-    )
+    }
 }

@@ -8,7 +8,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -139,6 +142,15 @@ fun CreateCardSalesInvoiceDialog(
         )
     }
 
+    var customerSearchQuery by remember { mutableStateOf("") }
+    val filteredRetailers = remember(retailers, customerSearchQuery) {
+        if (customerSearchQuery.isBlank()) retailers
+        else retailers.filter {
+            it.name.contains(customerSearchQuery, ignoreCase = true) ||
+            it.phone.contains(customerSearchQuery)
+        }
+    }
+
     // Multi-Item Invoice Rows
     // Initial row
     val initialPackage = inventoryItems.find { it.packageName == preSelectedPackageName } ?: inventoryItems.firstOrNull()
@@ -193,21 +205,24 @@ fun CreateCardSalesInvoiceDialog(
     }
     val calculatedRemainingAmount = (grandTotalAmount - calculatedPaidAmount).coerceAtLeast(0.0)
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.fillMaxWidth(0.96f),
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = CyberDarkSurface,
             border = BorderStroke(1.dp, if (initialInvoiceToClone != null) ProfitEmerald.copy(alpha = 0.5f) else MikroTikPrimary.copy(alpha = 0.5f)),
-            modifier = Modifier.padding(12.dp)
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.92f)
+                .padding(vertical = 8.dp)
+                .imePadding()
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                    .fillMaxSize()
+                    .padding(14.dp)
             ) {
                 // Header
                 Row(
@@ -283,8 +298,7 @@ fun CreateCardSalesInvoiceDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .heightIn(max = 520.dp),
+                        .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // 0. Edit Mode Banner OR Cloned Invoice Banner
@@ -393,28 +407,34 @@ fun CreateCardSalesInvoiceDialog(
                             }
                         }
                     }
-                    // 1. Customer Selection
+                    // 1. Customer Selection with Instant Search (بحث فوري فائق السلاسة عن العملاء)
                     item {
                         Card(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = CyberDarkCardElevated),
                             border = BorderStroke(1.dp, CyberBorder)
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("العميل / نقطة البيع:", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Storefront, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("العميل / نقطة البيع:", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+
+                                    // Direct customer toggle
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             if (isDirectCustomer) "عميل كاش مباشر" else "من البقالات المسجلة",
                                             fontFamily = CairoFontFamily,
                                             fontSize = 10.5.sp,
-                                            color = TextSecondaryDark
+                                            color = if (isDirectCustomer) StatusWarning else ProfitEmerald
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Switch(
                                             checked = isDirectCustomer,
                                             onCheckedChange = {
@@ -434,37 +454,190 @@ fun CreateCardSalesInvoiceDialog(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
 
-                                if (!isDirectCustomer && retailers.isNotEmpty()) {
-                                    // Choose registered retailer
-                                    LazyColumn(modifier = Modifier.heightIn(max = 90.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        items(retailers.size) { idx ->
-                                            val ret = retailers[idx]
-                                            val isSel = selectedRetailer?.id == ret.id
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = if (isSel) MikroTikPrimary.copy(alpha = 0.25f) else CyberDarkSurface,
-                                                border = BorderStroke(1.dp, if (isSel) MikroTikPrimary else CyberBorder),
-                                                onClick = {
-                                                    selectedRetailer = ret
-                                                    customerNameText = ret.name
-                                                    customerPhoneText = ret.phone
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
+                                if (!isDirectCustomer) {
+                                    // Search Bar for Retailers
+                                    OutlinedTextField(
+                                        value = customerSearchQuery,
+                                        onValueChange = { customerSearchQuery = it },
+                                        placeholder = {
+                                            Text(
+                                                "ابحث عن العميل أو البقالة بالاسم أو الهاتف...",
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 11.5.sp,
+                                                color = TextSecondaryDark
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                        },
+                                        trailingIcon = {
+                                            if (customerSearchQuery.isNotEmpty()) {
+                                                IconButton(onClick = { customerSearchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                                    Icon(Icons.Default.Clear, contentDescription = "مسح البحث", tint = TextSecondaryDark, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                        },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color(0xFF38BDF8),
+                                            unfocusedBorderColor = CyberBorder,
+                                            focusedContainerColor = CyberDarkSurface,
+                                            unfocusedContainerColor = CyberDarkSurface,
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Display currently selected customer card
+                                    selectedRetailer?.let { curRet ->
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = Color(0xFF0F253E),
+                                            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.7f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f)
                                                 ) {
-                                                    Text(ret.name, fontFamily = CairoFontFamily, fontSize = 11.5.sp, color = Color.White)
-                                                    Text("رصيد آجل: ${ret.balanceOwed.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 10.sp, color = if (ret.balanceOwed > 0) StatusWarning else ProfitEmerald)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(28.dp)
+                                                            .clip(CircleShape)
+                                                            .background(ProfitEmerald.copy(alpha = 0.2f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(Icons.Default.Check, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(16.dp))
+                                                    }
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column {
+                                                        Text(
+                                                            text = curRet.name,
+                                                            fontFamily = CairoFontFamily,
+                                                            fontSize = 12.5.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color.White
+                                                        )
+                                                        if (curRet.phone.isNotBlank()) {
+                                                            Text(
+                                                                text = curRet.phone,
+                                                                fontSize = 10.sp,
+                                                                color = TextSecondaryDark
+                                                            )
+                                                        }
+                                                    }
                                                 }
+
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = if (curRet.balanceOwed > 0) StatusWarning.copy(alpha = 0.15f) else ProfitEmerald.copy(alpha = 0.15f),
+                                                    border = BorderStroke(1.dp, if (curRet.balanceOwed > 0) StatusWarning.copy(alpha = 0.4f) else ProfitEmerald.copy(alpha = 0.4f))
+                                                ) {
+                                                    Text(
+                                                        text = if (curRet.balanceOwed > 0) "آجل: ${curRet.balanceOwed.toInt()} ر.ي" else "خالص الحساب ✓",
+                                                        fontFamily = CairoFontFamily,
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (curRet.balanceOwed > 0) StatusWarning else ProfitEmerald,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                    }
+
+                                    // Filtered Retailers List (instant clickable chips / items)
+                                    if (filteredRetailers.isNotEmpty()) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            filteredRetailers.take(5).forEach { ret ->
+                                                val isSel = selectedRetailer?.id == ret.id
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (isSel) MikroTikPrimary.copy(alpha = 0.25f) else CyberDarkSurface,
+                                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else CyberBorder),
+                                                    onClick = {
+                                                        selectedRetailer = ret
+                                                        customerNameText = ret.name
+                                                        customerPhoneText = ret.phone
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(
+                                                                if (isSel) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked,
+                                                                contentDescription = null,
+                                                                tint = if (isSel) Color(0xFF38BDF8) else TextSecondaryDark,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(ret.name, fontFamily = CairoFontFamily, fontSize = 11.5.sp, color = Color.White)
+                                                        }
+                                                        Text(
+                                                            text = if (ret.balanceOwed > 0) "آجل: ${ret.balanceOwed.toInt()} ر.ي" else "خالص الحساب",
+                                                            fontFamily = CairoFontFamily,
+                                                            fontSize = 10.sp,
+                                                            color = if (ret.balanceOwed > 0) StatusWarning else TextSecondaryDark
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (filteredRetailers.size > 5) {
+                                                Text(
+                                                    text = "+ ${filteredRetailers.size - 5} عملاء آخرين مطابقة للبحث...",
+                                                    fontFamily = CairoFontFamily,
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF38BDF8),
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    } else if (customerSearchQuery.isNotBlank()) {
+                                        // Quick add query as direct customer
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = Color(0xFF1E293B),
+                                            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                            onClick = {
+                                                isDirectCustomer = true
+                                                customerNameText = customerSearchQuery.trim()
+                                                selectedRetailer = null
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "لا توجد بقالة بهذا الاسم، انقر لاعتماد \"${customerSearchQuery.trim()}\" كعميل مباشر",
+                                                    fontFamily = CairoFontFamily,
+                                                    fontSize = 11.sp,
+                                                    color = Color.White
+                                                )
                                             }
                                         }
                                     }
                                 } else {
+                                    // Direct customer text inputs
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedTextField(
                                             value = customerNameText,

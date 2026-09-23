@@ -26,18 +26,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -51,8 +40,10 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
@@ -111,6 +102,7 @@ import com.example.data.model.InvoiceItem
 import com.example.data.model.ParsedInvoiceData
 import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
+import com.example.ui.theme.CairoFontFamily
 import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikDarkBg
@@ -131,25 +123,46 @@ import java.util.UUID
 fun SmartInvoiceScannerDialog(
     viewModel: MainViewModel,
     initialTargetType: String = "ASSETS", // "ASSETS" or "EXPENSES"
+    initialParsedData: ParsedInvoiceData? = null,
     onDismissRequest: () -> Unit
 ) {
     val context = LocalContext.current
     val isScanning by viewModel.isScanningInvoice.collectAsState()
 
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var hasParsedInvoice by remember { mutableStateOf(false) }
-    var isAiExtracted by remember { mutableStateOf(false) }
+    var hasParsedInvoice by remember { mutableStateOf(initialParsedData != null) }
+    var isAiExtracted by remember { mutableStateOf(initialParsedData != null) }
     var aiErrorMessage by remember { mutableStateOf<String?>(null) }
+    var showJsonImportDialog by remember { mutableStateOf(false) }
 
     // Invoice Header Fields
-    var supplierName by remember { mutableStateOf("") }
-    var invoiceNumber by remember { mutableStateOf("") }
-    var invoiceDate by remember { mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())) }
-    var targetType by remember { mutableStateOf(initialTargetType) }
-    var currency by remember { mutableStateOf("YER") }
+    var supplierName by remember { mutableStateOf(initialParsedData?.supplierName ?: "") }
+    var invoiceNumber by remember { mutableStateOf(initialParsedData?.invoiceNumber ?: "") }
+    var invoiceDate by remember {
+        mutableStateOf(
+            if (!initialParsedData?.invoiceDate.isNullOrBlank()) initialParsedData!!.invoiceDate
+            else SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
+        )
+    }
+    var targetType by remember {
+        mutableStateOf(
+            if (!initialParsedData?.invoiceType.isNullOrBlank()) initialParsedData!!.invoiceType
+            else initialTargetType
+        )
+    }
+    var currency by remember {
+        mutableStateOf(
+            if (!initialParsedData?.currency.isNullOrBlank()) initialParsedData!!.currency
+            else "YER"
+        )
+    }
     var paymentMethod by remember { mutableStateOf("نقداً") }
-    var notes by remember { mutableStateOf("") }
-    var saveAsAssets by remember { mutableStateOf(initialTargetType == "ASSETS") }
+    var notes by remember { mutableStateOf(initialParsedData?.notes ?: "") }
+    var saveAsAssets by remember {
+        mutableStateOf(
+            (if (!initialParsedData?.invoiceType.isNullOrBlank()) initialParsedData!!.invoiceType else initialTargetType) == "ASSETS"
+        )
+    }
     var saveAsVoucher by remember { mutableStateOf(true) }
 
     var showApiKeyDialog by remember { mutableStateOf(false) }
@@ -157,7 +170,13 @@ fun SmartInvoiceScannerDialog(
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     // Dynamic Items List
-    val itemsList = remember { mutableStateListOf<InvoiceItem>() }
+    val itemsList = remember {
+        mutableStateListOf<InvoiceItem>().apply {
+            if (initialParsedData != null && initialParsedData.items.isNotEmpty()) {
+                addAll(initialParsedData.items)
+            }
+        }
+    }
 
     fun processInvoiceBitmap(bitmap: Bitmap) {
         aiErrorMessage = null
@@ -273,8 +292,9 @@ fun SmartInvoiceScannerDialog(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp)
-                .clip(RoundedCornerShape(20.dp)),
+                .padding(10.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .imePadding(),
             color = MikroTikDarkBg
         ) {
             Column(
@@ -319,15 +339,34 @@ fun SmartInvoiceScannerDialog(
                         }
                     }
 
-                    IconButton(
-                        onClick = onDismissRequest,
-                        modifier = Modifier.testTag("close_invoice_dialog")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "إغلاق",
-                            tint = Color.White
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = { showJsonImportDialog = true },
+                            modifier = Modifier
+                                .height(34.dp)
+                                .testTag("top_import_json_button"),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MikroTikCyan),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MikroTikCyan.copy(alpha = 0.7f)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("استيراد JSON 📄", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        IconButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier.testTag("close_invoice_dialog")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "إغلاق",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
 
@@ -507,7 +546,85 @@ fun SmartInvoiceScannerDialog(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // JSON Import Option (No Token / Offline)
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clickable { showJsonImportDialog = true }
+                                .testTag("open_json_import_phase1_card"),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2B48)),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, MikroTikCyan.copy(alpha = 0.7f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(MikroTikCyan.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = null,
+                                            tint = MikroTikCyan,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "استيراد من ملف أو نص JSON 📄",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = Color.White,
+                                                fontFamily = CairoFontFamily
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(ProfitEmerald.copy(alpha = 0.25f))
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = "بدون توكن ⚡",
+                                                    color = ProfitEmerald,
+                                                    fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = CairoFontFamily
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = "استيراد فوري للأصناف والأسعار لتوفير رصيدك اليومي بدقة 100%",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF94A3B8),
+                                            fontFamily = CairoFontFamily
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.FileUpload,
+                                    contentDescription = null,
+                                    tint = MikroTikCyan,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         // Manual entry button without taking a picture
                         OutlinedButton(
@@ -621,6 +738,17 @@ fun SmartInvoiceScannerDialog(
                                 Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("إعادة المحاولة بالفحص الذكي 🔄", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = { showJsonImportDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("استيراد من ملف JSON بديل فوري (بدون توكن) 📄", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
                             }
 
                             OutlinedButton(
@@ -1213,6 +1341,32 @@ fun SmartInvoiceScannerDialog(
             },
             containerColor = MikroTikDarkSurface,
             textContentColor = Color.White
+        )
+    }
+
+    if (showJsonImportDialog) {
+        JsonInvoiceImportDialog(
+            onDismissRequest = { showJsonImportDialog = false },
+            onInvoiceImported = { importedData ->
+                populateFieldsFromParsed(
+                    parsed = importedData,
+                    setSupplier = { supplierName = it },
+                    setNumber = { invoiceNumber = it },
+                    setDate = { if (it.isNotBlank()) invoiceDate = it },
+                    setTarget = {
+                        targetType = it
+                        saveAsAssets = (it == "ASSETS")
+                    },
+                    setNotes = { notes = it },
+                    setCurrency = { currency = it },
+                    itemsList = itemsList
+                )
+                hasParsedInvoice = true
+                isAiExtracted = true
+                aiErrorMessage = null
+                showJsonImportDialog = false
+                Toast.makeText(context, "تم استيراد ${importedData.items.size} أصناف من ملف JSON بنجاح! ✓", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 }

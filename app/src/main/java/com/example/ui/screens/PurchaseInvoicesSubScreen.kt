@@ -25,9 +25,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -61,8 +63,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.PurchaseInvoiceEntity
+import com.example.data.model.ParsedInvoiceData
 import com.example.ui.MainViewModel
 import com.example.ui.theme.AssetPurple
+import com.example.ui.theme.CairoFontFamily
 import com.example.ui.theme.InvestmentGold
 import com.example.ui.theme.MikroTikCyan
 import com.example.ui.theme.MikroTikDarkBg
@@ -89,6 +93,8 @@ fun PurchaseInvoicesSubScreen(
 
     var selectedFilter by remember { mutableStateOf("الكل") }
     var invoiceToDelete by remember { mutableStateOf<PurchaseInvoiceEntity?>(null) }
+    var showJsonImportDialog by remember { mutableStateOf(false) }
+    var directParsedInvoice by remember { mutableStateOf<ParsedInvoiceData?>(null) }
 
     val filterOptions = listOf("الكل", "أصول ثابتة (CAPEX)", "مصروفات مشتريات (OPEX)")
 
@@ -202,23 +208,46 @@ fun PurchaseInvoicesSubScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Big Action Button: Scan Invoice Now
-                        Button(
-                            onClick = { onOpenScanDialog("ASSETS") },
-                            colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("scan_invoice_hero_button")
-                        ) {
-                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "تصوير ومسح فاتورة جديدة بالذكاء الاصطناعي 📸",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
+                        // Action Buttons: Scan Invoice & Import from JSON
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { onOpenScanDialog("ASSETS") },
+                                colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("scan_invoice_hero_button")
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "تصوير ومسح فاتورة جديدة بالذكاء الاصطناعي 📸",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    fontFamily = CairoFontFamily
+                                )
+                            }
+
+                            Button(
+                                onClick = { showJsonImportDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("import_json_invoice_button")
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "استيراد فاتورة من ملف JSON (بدون توكن) 📄 ⚡",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color.White,
+                                    fontFamily = CairoFontFamily
+                                )
+                            }
                         }
                     }
                 }
@@ -294,14 +323,28 @@ fun PurchaseInvoicesSubScreen(
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { onOpenScanDialog("ASSETS") },
-                                colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
-                                shape = RoundedCornerShape(10.dp)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Default.CameraAlt, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("تصوير أول فاتورة الآن")
+                                Button(
+                                    onClick = { onOpenScanDialog("ASSETS") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("تصوير أول فاتورة", fontSize = 11.5.sp, fontFamily = CairoFontFamily)
+                                }
+
+                                Button(
+                                    onClick = { showJsonImportDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Description, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("استيراد JSON ⚡", fontSize = 11.5.sp, color = Color.White, fontFamily = CairoFontFamily)
+                                }
                             }
                         }
                     }
@@ -351,6 +394,25 @@ fun PurchaseInvoicesSubScreen(
                 TextButton(onClick = { invoiceToDelete = null }) {
                     Text("إلغاء")
                 }
+            }
+        )
+    }
+
+    if (directParsedInvoice != null) {
+        SmartInvoiceScannerDialog(
+            viewModel = viewModel,
+            initialTargetType = directParsedInvoice!!.invoiceType,
+            initialParsedData = directParsedInvoice,
+            onDismissRequest = { directParsedInvoice = null }
+        )
+    }
+
+    if (showJsonImportDialog) {
+        JsonInvoiceImportDialog(
+            onDismissRequest = { showJsonImportDialog = false },
+            onInvoiceImported = { data ->
+                directParsedInvoice = data
+                showJsonImportDialog = false
             }
         )
     }

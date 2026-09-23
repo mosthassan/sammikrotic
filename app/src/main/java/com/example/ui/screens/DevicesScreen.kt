@@ -23,7 +23,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CellTower
@@ -113,6 +115,7 @@ fun DevicesScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedTypeFilter by remember { mutableStateOf("الكل") }
     var showAddEditDialog by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
     var deviceToEdit by remember { mutableStateOf<NetworkDeviceEntity?>(null) }
     var deviceToDelete by remember { mutableStateOf<NetworkDeviceEntity?>(null) }
     var pingingDeviceId by remember { mutableStateOf<Long?>(null) }
@@ -269,18 +272,37 @@ fun DevicesScreen(
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MikroTikPrimary.copy(alpha = 0.15f))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "${devices.size} جهاز مسجل",
-                        color = MikroTikPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = { showBackupDialog = true },
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("open_device_json_backup_button"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MikroTikCyan),
+                        border = BorderStroke(1.dp, MikroTikCyan.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("تصدير / استيراد JSON 🔄", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MikroTikPrimary.copy(alpha = 0.15f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "${devices.size} جهاز",
+                            color = MikroTikPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -484,6 +506,14 @@ fun DevicesScreen(
                         Text("إلغاء")
                     }
                 }
+            )
+        }
+
+        // Export / Import Devices JSON Backup Dialog
+        if (showBackupDialog) {
+            DeviceJsonBackupDialog(
+                viewModel = viewModel,
+                onDismissRequest = { showBackupDialog = false }
             )
         }
     }

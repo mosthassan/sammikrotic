@@ -20,6 +20,7 @@ import java.io.File
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -285,22 +286,59 @@ fun SmartInvoiceScannerDialog(
 
     val totalCalculated = itemsList.sumOf { it.subtotal }
 
+    val performSaveInvoice: () -> Unit = {
+        if (itemsList.isEmpty()) {
+            Toast.makeText(context, "يرجى إضافة صنف واحد على الأقل للفاتورة", Toast.LENGTH_SHORT).show()
+        } else {
+            val finalInvoice = PurchaseInvoiceEntity(
+                invoiceNumber = invoiceNumber.ifBlank { "INV-${System.currentTimeMillis() % 100000}" },
+                supplierName = supplierName.ifBlank { "مورد أجهزة ومعدات" },
+                invoiceDateMillis = try {
+                    SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(invoiceDate)?.time ?: System.currentTimeMillis()
+                } catch (e: Exception) {
+                    System.currentTimeMillis()
+                },
+                targetType = targetType,
+                totalAmount = totalCalculated,
+                currency = currency,
+                originalAmount = totalCalculated,
+                paidAmount = totalCalculated,
+                paymentMethod = paymentMethod,
+                notes = notes
+            )
+
+            viewModel.approveAndSaveInvoice(
+                invoice = finalInvoice,
+                items = itemsList.toList(),
+                saveAsAssets = saveAsAssets,
+                saveAsVoucher = saveAsVoucher,
+                onComplete = {
+                    Toast.makeText(context, "تم اعتماد وحفظ الفاتورة والأصناف بنجاح! ✓", Toast.LENGTH_LONG).show()
+                    onDismissRequest()
+                }
+            )
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .imePadding(),
-            color = MikroTikDarkBg
+                .fillMaxWidth(0.97f)
+                .fillMaxHeight(0.94f)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .clip(RoundedCornerShape(18.dp)),
+            color = MikroTikDarkBg,
+            border = BorderStroke(1.dp, Color(0xFF334155))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 // Top Header Bar
                 Row(
@@ -311,7 +349,7 @@ fun SmartInvoiceScannerDialog(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
                                 .background(MikroTikCyan.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
@@ -320,26 +358,45 @@ fun SmartInvoiceScannerDialog(
                                 imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
                                 tint = MikroTikCyan,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "تحويل صورة الفاتورة بالذكاء الاصطناعي",
+                                text = "تحويل وتعديل الفاتورة الذكية",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
+                                fontSize = 14.5.sp,
                                 color = Color.White
                             )
                             Text(
-                                text = "تصوير الفاتورة واستخراج الأصناف والأسعار والاعتماد",
-                                fontSize = 12.sp,
+                                text = "استخراج وتعديل الأصناف والأسعار والاعتماد",
+                                fontSize = 10.5.sp,
                                 color = Color(0xFF94A3B8)
                             )
                         }
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Quick Save button in header if invoice data is loaded/being edited
+                        if (hasParsedInvoice || capturedBitmap != null) {
+                            Button(
+                                onClick = { performSaveInvoice() },
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .testTag("top_save_invoice_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("حفظ 💾", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = CairoFontFamily)
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
                         OutlinedButton(
                             onClick = { showJsonImportDialog = true },
                             modifier = Modifier
@@ -350,21 +407,22 @@ fun SmartInvoiceScannerDialog(
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
-                            Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("استيراد JSON 📄", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
+                            Text("استيراد JSON", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
                         }
 
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
 
                         IconButton(
                             onClick = onDismissRequest,
-                            modifier = Modifier.testTag("close_invoice_dialog")
+                            modifier = Modifier.size(32.dp).testTag("close_invoice_dialog")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "إغلاق",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -1135,70 +1193,94 @@ fun SmartInvoiceScannerDialog(
                                 }
                             }
                         }
+                        // End of list save card
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                colors = CardDefaults.cardColors(containerColor = ProfitEmerald.copy(alpha = 0.12f)),
+                                border = BorderStroke(1.dp, ProfitEmerald.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "هل انتهيت من تعديل ومراجعة الأصناف (${itemsList.size}) بإجمالي ${formatMoney(totalCalculated)} $currency؟",
+                                        color = Color.White,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        fontFamily = CairoFontFamily
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = { performSaveInvoice() },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(46.dp)
+                                            .testTag("scrollable_end_save_button"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "اعتماد وحفظ الفاتورة الآن 💾 ✓",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            fontFamily = CairoFontFamily,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // Bottom Actions: Approve & Save vs Cancel
-                    Row(
+                    // Fixed Pinned Bottom Actions Bar: Always visible above system navigation buttons
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        color = MikroTikDarkSurface,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.5.dp, ProfitEmerald.copy(alpha = 0.6f))
                     ) {
-                        Button(
-                            onClick = {
-                                if (itemsList.isEmpty()) {
-                                    Toast.makeText(context, "يرجى إضافة صنف واحد على الأقل للفاتورة", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                val finalInvoice = PurchaseInvoiceEntity(
-                                    invoiceNumber = invoiceNumber.ifBlank { "INV-${System.currentTimeMillis() % 100000}" },
-                                    supplierName = supplierName.ifBlank { "مورد أجهزة ومعدات" },
-                                    invoiceDateMillis = try {
-                                        SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(invoiceDate)?.time ?: System.currentTimeMillis()
-                                    } catch (e: Exception) {
-                                        System.currentTimeMillis()
-                                    },
-                                    targetType = targetType,
-                                    totalAmount = totalCalculated,
-                                    currency = currency,
-                                    originalAmount = totalCalculated,
-                                    paidAmount = totalCalculated,
-                                    paymentMethod = paymentMethod,
-                                    notes = notes
-                                )
-
-                                viewModel.approveAndSaveInvoice(
-                                    invoice = finalInvoice,
-                                    items = itemsList.toList(),
-                                    saveAsAssets = saveAsAssets,
-                                    saveAsVoucher = saveAsVoucher,
-                                    onComplete = {
-                                        Toast.makeText(context, "تم اعتماد وحفظ الفاتورة والأصناف بنجاح! ✓", Toast.LENGTH_LONG).show()
-                                        onDismissRequest()
-                                    }
-                                )
-                            },
+                        Row(
                             modifier = Modifier
-                                .weight(2f)
-                                .height(50.dp)
-                                .testTag("approve_and_save_invoice_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
-                            shape = RoundedCornerShape(12.dp)
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("اعتماد وحفظ الفاتورة والأصناف", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
+                            OutlinedButton(
+                                onClick = onDismissRequest,
+                                modifier = Modifier
+                                    .weight(0.7f)
+                                    .height(46.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF94A3B8))
+                            ) {
+                                Text("إلغاء", fontSize = 12.sp, fontFamily = CairoFontFamily)
+                            }
 
-                        OutlinedButton(
-                            onClick = onDismissRequest,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(50.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF94A3B8))
-                        ) {
-                            Text("إلغاء")
+                            Button(
+                                onClick = { performSaveInvoice() },
+                                modifier = Modifier
+                                    .weight(2f)
+                                    .height(46.dp)
+                                    .testTag("approve_and_save_invoice_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("اعتماد وحفظ الفاتورة والأصناف 💾", fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = CairoFontFamily)
+                            }
                         }
                     }
                 }

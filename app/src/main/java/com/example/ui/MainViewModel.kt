@@ -466,6 +466,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun importDevicesBatch(
+        devicesToImport: List<NetworkDeviceEntity>,
+        replaceExisting: Boolean = false,
+        onComplete: (importedCount: Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            var count = 0
+            if (replaceExisting) {
+                devices.value.forEach { repository.deleteDevice(it) }
+            }
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            devicesToImport.forEach { dev ->
+                val cleanDev = dev.copy(id = 0)
+                val newId = repository.saveDevice(cleanDev)
+                firebaseService.pushDevice(cleanDev.copy(id = newId), userEmail)
+                count++
+            }
+            onComplete(count)
+        }
+    }
+
     fun updateDeviceCoordinates(
         deviceId: Long,
         latitude: Double,

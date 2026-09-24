@@ -17,6 +17,7 @@ import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.FinancialVoucherEntity
 import com.example.data.local.entity.InventoryItemEntity
 import com.example.data.local.entity.InventoryMovementEntity
+import com.example.data.local.entity.JournalEntryEntity
 import com.example.data.local.entity.NetworkAssetEntity
 import com.example.data.local.entity.NetworkDeviceEntity
 import com.example.data.local.entity.NetworkIdentityEntity
@@ -1163,23 +1164,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 2. If user requested recording in financial accounting vouchers (سند صرف مشتريات)
             if (saveAsVoucher) {
                 val voucherNum = "PAY-${System.currentTimeMillis() % 100000}"
-                val voucherCat = if (invoice.targetType == "ASSETS") "أصول ومعدات شبكة" else "صيانة ومعدات"
-                val desc = "سداد فاتورة مشتريات #${invoice.invoiceNumber} (${invoice.supplierName}): $summaryText"
+                val voucherCat = if (invoiceToSave.targetType == "ASSETS") "أصول ومعدات شبكة" else "صيانة ومعدات"
+                val desc = "سداد فاتورة مشتريات #${invoiceToSave.invoiceNumber} (${invoiceToSave.supplierName}): $summaryText"
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = voucherNum,
                     voucherType = "PAYMENT",
                     amount = invoiceToSave.totalAmount,
-                    partyName = invoice.supplierName.ifBlank { "مورد معدات" },
+                    partyName = invoiceToSave.supplierName.ifBlank { "مورد معدات" },
                     category = voucherCat,
-                    paymentMethod = invoice.paymentMethod,
+                    paymentMethod = invoiceToSave.paymentMethod,
                     description = desc,
                     issuerName = _currentUser.value?.fullName ?: "المهندس سام",
-                    dateMillis = invoice.invoiceDateMillis,
-                    notes = invoice.notes
+                    dateMillis = invoiceToSave.invoiceDateMillis,
+                    notes = invoiceToSave.notes
                 )
                 repository.insertVoucher(voucher)
                 val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
                 firebaseService.pushVoucher(voucher, userEmail)
+
+                // حفظ قيد يومية محاسبي مزدوج في جدول journal_entries عبر repository
+                val convertedAmountYer = convertToYer(invoiceToSave.totalAmount, invoiceToSave.currency)
+                val exchangeRate = if (invoiceToSave.totalAmount > 0) {
+                    convertedAmountYer / invoiceToSave.totalAmount
+                } else {
+                    1.0
+                }
+
+                val (debitAcc, creditAcc) = if (invoiceToSave.targetType == "ASSETS") {
+                    "1501 - أصول البنية التحتية والشبكة" to "1101 - الصندوق الرئيسي"
+                } else {
+                    "5201 - مصروفات تشغيل وصيانة" to "1101 - الصندوق الرئيسي"
+                }
+
+                val journalEntry = JournalEntryEntity(
+                    entryNumber = "JE-PURCHASE-${invoiceToSave.invoiceNumber}-${System.currentTimeMillis() % 100000}",
+                    dateMillis = invoiceToSave.invoiceDateMillis,
+                    referenceType = "PURCHASE_INVOICE",
+                    referenceId = invoiceToSave.invoiceNumber,
+                    debitAccount = debitAcc,
+                    creditAccount = creditAcc,
+                    amount = convertedAmountYer,
+                    currency = invoiceToSave.currency,
+                    exchangeRate = exchangeRate,
+                    description = desc,
+                    createdBy = _currentUser.value?.fullName ?: "المهندس سام"
+                )
+                repository.saveJournalEntry(journalEntry)
             }
 
             onComplete()

@@ -16,6 +16,7 @@ import com.example.data.local.entity.RetailerEntity
 import com.example.data.local.entity.UserEntity
 import com.example.data.local.entity.CardSalesInvoiceEntity
 import com.example.data.local.entity.InventoryMovementEntity
+import com.example.data.local.entity.JournalEntryEntity
 import com.example.data.model.CardSalesInvoiceItem
 import org.json.JSONArray
 import org.json.JSONObject
@@ -556,6 +557,84 @@ class NetworkRepository(private val db: AppDatabase) {
                 db.financialVoucherDao().insertVoucher(voucher)
             }
 
+            // إنشاء وحفظ قيد يومية محاسبي في جدول journal_entries
+            val entryNumber = "JE-$invoiceNumber"
+            val effectiveCustomer = customerName.ifBlank { "عميل نقدي" }
+            when (paymentType) {
+                "CASH" -> {
+                    db.journalEntryDao().insertEntry(
+                        JournalEntryEntity(
+                            entryNumber = entryNumber,
+                            referenceType = "SALES_INVOICE",
+                            referenceId = invoiceId.toString(),
+                            debitAccount = "1101 - الصندوق الرئيسي",
+                            creditAccount = "4101 - إيرادات مبيعات الكروت",
+                            amount = totalAmount,
+                            description = "قيد مبيعات نقداً لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
+                            createdBy = issuerName
+                        )
+                    )
+                }
+                "CREDIT" -> {
+                    db.journalEntryDao().insertEntry(
+                        JournalEntryEntity(
+                            entryNumber = entryNumber,
+                            referenceType = "SALES_INVOICE",
+                            referenceId = invoiceId.toString(),
+                            debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                            creditAccount = "4101 - إيرادات مبيعات الكروت",
+                            amount = totalAmount,
+                            description = "قيد مبيعات آجلة لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
+                            createdBy = issuerName
+                        )
+                    )
+                }
+                "PARTIAL" -> {
+                    if (actualPaid > 0) {
+                        db.journalEntryDao().insertEntry(
+                            JournalEntryEntity(
+                                entryNumber = "$entryNumber-1",
+                                referenceType = "SALES_INVOICE",
+                                referenceId = invoiceId.toString(),
+                                debitAccount = "1101 - الصندوق الرئيسي",
+                                creditAccount = "4101 - إيرادات مبيعات الكروت",
+                                amount = actualPaid,
+                                description = "قيد مبيعات جزء مدفوع نقداً لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
+                                createdBy = issuerName
+                            )
+                        )
+                    }
+                    if (remainingAmount > 0) {
+                        db.journalEntryDao().insertEntry(
+                            JournalEntryEntity(
+                                entryNumber = "$entryNumber-2",
+                                referenceType = "SALES_INVOICE",
+                                referenceId = invoiceId.toString(),
+                                debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                                creditAccount = "4101 - إيرادات مبيعات الكروت",
+                                amount = remainingAmount,
+                                description = "قيد مبيعات جزء آجل لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
+                                createdBy = issuerName
+                            )
+                        )
+                    }
+                }
+                else -> {
+                    db.journalEntryDao().insertEntry(
+                        JournalEntryEntity(
+                            entryNumber = entryNumber,
+                            referenceType = "SALES_INVOICE",
+                            referenceId = invoiceId.toString(),
+                            debitAccount = "1101 - الصندوق الرئيسي",
+                            creditAccount = "4101 - إيرادات مبيعات الكروت",
+                            amount = totalAmount,
+                            description = "قيد مبيعات لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
+                            createdBy = issuerName
+                        )
+                    )
+                }
+            }
+
             // تسوية دفتر الأستاذ دون تعديل مزدوج
             reconcileAccountingLedgerInternal()
 
@@ -616,11 +695,7 @@ class NetworkRepository(private val db: AppDatabase) {
                 }
             }
 
-            // 2. حذف السند المالي السابق المرتبط بهذه الفاتورة بمعرف الفاتورة ورقمها بدقة
-            db.financialVoucherDao().deleteVouchersByInvoiceId(originalInvoice.id)
-            if (originalInvoice.invoiceNumber.isNotBlank()) {
-                db.financialVoucherDao().deleteVouchersByInvoiceNumber(originalInvoice.invoiceNumber)
-            }
+            // 2. إلغاء حذف السندات القديمة للحفاظ على السجل المالي وسلامة الصندوق
 
             // 3. خصم الأصناف الجديدة من المخزن
             items.forEach { item ->
@@ -691,24 +766,121 @@ class NetworkRepository(private val db: AppDatabase) {
             )
             db.cardSalesInvoiceDao().updateInvoice(updatedInvoice)
 
-            // 6. تسجيل سند قبض مالي جديد مع الربط المباشر بمعرف ورقم الفاتورة
-            if (actualPaidAmount > 0) {
+            // 6. التعامل مع السند المالي بالفارق (paymentDelta) دون حذف السندات القديمة
+            val paymentDelta = actualPaidAmount - originalInvoice.paidAmount
+            if (paymentDelta > 0.0) {
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = "REC-${System.currentTimeMillis() % 100000}",
                     voucherType = "RECEIPT",
-                    amount = actualPaidAmount,
+                    amount = paymentDelta,
                     partyName = customerName,
                     category = "مبيعات كروت شبكة",
                     paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
-                    description = "سداد قيمة فاتورة مبيعات معدلة #${originalInvoice.invoiceNumber} ($itemsSummary)",
+                    description = "سند قبض تكميلي لتعديل فاتورة مبيعات #${originalInvoice.invoiceNumber} ($itemsSummary)",
                     issuerName = issuerName,
                     notes = notes,
                     retailerId = retailerId,
                     invoiceId = originalInvoice.id,
                     invoiceNumber = originalInvoice.invoiceNumber,
-                    allocatedAmount = actualPaidAmount
+                    allocatedAmount = paymentDelta
                 )
                 db.financialVoucherDao().insertVoucher(voucher)
+            } else if (paymentDelta < 0.0) {
+                val refundAmount = kotlin.math.abs(paymentDelta)
+                val voucher = FinancialVoucherEntity(
+                    voucherNumber = "PAY-${System.currentTimeMillis() % 100000}",
+                    voucherType = "PAYMENT",
+                    amount = refundAmount,
+                    partyName = customerName,
+                    category = "استرداد/تسوية مبيعات كروت",
+                    paymentMethod = "نقداً",
+                    description = "سند صرف استرداد/تسوية لتعديل فاتورة مبيعات #${originalInvoice.invoiceNumber} ($itemsSummary)",
+                    issuerName = issuerName,
+                    notes = notes,
+                    retailerId = retailerId,
+                    invoiceId = originalInvoice.id,
+                    invoiceNumber = originalInvoice.invoiceNumber,
+                    allocatedAmount = refundAmount
+                )
+                db.financialVoucherDao().insertVoucher(voucher)
+            }
+
+            // 7. إنشاء وحفظ قيد يومية محاسبي في جدول journal_entries
+            val editEntryNumber = "JE-EDIT-${originalInvoice.invoiceNumber}-${System.currentTimeMillis() % 100000}"
+            val effectiveCustomer = customerName.ifBlank { "عميل نقدي" }
+            when (paymentType) {
+                "CASH" -> {
+                    db.journalEntryDao().insertEntry(
+                        JournalEntryEntity(
+                            entryNumber = editEntryNumber,
+                            referenceType = "SALES_INVOICE_EDIT",
+                            referenceId = originalInvoice.id.toString(),
+                            debitAccount = "1101 - الصندوق الرئيسي",
+                            creditAccount = "4101 - إيرادات مبيعات الكروت",
+                            amount = totalAmount,
+                            description = "قيد تعديل مبيعات نقداً لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
+                            createdBy = issuerName
+                        )
+                    )
+                }
+                "CREDIT" -> {
+                    db.journalEntryDao().insertEntry(
+                        JournalEntryEntity(
+                            entryNumber = editEntryNumber,
+                            referenceType = "SALES_INVOICE_EDIT",
+                            referenceId = originalInvoice.id.toString(),
+                            debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                            creditAccount = "4101 - إيرادات مبيعات الكروت",
+                            amount = totalAmount,
+                            description = "قيد تعديل مبيعات آجلة لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
+                            createdBy = issuerName
+                        )
+                    )
+                }
+                "PARTIAL" -> {
+                    if (actualPaidAmount > 0) {
+                        db.journalEntryDao().insertEntry(
+                            JournalEntryEntity(
+                                entryNumber = "$editEntryNumber-1",
+                                referenceType = "SALES_INVOICE_EDIT",
+                                referenceId = originalInvoice.id.toString(),
+                                debitAccount = "1101 - الصندوق الرئيسي",
+                                creditAccount = "4101 - إيرادات مبيعات الكروت",
+                                amount = actualPaidAmount,
+                                description = "قيد تعديل مبيعات جزء مدفوع نقداً لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
+                                createdBy = issuerName
+                            )
+                        )
+                    }
+                    if (remainingAmount > 0) {
+                        db.journalEntryDao().insertEntry(
+                            JournalEntryEntity(
+                                entryNumber = "$editEntryNumber-2",
+                                referenceType = "SALES_INVOICE_EDIT",
+                                referenceId = originalInvoice.id.toString(),
+                                debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                                creditAccount = "4101 - إيرادات مبيعات الكروت",
+                                amount = remainingAmount,
+                                description = "قيد تعديل مبيعات جزء آجل لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
+                                createdBy = issuerName
+                            )
+                        )
+                    }
+                }
+                else -> {
+                    db.journalEntryDao().insertEntry(
+                        JournalEntryEntity(
+                            entryNumber = editEntryNumber,
+                            referenceType = "SALES_INVOICE_EDIT",
+                            referenceId = originalInvoice.id.toString(),
+                            debitAccount = "1101 - الصندوق الرئيسي",
+                            creditAccount = "4101 - إيرادات مبيعات الكروت",
+                            amount = totalAmount,
+                            description = "قيد تعديل مبيعات لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
+                            createdBy = issuerName
+                        )
+                    )
+                }
             }
 
             // 7. تسوية الدفاتر المحاسبية
@@ -982,16 +1154,126 @@ class NetworkRepository(private val db: AppDatabase) {
                     }
                 }
 
-                // 2. حذف سند القبض المالي المقيد مع الفاتورة صراحة بالمعرف ورقم الفاتورة
-                db.financialVoucherDao().deleteVouchersByInvoiceId(invoice.id)
-                if (invoice.invoiceNumber.isNotBlank()) {
-                    db.financialVoucherDao().deleteVouchersByInvoiceNumber(invoice.invoiceNumber)
+                // 2. عدم حذف سندات القبض القديمة المرتبطة بالفاتورة نهائياً لحفظ السجل المالي
+                // إنشاء سند صرف/تسوية (PAYMENT) بمقدار المبلغ المسدد لحفظ توازن الصندوق عند وجود سداد
+                if (invoice.paidAmount > 0) {
+                    val voucher = FinancialVoucherEntity(
+                        voucherNumber = "PAY-CANCEL-${System.currentTimeMillis() % 100000}",
+                        voucherType = "PAYMENT",
+                        amount = invoice.paidAmount,
+                        partyName = invoice.customerName.ifBlank { "عميل نقدي" },
+                        category = "إلغاء/استرداد فاتورة مبيعات",
+                        paymentMethod = "نقداً",
+                        description = "سند صرف تسوية بسبب إلغاء/حذف فاتورة مبيعات رقم ${invoice.invoiceNumber}",
+                        issuerName = invoice.issuerName.ifBlank { "المهندس حسن" },
+                        notes = "إلغاء/حذف الفاتورة #${invoice.invoiceNumber}",
+                        retailerId = invoice.retailerId,
+                        invoiceId = invoice.id,
+                        invoiceNumber = invoice.invoiceNumber,
+                        allocatedAmount = invoice.paidAmount
+                    )
+                    db.financialVoucherDao().insertVoucher(voucher)
                 }
 
-                // 3. حذف الفاتورة
+                // 3. تسجيل قيد يومية محاسبي عكسي في journal_entries لإلغاء أثر الفاتورة
+                val cancelEntryNumber = "JE-CANCEL-${invoice.invoiceNumber}-${System.currentTimeMillis() % 100000}"
+                val effectiveCustomer = invoice.customerName.ifBlank { "عميل نقدي" }
+
+                when (invoice.paymentType) {
+                    "CASH" -> {
+                        db.journalEntryDao().insertEntry(
+                            JournalEntryEntity(
+                                entryNumber = cancelEntryNumber,
+                                referenceType = "SALES_INVOICE_CANCEL",
+                                referenceId = invoice.id.toString(),
+                                debitAccount = "4101 - إيرادات مبيعات الكروت",
+                                creditAccount = "1101 - الصندوق الرئيسي",
+                                amount = invoice.totalAmount,
+                                description = "قيد عكسي لإلغاء فاتورة مبيعات نقداً رقم ${invoice.invoiceNumber} ($effectiveCustomer)",
+                                createdBy = invoice.issuerName.ifBlank { "المهندس حسن" }
+                            )
+                        )
+                    }
+                    "CREDIT" -> {
+                        db.journalEntryDao().insertEntry(
+                            JournalEntryEntity(
+                                entryNumber = cancelEntryNumber,
+                                referenceType = "SALES_INVOICE_CANCEL",
+                                referenceId = invoice.id.toString(),
+                                debitAccount = "4101 - إيرادات مبيعات الكروت",
+                                creditAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                                amount = invoice.totalAmount,
+                                description = "قيد عكسي لإلغاء فاتورة مبيعات آجلة رقم ${invoice.invoiceNumber} ($effectiveCustomer)",
+                                createdBy = invoice.issuerName.ifBlank { "المهندس حسن" }
+                            )
+                        )
+                    }
+                    "PARTIAL" -> {
+                        if (invoice.paidAmount > 0) {
+                            db.journalEntryDao().insertEntry(
+                                JournalEntryEntity(
+                                    entryNumber = "$cancelEntryNumber-1",
+                                    referenceType = "SALES_INVOICE_CANCEL",
+                                    referenceId = invoice.id.toString(),
+                                    debitAccount = "4101 - إيرادات مبيعات الكروت",
+                                    creditAccount = "1101 - الصندوق الرئيسي",
+                                    amount = invoice.paidAmount,
+                                    description = "قيد عكسي للجزء المدفوع نقداً عند إلغاء فاتورة مبيعات رقم ${invoice.invoiceNumber} ($effectiveCustomer)",
+                                    createdBy = invoice.issuerName.ifBlank { "المهندس حسن" }
+                                )
+                            )
+                        }
+                        if (invoice.remainingAmount > 0) {
+                            db.journalEntryDao().insertEntry(
+                                JournalEntryEntity(
+                                    entryNumber = "$cancelEntryNumber-2",
+                                    referenceType = "SALES_INVOICE_CANCEL",
+                                    referenceId = invoice.id.toString(),
+                                    debitAccount = "4101 - إيرادات مبيعات الكروت",
+                                    creditAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                                    amount = invoice.remainingAmount,
+                                    description = "قيد عكسي للجزء الآجل عند إلغاء فاتورة مبيعات رقم ${invoice.invoiceNumber} ($effectiveCustomer)",
+                                    createdBy = invoice.issuerName.ifBlank { "المهندس حسن" }
+                                )
+                            )
+                        }
+                    }
+                    else -> {
+                        if (invoice.paidAmount > 0) {
+                            db.journalEntryDao().insertEntry(
+                                JournalEntryEntity(
+                                    entryNumber = cancelEntryNumber,
+                                    referenceType = "SALES_INVOICE_CANCEL",
+                                    referenceId = invoice.id.toString(),
+                                    debitAccount = "4101 - إيرادات مبيعات الكروت",
+                                    creditAccount = "1101 - الصندوق الرئيسي",
+                                    amount = invoice.paidAmount,
+                                    description = "قيد عكسي لإلغاء فاتورة مبيعات رقم ${invoice.invoiceNumber} ($effectiveCustomer)",
+                                    createdBy = invoice.issuerName.ifBlank { "المهندس حسن" }
+                                )
+                            )
+                        }
+                        if (invoice.remainingAmount > 0) {
+                            db.journalEntryDao().insertEntry(
+                                JournalEntryEntity(
+                                    entryNumber = "$cancelEntryNumber-rem",
+                                    referenceType = "SALES_INVOICE_CANCEL",
+                                    referenceId = invoice.id.toString(),
+                                    debitAccount = "4101 - إيرادات مبيعات الكروت",
+                                    creditAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
+                                    amount = invoice.remainingAmount,
+                                    description = "قيد عكسي للآجل عند إلغاء فاتورة مبيعات رقم ${invoice.invoiceNumber} ($effectiveCustomer)",
+                                    createdBy = invoice.issuerName.ifBlank { "المهندس حسن" }
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // 4. حذف الفاتورة
                 db.cardSalesInvoiceDao().deleteInvoice(invoice)
 
-                // 4. تسوية الحسابات المحاسبية فورا
+                // 5. تسوية الحسابات المحاسبية فورا
                 reconcileAccountingLedgerInternal()
             } catch (e: Exception) {
                 android.util.Log.e("NetworkRepository", "deleteSalesInvoice error: ${e.message}", e)
@@ -1296,6 +1578,10 @@ class NetworkRepository(private val db: AppDatabase) {
 
     suspend fun insertVoucher(voucher: FinancialVoucherEntity): Long = withContext(Dispatchers.IO) {
         db.financialVoucherDao().insertVoucher(voucher)
+    }
+
+    suspend fun saveJournalEntry(entry: JournalEntryEntity): Long = withContext(Dispatchers.IO) {
+        db.journalEntryDao().insertEntry(entry)
     }
 
     // Users & Roles

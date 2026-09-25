@@ -70,6 +70,7 @@ fun CardSalesInvoicesSubScreen(
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val rawInvoices by viewModel.salesInvoices.collectAsState()
+    val retailers by viewModel.retailers.collectAsState()
 
     // استبعاد الفواتير التلقائية للتسليم الداخلي وترتيبها بالأحدث أولاً
     val invoices = remember(rawInvoices) {
@@ -390,10 +391,13 @@ fun CardSalesInvoicesSubScreen(
                             (System.currentTimeMillis() - invoice.invoiceDateMillis < 90_000L)
                     val isExpanded = expandedInvoiceId == invoice.id
 
+                    val matchedRetailer = retailers.firstOrNull { it.id == invoice.retailerId || it.name.trim().equals(invoice.customerName.trim(), ignoreCase = true) }
+
                     CardSalesInvoiceListItem(
                         invoice = invoice,
                         isHighlighted = isRecent,
                         isExpanded = isExpanded,
+                        retailerBalanceOwed = matchedRetailer?.balanceOwed,
                         onClick = {
                             expandedInvoiceId = if (isExpanded) null else invoice.id
                         },
@@ -607,6 +611,7 @@ private fun CardSalesInvoiceListItem(
     invoice: CardSalesInvoiceEntity,
     isHighlighted: Boolean = false,
     isExpanded: Boolean = false,
+    retailerBalanceOwed: Double? = null,
     onClick: () -> Unit,
     onViewDetail: () -> Unit,
     onEdit: () -> Unit,
@@ -836,7 +841,7 @@ private fun CardSalesInvoiceListItem(
                             color = Color(0xFF22C55E),
                             containerColor = Color(0xFF063319),
                             onClick = {
-                                shareInvoiceViaWhatsApp(context, invoice)
+                                shareInvoiceViaWhatsApp(context, invoice, retailerBalanceOwed)
                             },
                             modifier = Modifier.weight(1.1f)
                         )
@@ -993,29 +998,9 @@ private fun CompactFilterChip(
 /**
  * إرسال ملخص الفاتورة مباشرة عبر تطبيق واتساب
  */
-private fun shareInvoiceViaWhatsApp(context: Context, invoice: CardSalesInvoiceEntity) {
+private fun shareInvoiceViaWhatsApp(context: Context, invoice: CardSalesInvoiceEntity, retailerBalanceOwed: Double? = null) {
     try {
-        val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-        val dateStr = sdf.format(Date(invoice.invoiceDateMillis))
-        val message = buildString {
-            append("📄 *فاتورة مبيعات كروت شبكة*\n")
-            append("------------------------\n")
-            append("رقم الفاتورة: #${invoice.invoiceNumber}\n")
-            append("العميل: ${invoice.customerName}\n")
-            append("التاريخ: $dateStr\n")
-            append("الكمية: ${invoice.totalCardsCount} كرت\n")
-            append("المبلغ الإجمالي: ${invoice.totalAmount.toInt()} ر.ي\n")
-            append("المدفوع: ${invoice.paidAmount.toInt()} ر.ي\n")
-            if (invoice.remainingAmount > 0) {
-                append("المتبقي الآجل: ${invoice.remainingAmount.toInt()} ر.ي\n")
-            } else {
-                append("الحالة: مدفوعة نقداً بالكامل ✓\n")
-            }
-            if (invoice.notes.isNotBlank()) append("ملاحظات: ${invoice.notes}\n")
-            append("------------------------\n")
-            append("شبكة الاتصالات والإنترنت")
-        }
-
+        val message = com.example.util.WhatsAppHelper.generateCardSalesInvoiceMessage(invoice, retailerBalanceOwed)
         val cleanPhone = invoice.customerPhone.replace(Regex("[^0-9]"), "")
         val intent = Intent(Intent.ACTION_VIEW).apply {
             data = if (cleanPhone.isNotBlank()) {
@@ -1028,9 +1013,10 @@ private fun shareInvoiceViaWhatsApp(context: Context, invoice: CardSalesInvoiceE
         }
         context.startActivity(intent)
     } catch (e: Exception) {
+        val message = com.example.util.WhatsAppHelper.generateCardSalesInvoiceMessage(invoice, retailerBalanceOwed)
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, "فاتورة مبيعات #${invoice.invoiceNumber} للعميل ${invoice.customerName} بمبلغ ${invoice.totalAmount.toInt()} ر.ي")
+            putExtra(Intent.EXTRA_TEXT, message)
         }
         context.startActivity(Intent.createChooser(shareIntent, "مشاركة الفاتورة"))
     }

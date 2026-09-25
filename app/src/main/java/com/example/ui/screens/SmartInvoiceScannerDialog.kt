@@ -125,43 +125,48 @@ fun SmartInvoiceScannerDialog(
     viewModel: MainViewModel,
     initialTargetType: String = "ASSETS", // "ASSETS" or "EXPENSES"
     initialParsedData: ParsedInvoiceData? = null,
+    invoiceToEdit: PurchaseInvoiceEntity? = null,
     onDismissRequest: () -> Unit
 ) {
     val context = LocalContext.current
     val isScanning by viewModel.isScanningInvoice.collectAsState()
 
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var hasParsedInvoice by remember { mutableStateOf(initialParsedData != null) }
-    var isAiExtracted by remember { mutableStateOf(initialParsedData != null) }
+    var hasParsedInvoice by remember { mutableStateOf(invoiceToEdit != null || initialParsedData != null) }
+    var isAiExtracted by remember { mutableStateOf(invoiceToEdit != null || initialParsedData != null) }
     var aiErrorMessage by remember { mutableStateOf<String?>(null) }
     var showJsonImportDialog by remember { mutableStateOf(false) }
 
     // Invoice Header Fields
-    var supplierName by remember { mutableStateOf(initialParsedData?.supplierName ?: "") }
-    var invoiceNumber by remember { mutableStateOf(initialParsedData?.invoiceNumber ?: "") }
+    var supplierName by remember { mutableStateOf(invoiceToEdit?.supplierName ?: initialParsedData?.supplierName ?: "") }
+    var invoiceNumber by remember { mutableStateOf(invoiceToEdit?.invoiceNumber ?: initialParsedData?.invoiceNumber ?: "") }
     var invoiceDate by remember {
         mutableStateOf(
-            if (!initialParsedData?.invoiceDate.isNullOrBlank()) initialParsedData!!.invoiceDate
+            if (invoiceToEdit != null) SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date(invoiceToEdit.invoiceDateMillis))
+            else if (!initialParsedData?.invoiceDate.isNullOrBlank()) initialParsedData!!.invoiceDate
             else SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
         )
     }
     var targetType by remember {
         mutableStateOf(
-            if (!initialParsedData?.invoiceType.isNullOrBlank()) initialParsedData!!.invoiceType
+            if (invoiceToEdit != null) invoiceToEdit.targetType
+            else if (!initialParsedData?.invoiceType.isNullOrBlank()) initialParsedData!!.invoiceType
             else initialTargetType
         )
     }
     var currency by remember {
         mutableStateOf(
-            if (!initialParsedData?.currency.isNullOrBlank()) initialParsedData!!.currency
+            if (invoiceToEdit != null) invoiceToEdit.currency
+            else if (!initialParsedData?.currency.isNullOrBlank()) initialParsedData!!.currency
             else "YER"
         )
     }
-    var paymentMethod by remember { mutableStateOf("نقداً") }
-    var notes by remember { mutableStateOf(initialParsedData?.notes ?: "") }
+    var paymentMethod by remember { mutableStateOf(invoiceToEdit?.paymentMethod ?: "نقداً") }
+    var notes by remember { mutableStateOf(invoiceToEdit?.notes ?: initialParsedData?.notes ?: "") }
     var saveAsAssets by remember {
         mutableStateOf(
-            (if (!initialParsedData?.invoiceType.isNullOrBlank()) initialParsedData!!.invoiceType else initialTargetType) == "ASSETS"
+            if (invoiceToEdit != null) invoiceToEdit.targetType == "ASSETS"
+            else (if (!initialParsedData?.invoiceType.isNullOrBlank()) initialParsedData!!.invoiceType else initialTargetType) == "ASSETS"
         )
     }
     var saveAsVoucher by remember { mutableStateOf(true) }
@@ -171,9 +176,28 @@ fun SmartInvoiceScannerDialog(
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     // Dynamic Items List
-    val itemsList = remember {
+    val itemsList = remember(invoiceToEdit, initialParsedData) {
         mutableStateListOf<InvoiceItem>().apply {
-            if (initialParsedData != null && initialParsedData.items.isNotEmpty()) {
+            if (invoiceToEdit != null && invoiceToEdit.itemsJson.isNotBlank()) {
+                try {
+                    val arr = org.json.JSONArray(invoiceToEdit.itemsJson)
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        add(
+                            InvoiceItem(
+                                id = obj.optString("id", UUID.randomUUID().toString()),
+                                name = obj.optString("name", "صنف"),
+                                quantity = obj.optDouble("quantity", 1.0),
+                                unitPrice = obj.optDouble("unitPrice", 0.0),
+                                subtotal = obj.optDouble("subtotal", 0.0),
+                                category = obj.optString("category", "GENERAL")
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    // fallback
+                }
+            } else if (initialParsedData != null && initialParsedData.items.isNotEmpty()) {
                 addAll(initialParsedData.items)
             }
         }
@@ -290,22 +314,42 @@ fun SmartInvoiceScannerDialog(
         if (itemsList.isEmpty()) {
             Toast.makeText(context, "يرجى إضافة صنف واحد على الأقل للفاتورة", Toast.LENGTH_SHORT).show()
         } else {
-            val finalInvoice = PurchaseInvoiceEntity(
-                invoiceNumber = invoiceNumber.ifBlank { "INV-${System.currentTimeMillis() % 100000}" },
-                supplierName = supplierName.ifBlank { "مورد أجهزة ومعدات" },
-                invoiceDateMillis = try {
-                    SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(invoiceDate)?.time ?: System.currentTimeMillis()
-                } catch (e: Exception) {
-                    System.currentTimeMillis()
-                },
-                targetType = targetType,
-                totalAmount = totalCalculated,
-                currency = currency,
-                originalAmount = totalCalculated,
-                paidAmount = totalCalculated,
-                paymentMethod = paymentMethod,
-                notes = notes
-            )
+            val finalDateMillis = try {
+                SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(invoiceDate)?.time ?: System.currentTimeMillis()
+            } catch (e: Exception) {
+                invoiceToEdit?.invoiceDateMillis ?: System.currentTimeMillis()
+            }
+
+            val finalInvNum = invoiceNumber.ifBlank { "INV-${System.currentTimeMillis() % 100000}" }
+            val finalSupp = supplierName.ifBlank { "مورد أجهزة ومعدات" }
+
+            val finalInvoice = if (invoiceToEdit != null) {
+                invoiceToEdit.copy(
+                    invoiceNumber = finalInvNum,
+                    supplierName = finalSupp,
+                    invoiceDateMillis = finalDateMillis,
+                    targetType = targetType,
+                    totalAmount = totalCalculated,
+                    currency = currency,
+                    originalAmount = totalCalculated,
+                    paidAmount = totalCalculated,
+                    paymentMethod = paymentMethod,
+                    notes = notes
+                )
+            } else {
+                PurchaseInvoiceEntity(
+                    invoiceNumber = finalInvNum,
+                    supplierName = finalSupp,
+                    invoiceDateMillis = finalDateMillis,
+                    targetType = targetType,
+                    totalAmount = totalCalculated,
+                    currency = currency,
+                    originalAmount = totalCalculated,
+                    paidAmount = totalCalculated,
+                    paymentMethod = paymentMethod,
+                    notes = notes
+                )
+            }
 
             viewModel.approveAndSaveInvoice(
                 invoice = finalInvoice,
@@ -313,7 +357,7 @@ fun SmartInvoiceScannerDialog(
                 saveAsAssets = saveAsAssets,
                 saveAsVoucher = saveAsVoucher,
                 onComplete = {
-                    Toast.makeText(context, "تم اعتماد وحفظ الفاتورة والأصناف بنجاح! ✓", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, if (invoiceToEdit != null) "تم تحديث بيانات الفاتورة بنجاح! ✓" else "تم اعتماد وحفظ الفاتورة والأصناف بنجاح! ✓", Toast.LENGTH_LONG).show()
                     onDismissRequest()
                 }
             )
@@ -1144,6 +1188,7 @@ fun SmartInvoiceScannerDialog(
                             InvoiceItemCard(
                                 item = item,
                                 index = index,
+                                currency = currency,
                                 onUpdate = { updatedItem ->
                                     itemsList[index] = updatedItem
                                 },
@@ -1174,7 +1219,7 @@ fun SmartInvoiceScannerDialog(
                                             color = Color.White
                                         )
                                         Text(
-                                            text = "${formatMoney(totalCalculated)} ريال",
+                                            text = "${formatMoney(totalCalculated)} ${com.example.util.CurrencyHelper.getCurrencySymbol(currency)}",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 18.sp,
                                             color = ProfitEmerald
@@ -1499,6 +1544,7 @@ fun InvoiceTargetOption(
 fun InvoiceItemCard(
     item: InvoiceItem,
     index: Int,
+    currency: String = "YER",
     onUpdate: (InvoiceItem) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -1596,7 +1642,7 @@ fun InvoiceItemCard(
                         color = Color(0xFF94A3B8)
                     )
                     Text(
-                        text = "${formatMoney(item.subtotal)} ريال",
+                        text = "${formatMoney(item.subtotal)} ${com.example.util.CurrencyHelper.getCurrencySymbol(currency)}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                         color = ProfitEmerald

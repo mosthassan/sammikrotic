@@ -97,35 +97,15 @@ fun CardSalesInvoiceDetailDialog(
         else -> MikroTikPrimary
     }
 
+    val retailers by viewModel.retailers.collectAsState()
+    val linkedRetailer = remember(invoice, retailers) {
+        retailers.find { it.id == invoice.retailerId || it.name.trim().equals(invoice.customerName.trim(), ignoreCase = true) }
+    }
+    val totalBalanceOwed = linkedRetailer?.balanceOwed ?: invoice.remainingAmount
+
     // Prepare printable / shareable invoice text
-    val invoiceShareText = remember(invoice, items) {
-        buildString {
-            appendLine("═══════════════════════════════")
-            appendLine("  فاتورة مبيعات كروت شبكة إنترنت  ")
-            appendLine("═══════════════════════════════")
-            appendLine("رقم الفاتورة: ${invoice.invoiceNumber}")
-            appendLine("التاريخ: $dateFormatted")
-            appendLine("العميل: ${invoice.customerName}")
-            if (invoice.customerPhone.isNotBlank()) appendLine("الهاتف: ${invoice.customerPhone}")
-            appendLine("نوع السداد: $paymentTitle")
-            appendLine("المسؤول: ${invoice.issuerName}")
-            appendLine("───────────────────────────────")
-            appendLine("الأصناف المباعة:")
-            items.forEachIndexed { i, itm ->
-                appendLine("${i + 1}. ${itm.packageName}")
-                appendLine("   الكمية: ${itm.quantity} كرت × سعر الجملة: ${itm.unitPrice.toInt()} ر.ي = ${itm.lineTotal.toInt()} ر.ي")
-            }
-            appendLine("───────────────────────────────")
-            appendLine("إجمالي الكروت: ${invoice.totalCardsCount} كرت")
-            appendLine("إجمالي الفاتورة: ${invoice.totalAmount.toInt()} ريال يمني")
-            appendLine("المدفوع نقداً: ${invoice.paidAmount.toInt()} ريال يمني")
-            appendLine("المتبقي (آجل): ${invoice.remainingAmount.toInt()} ريال يمني")
-            if (invoice.notes.isNotBlank()) {
-                appendLine("ملاحظات: ${invoice.notes}")
-            }
-            appendLine("═══════════════════════════════")
-            appendLine("شكراً لتعاملكم معنا!")
-        }
+    val invoiceShareText = remember(invoice, items, totalBalanceOwed) {
+        com.example.util.WhatsAppHelper.generateCardSalesInvoiceMessage(invoice, totalBalanceOwed)
     }
 
     AlertDialog(

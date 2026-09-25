@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
         InventoryMovementEntity::class,
         JournalEntryEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -104,6 +104,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `financial_vouchers` ADD COLUMN `isVoided` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -111,7 +117,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sam_mikrotik_db"
                 )
-                    .addMigrations(MIGRATION_14_15)
+                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16)
+                    .fallbackToDestructiveMigration()
                     .addCallback(AppDatabaseCallback())
                     .build()
                 INSTANCE = instance

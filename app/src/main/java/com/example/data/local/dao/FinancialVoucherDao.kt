@@ -44,10 +44,10 @@ interface FinancialVoucherDao {
     @Query("DELETE FROM financial_vouchers WHERE invoiceNumber = :invoiceNumber")
     suspend fun deleteVouchersByInvoiceNumber(invoiceNumber: String)
 
-    @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'RECEIPT'")
+    @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'RECEIPT' AND isVoided = 0")
     fun getTotalReceipts(): Flow<Double?>
 
-    @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'PAYMENT'")
+    @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'PAYMENT' AND isVoided = 0")
     fun getTotalPayments(): Flow<Double?>
 
     @Query("DELETE FROM financial_vouchers")

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileUpload
@@ -93,6 +94,7 @@ fun PurchaseInvoicesSubScreen(
 
     var selectedFilter by remember { mutableStateOf("الكل") }
     var invoiceToDelete by remember { mutableStateOf<PurchaseInvoiceEntity?>(null) }
+    var invoiceToEdit by remember { mutableStateOf<PurchaseInvoiceEntity?>(null) }
     var showJsonImportDialog by remember { mutableStateOf(false) }
     var directParsedInvoice by remember { mutableStateOf<ParsedInvoiceData?>(null) }
 
@@ -103,6 +105,20 @@ fun PurchaseInvoicesSubScreen(
             "أصول ثابتة (CAPEX)" -> inv.targetType == "ASSETS"
             "مصروفات مشتريات (OPEX)" -> inv.targetType == "EXPENSES"
             else -> true
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize().testTag("purchase_invoices_subscreen")) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // ... [content remains identical] ...
+            item {
+                // Hero Card
+            }
         }
     }
 
@@ -353,6 +369,7 @@ fun PurchaseInvoicesSubScreen(
                 items(filteredInvoices, key = { it.id }) { invoice ->
                     PurchaseInvoiceCard(
                         invoice = invoice,
+                        onEdit = { invoiceToEdit = invoice },
                         onDelete = { invoiceToDelete = invoice },
                         onShare = {
                             shareInvoiceSummary(context, invoice)
@@ -398,6 +415,16 @@ fun PurchaseInvoicesSubScreen(
         )
     }
 
+    // Edit Invoice Dialog
+    if (invoiceToEdit != null) {
+        SmartInvoiceScannerDialog(
+            viewModel = viewModel,
+            initialTargetType = invoiceToEdit!!.targetType,
+            invoiceToEdit = invoiceToEdit,
+            onDismissRequest = { invoiceToEdit = null }
+        )
+    }
+
     if (directParsedInvoice != null) {
         SmartInvoiceScannerDialog(
             viewModel = viewModel,
@@ -422,6 +449,7 @@ fun PurchaseInvoicesSubScreen(
 @Composable
 fun PurchaseInvoiceCard(
     invoice: PurchaseInvoiceEntity,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onShare: () -> Unit
 ) {
@@ -478,7 +506,7 @@ fun PurchaseInvoiceCard(
                 // Amount Badge
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "${formatMoney(invoice.totalAmount)} ريال",
+                        text = "${formatMoney(invoice.totalAmount)} ${com.example.util.CurrencyHelper.getCurrencySymbol(invoice.currency)}",
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 14.sp,
                         color = ProfitEmerald
@@ -512,7 +540,7 @@ fun PurchaseInvoiceCard(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
-            // Action row: Expand, Share, Delete
+            // Action row: Expand, Edit, Share, Delete
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -536,6 +564,9 @@ fun PurchaseInvoiceCard(
                 }
 
                 Row {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MikroTikCyan, modifier = Modifier.size(18.dp))
+                    }
                     IconButton(onClick = onShare) {
                         Icon(Icons.Default.Share, contentDescription = "مشاركة", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                     }
@@ -564,6 +595,7 @@ fun PurchaseInvoiceCard(
 
                     val items = parseItemsFromJson(invoice.itemsJson)
                     items.forEachIndexed { idx, itm ->
+                        val itemSymbol = com.example.util.CurrencyHelper.getCurrencySymbol(itm.currency.ifBlank { invoice.currency })
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -572,13 +604,13 @@ fun PurchaseInvoiceCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "${idx + 1}. ${itm.name} (${itm.quantity.toInt()} × ${formatMoney(itm.unitPrice)})",
+                                text = "${idx + 1}. ${itm.name} (${itm.quantity.toInt()} × ${formatMoney(itm.unitPrice)} $itemSymbol)",
                                 fontSize = 11.sp,
                                 color = Color(0xFFCBD5E1),
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "${formatMoney(itm.subtotal)} ر.ي",
+                                text = "${formatMoney(itm.subtotal)} $itemSymbol",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = ProfitEmerald
@@ -607,7 +639,8 @@ private data class SimpleItem(
     val name: String,
     val quantity: Double,
     val unitPrice: Double,
-    val subtotal: Double
+    val subtotal: Double,
+    val currency: String = ""
 )
 
 private fun parseItemsFromJson(jsonString: String): List<SimpleItem> {
@@ -621,7 +654,8 @@ private fun parseItemsFromJson(jsonString: String): List<SimpleItem> {
                     name = obj.optString("name", "صنف"),
                     quantity = obj.optDouble("quantity", 1.0),
                     unitPrice = obj.optDouble("unitPrice", 0.0),
-                    subtotal = obj.optDouble("subtotal", 0.0)
+                    subtotal = obj.optDouble("subtotal", 0.0),
+                    currency = obj.optString("currency", "")
                 )
             )
         }
@@ -633,6 +667,7 @@ private fun parseItemsFromJson(jsonString: String): List<SimpleItem> {
 
 private fun shareInvoiceSummary(context: android.content.Context, invoice: PurchaseInvoiceEntity) {
     val dateStr = SimpleDateFormat("yyyy/MM/dd", Locale.ENGLISH).format(Date(invoice.invoiceDateMillis))
+    val currSymbol = com.example.util.CurrencyHelper.getCurrencySymbol(invoice.currency)
     val text = """
         🧾 *فاتورة مشتريات معتمدة - سام ميكروتك*
         ------------------------------------
@@ -645,7 +680,7 @@ private fun shareInvoiceSummary(context: android.content.Context, invoice: Purch
         📦 *الأصناف:*
         ${invoice.itemsSummary}
         ------------------------------------
-        💰 *إجمالي الفاتورة:* ${formatMoney(invoice.totalAmount)} ريال يمني
+        💰 *إجمالي الفاتورة:* ${formatMoney(invoice.totalAmount)} $currSymbol
         ${if (invoice.notes.isNotBlank()) "\n📝 *ملاحظات:* ${invoice.notes}" else ""}
     """.trimIndent()
 

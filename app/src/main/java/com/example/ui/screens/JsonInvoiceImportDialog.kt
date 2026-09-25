@@ -36,6 +36,7 @@ import com.example.data.local.entity.PurchaseInvoiceEntity
 import com.example.data.model.ParsedInvoiceData
 import com.example.ui.MainViewModel
 import com.example.ui.theme.*
+import com.example.util.CurrencyHelper
 import com.example.util.JsonInvoiceParser
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -519,7 +520,7 @@ fun JsonInvoiceImportDialog(
                                                 Text(item.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, fontFamily = CairoFontFamily)
                                             }
                                             Text(
-                                                text = "${item.quantity.toInt()} × ${String.format(Locale.US, "%,.0f", item.unitPrice)} = ${String.format(Locale.US, "%,.0f", item.subtotal)} ${data.currency}",
+                                                text = "${item.quantity.toInt()} × ${String.format(Locale.US, "%,.0f", item.unitPrice)} = ${String.format(Locale.US, "%,.0f", item.subtotal)} ${CurrencyHelper.getCurrencySymbol(item.currency.ifBlank { data.currency })}",
                                                 color = ProfitEmerald,
                                                 fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold

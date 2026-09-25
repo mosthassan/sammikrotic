@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -138,10 +139,11 @@ fun VouchersScreen(
         ) {
             val tabs = listOf(
                 Triple("السندات والمصروفات", Icons.Default.Receipt, 0),
-                Triple("فواتير المشتريات (AI)", Icons.Default.AutoAwesome, 1),
-                Triple("الأصول الثابتة (CAPEX)", Icons.Default.Devices, 2),
-                Triple("الشركاء ورأس المال", Icons.Default.Group, 3),
-                Triple("الأرباح والخسائر (P&L)", Icons.Default.Assessment, 4)
+                Triple("لوحة التقارير المالية 📊", Icons.Default.Assessment, 1),
+                Triple("فواتير المشتريات (AI)", Icons.Default.AutoAwesome, 2),
+                Triple("الأصول الثابتة (CAPEX)", Icons.Default.Devices, 3),
+                Triple("الشركاء ورأس المال", Icons.Default.Group, 4),
+                Triple("الأرباح والخسائر (P&L)", Icons.Default.Assessment, 5)
             )
 
             tabs.forEach { (title, icon, idx) ->
@@ -187,16 +189,17 @@ fun VouchersScreen(
                     showSmartInvoiceScanner = true
                 }
             )
-            1 -> PurchaseInvoicesSubScreen(
+            1 -> ReportsDashboardScreen()
+            2 -> PurchaseInvoicesSubScreen(
                 viewModel = viewModel,
                 onOpenScanDialog = { target ->
                     invoiceScannerTargetType = target
                     showSmartInvoiceScanner = true
                 }
             )
-            2 -> AssetsScreen(viewModel = viewModel)
-            3 -> PartnersScreen(viewModel = viewModel)
-            4 -> ProfitLossScreen(
+            3 -> AssetsScreen(viewModel = viewModel)
+            4 -> PartnersScreen(viewModel = viewModel)
+            5 -> ProfitLossScreen(
                 viewModel = viewModel,
                 onNavigateToAI = { prompt ->
                     viewModel.consultAi(prompt)
@@ -230,6 +233,7 @@ fun VouchersListSubScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var voucherToClone by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
     var voucherToPreview by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
+    var voucherToVoid by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
     var voucherToDelete by remember { mutableStateOf<FinancialVoucherEntity?>(null) }
 
     val filterTypes = listOf("الكل", "سندات قبض", "سندات صرف")
@@ -365,13 +369,14 @@ fun VouchersListSubScreen(
                             },
                             onPreview = { voucherToPreview = voucher },
                             onWhatsAppShare = {
-                                val msg = WhatsAppHelper.generateVoucherMessage(voucher, linkedRetailer?.phone)
+                                val msg = WhatsAppHelper.generateVoucherMessage(voucher, linkedRetailer?.phone, linkedRetailer?.balanceOwed)
                                 if (linkedRetailer != null && linkedRetailer.phone.isNotBlank()) {
                                     WhatsAppHelper.sendWhatsAppMessage(context, linkedRetailer.phone, msg)
                                 } else {
                                     WhatsAppHelper.shareTextIntent(context, msg, "مشاركة السند عبر الواتساب")
                                 }
                             },
+                            onVoid = { voucherToVoid = voucher },
                             onDelete = { voucherToDelete = voucher }
                         )
                     }
@@ -463,7 +468,7 @@ fun VouchersListSubScreen(
                                 paymentMethod = method,
                                 description = desc
                             )
-                            val msg = WhatsAppHelper.generateVoucherMessage(tempVoucher, r?.phone)
+                            val msg = WhatsAppHelper.generateVoucherMessage(tempVoucher, r?.phone, r?.balanceOwed)
                             if (r != null && r.phone.isNotBlank()) {
                                 WhatsAppHelper.sendWhatsAppMessage(context, r.phone, msg)
                             } else {
@@ -489,6 +494,55 @@ fun VouchersListSubScreen(
                         type = "text/plain"
                     }
                     context.startActivity(Intent.createChooser(sendIntent, "مشاركة السند المالي"))
+                }
+            )
+        }
+
+        // Void Voucher Dialog
+        if (voucherToVoid != null) {
+            AlertDialog(
+                onDismissRequest = { voucherToVoid = null },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = PaymentRed, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("تأكيد إلغاء السند المالي", fontWeight = FontWeight.Bold, color = PaymentRed, fontFamily = CairoFontFamily)
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "هل أنت متأكد من إلغاء السند رقم (${voucherToVoid?.voucherNumber}) بقيمة (${voucherToVoid?.amount?.toInt()} ريال)؟",
+                            fontFamily = CairoFontFamily,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "سيتم إنشاء قيد يومية عكسي (Reversal Journal Entry) تلقائياً لإلغاء التأثير المالي للسند وإعادة ضبط رصيد الحساب المربوط فوراً.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = CairoFontFamily
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            voucherToVoid?.let { v ->
+                                viewModel.voidVoucher(v) {
+                                    Toast.makeText(context, "تم إلغاء السند وإعادة ضبط الحساب بنجاح ✓", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            voucherToVoid = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PaymentRed)
+                    ) {
+                        Text("تأكيد الإلغاء (Void)", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = CairoFontFamily)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { voucherToVoid = null }) {
+                        Text("تراجع", fontFamily = CairoFontFamily)
+                    }
                 }
             )
         }
@@ -571,17 +625,19 @@ fun VoucherItemCard(
     onClone: () -> Unit,
     onPreview: () -> Unit,
     onWhatsAppShare: () -> Unit,
+    onVoid: () -> Unit,
     onDelete: () -> Unit
 ) {
     val isReceipt = voucher.voucherType == "RECEIPT"
-    val badgeColor = if (isReceipt) ReceiptGreen else PaymentRed
-    val badgeText = if (isReceipt) "سند قبض" else "سند صرف"
+    val isVoided = voucher.isVoided
+    val badgeColor = if (isVoided) PaymentRed else (if (isReceipt) ReceiptGreen else PaymentRed)
+    val badgeText = if (isVoided) "⛔ ملغى / VOID" else (if (isReceipt) "سند قبض" else "سند صرف")
     val dateStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(voucher.dateMillis))
 
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
-        border = BorderStroke(1.dp, CyberBorder),
+        colors = CardDefaults.cardColors(containerColor = if (isVoided) CyberDarkSurface.copy(alpha = 0.7f) else CyberDarkSurface),
+        border = BorderStroke(1.dp, if (isVoided) PaymentRed.copy(alpha = 0.5f) else CyberBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth().testTag("voucher_card_${voucher.id}")
     ) {
@@ -623,8 +679,30 @@ fun VoucherItemCard(
                     fontFamily = CairoFontFamily,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = badgeColor
+                    color = if (isVoided) Color.Gray else badgeColor,
+                    style = if (isVoided) androidx.compose.ui.text.TextStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough) else androidx.compose.ui.text.TextStyle.Default
                 )
+            }
+
+            if (isVoided) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(PaymentRed.copy(alpha = 0.15f))
+                        .border(1.dp, PaymentRed.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "⛔ تم إلغاء هذا السند وإجراء قيد عكسي لتصفية الأثر المالي",
+                        color = PaymentRed,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = CairoFontFamily
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -635,7 +713,7 @@ fun VoucherItemCard(
                 fontFamily = CairoFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.5.sp,
-                color = Color.White
+                color = if (isVoided) Color.LightGray else Color.White
             )
 
             // Category & Description
@@ -687,6 +765,19 @@ fun VoucherItemCard(
                         Icon(Icons.Default.Print, contentDescription = null, tint = MikroTikPrimary, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("معاينة", color = MikroTikPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    if (!isVoided) {
+                        Button(
+                            onClick = onVoid,
+                            colors = ButtonDefaults.buttonColors(containerColor = PaymentRed.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "إلغاء السند", tint = PaymentRed, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("إلغاء", color = PaymentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
 
                     IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
@@ -943,10 +1034,11 @@ fun VoucherSlipModal(
 ) {
     val context = LocalContext.current
     val isReceipt = voucher.voucherType == "RECEIPT"
-    val title = if (isReceipt) "سند قبض مالي رسمي" else "سند صرف مالي رسمي"
+    val isVoided = voucher.isVoided
+    val title = if (isVoided) "سند مالي ملغى (VOID)" else if (isReceipt) "سند قبض مالي رسمي" else "سند صرف مالي رسمي"
     val dateStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(voucher.dateMillis))
 
-    val shareText = WhatsAppHelper.generateVoucherMessage(voucher, retailer?.phone)
+    val shareText = WhatsAppHelper.generateVoucherMessage(voucher, retailer?.phone, retailer?.balanceOwed)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -954,7 +1046,7 @@ fun VoucherSlipModal(
         text = {
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (isVoided) PaymentRed else Color(0xFFCBD5E1)),
                 color = Color.White,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -969,6 +1061,26 @@ fun VoucherSlipModal(
                     }
                     Text(text = "التاريخ: $dateStr", fontSize = 11.sp, color = Color.Gray)
 
+                    if (isVoided) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PaymentRed.copy(alpha = 0.15f))
+                                .border(1.dp, PaymentRed, RoundedCornerShape(8.dp))
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "⛔ ملغى / VOID - لا يُعتد بهذا السند مالياً",
+                                fontWeight = FontWeight.ExtraBold,
+                                color = PaymentRed,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
                     Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE2E8F0)))
                     Spacer(modifier = Modifier.height(10.dp))
@@ -978,7 +1090,7 @@ fun VoucherSlipModal(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (isReceipt) ReceiptGreen.copy(alpha = 0.1f) else PaymentRed.copy(alpha = 0.1f))
+                            .background(if (isVoided) Color.Gray.copy(alpha = 0.15f) else (if (isReceipt) ReceiptGreen.copy(alpha = 0.1f) else PaymentRed.copy(alpha = 0.1f)))
                             .padding(10.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -986,7 +1098,7 @@ fun VoucherSlipModal(
                             text = "المبلغ: ${voucher.amount.toInt()} ريال يمني فقط لا غير",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
-                            color = if (isReceipt) ReceiptGreen else PaymentRed
+                            color = if (isVoided) Color.Gray else (if (isReceipt) ReceiptGreen else PaymentRed)
                         )
                     }
 
@@ -1006,6 +1118,22 @@ fun VoucherSlipModal(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = "طريقة الدفع: ${voucher.paymentMethod}", fontSize = 12.sp, color = Color.DarkGray)
+
+                    if (retailer != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFF1F5F9))
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("إجمالي الرصيد التراكمي المتبقي:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MikroTikNavy)
+                            Text("${retailer.balanceOwed.toInt()} ريال", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = PaymentRed)
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 

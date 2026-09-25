@@ -110,6 +110,9 @@ object WhatsAppHelper {
         val totalRetail = (pkg.retailPrice * quantity).toInt()
         val totalProfit = (totalRetail - totalWholesale).coerceAtLeast(0)
         val dateStr = SimpleDateFormat("yyyy/MM/dd - HH:mm", Locale("ar")).format(Date())
+        val paidNow = if (paymentMethod.contains("آجل")) 0 else totalWholesale
+        val remainingInvoice = if (paymentMethod.contains("آجل")) totalWholesale else 0
+        val totalBalanceOwed = (retailer.balanceOwed + remainingInvoice).toInt()
 
         val builder = StringBuilder()
         builder.appendLine("🧾 *فاتورة مبيعات كروت - $NETWORK_BRAND_NAME*")
@@ -129,7 +132,10 @@ object WhatsAppHelper {
         builder.appendLine("⏱️ *مدة الصلاحية:* ${pkg.formattedValidity}")
         builder.appendLine("🔢 *الكمية:* $quantity كرت")
         builder.appendLine("💵 *سعر الجملة للكرت:* ${pkg.wholesalePrice.toInt()} ريال")
-        builder.appendLine("💰 *إجمالي الفاتورة (المستحق):* $totalWholesale ريال يمني")
+        builder.appendLine("💰 *إجمالي الفاتورة الحالي:* $totalWholesale ريال يمني")
+        builder.appendLine("💵 *المبلغ الواصل / المسدد الآن:* $paidNow ريال يمني")
+        builder.appendLine("⏳ *المتبقي من هذه الفاتورة:* $remainingInvoice ريال يمني")
+        builder.appendLine("💳 *إجمالي الرصيد المتبقي الكلي في ذمتكم حتى تاريخه:* $totalBalanceOwed ريال")
         builder.appendLine("📈 *إجمالي البيع للمستهلكين:* $totalRetail ريال")
         builder.appendLine("🎁 *صافي ربح البقالة:* +$totalProfit ريال")
         builder.appendLine("💳 *طريقة السداد:* $paymentMethod")
@@ -137,11 +143,7 @@ object WhatsAppHelper {
             builder.appendLine("📝 *ملاحظات:* $notes")
         }
         builder.appendLine("─────────────────────────")
-        builder.appendLine("📊 *الوضع المالي للبقالة بعد القيد:*")
-        val newDebt = (retailer.balanceOwed + (if (paymentMethod.contains("آجل")) totalWholesale else 0)).toInt()
-        val newCards = retailer.activeCardsCount + quantity
-        builder.appendLine("• الرصيد المستحق: $newDebt ريال")
-        builder.appendLine("• رصيد الكروت بحوزتكم: $newCards كرت")
+        builder.appendLine("• رصيد الكروت بحوزتكم: ${retailer.activeCardsCount + quantity} كرت")
         builder.appendLine("👤 *المسؤول المعتمد:* $issuerName")
         builder.appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━")
         builder.appendLine("📡 *إدارة $NETWORK_BRAND_NAME للإنترنت عالي السرعة*")
@@ -153,11 +155,52 @@ object WhatsAppHelper {
     }
 
     /**
+     * صياغة نص فاتورة مبيعات كروت كائنية
+     */
+    fun generateCardSalesInvoiceMessage(
+        invoice: com.example.data.local.entity.CardSalesInvoiceEntity,
+        retailerBalanceOwed: Double? = null
+    ): String {
+        val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar"))
+        val dateStr = sdf.format(Date(invoice.invoiceDateMillis))
+        val totalBalance = (retailerBalanceOwed ?: invoice.remainingAmount).toInt()
+
+        return buildString {
+            appendLine("🧾 *فاتورة مبيعات كروت - $NETWORK_BRAND_NAME*")
+            appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━")
+            appendLine("📄 *رقم الفاتورة:* #${invoice.invoiceNumber}")
+            appendLine("📅 *التاريخ:* $dateStr")
+            appendLine("🏪 *العميل:* ${invoice.customerName}")
+            if (invoice.customerPhone.isNotBlank()) {
+                appendLine("📱 *الهاتف:* ${invoice.customerPhone}")
+            }
+            if (invoice.itemsSummary.isNotBlank()) {
+                appendLine("📦 *الأصناف:* ${invoice.itemsSummary}")
+            }
+            appendLine("🔢 *إجمالي الكروت:* ${invoice.totalCardsCount} كرت")
+            appendLine("─────────────────────────")
+            appendLine("💰 *إجمالي الفاتورة الحالي:* ${invoice.totalAmount.toInt()} ريال يمني")
+            appendLine("💵 *المبلغ الواصل / المسدد الآن:* ${invoice.paidAmount.toInt()} ريال يمني")
+            appendLine("⏳ *المتبقي من هذه الفاتورة:* ${invoice.remainingAmount.toInt()} ريال يمني")
+            appendLine("💳 *إجمالي الرصيد المتبقي الكلي في ذمتكم حتى تاريخه:* $totalBalance ريال")
+            if (invoice.notes.isNotBlank()) {
+                appendLine("📝 *ملاحظات:* ${invoice.notes}")
+            }
+            appendLine("👤 *المسؤول المعتمد:* ${invoice.issuerName.ifBlank { "المهندس حسن" }}")
+            appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━")
+            appendLine("📡 *إدارة $NETWORK_BRAND_NAME للإنترنت عالي السرعة*")
+            appendLine("📞 خدمة العملاء والدعم الفني: $NETWORK_SUPPORT_PHONE")
+            append("✨ نسعد دائماً بخدمتكم والتعامل معكم ✨")
+        }
+    }
+
+    /**
      * صياغة سند قبض أو صرف مالي رسمي مع تذييل شبكة طلقة نت
      */
     fun generateVoucherMessage(
         voucher: FinancialVoucherEntity,
-        retailerPhone: String? = null
+        retailerPhone: String? = null,
+        retailerBalanceOwed: Double? = null
     ): String {
         val isReceipt = voucher.voucherType == "RECEIPT"
         val title = if (isReceipt) "سند قبض مالي رسمي" else "سند صرف مالي رسمي"
@@ -168,8 +211,19 @@ object WhatsAppHelper {
         builder.appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━")
         builder.appendLine("📄 *رقم السند:* ${voucher.voucherNumber}")
         builder.appendLine("📅 *التاريخ:* $dateStr")
-        builder.appendLine("💰 *المبلغ:* ${voucher.amount.toInt()} ريال يمني فقط لا غير")
-        builder.appendLine(if (isReceipt) "📥 *وصلنا من الأخ:* ${voucher.partyName}" else "📤 *صرفنا إلى الأخ:* ${voucher.partyName}")
+        if (voucher.isVoided) {
+            builder.appendLine("⛔ *حالة السند:* ملغى / VOID (تم إلغاء التأثير المالي للسند)")
+        }
+        if (voucher.invoiceNumber.isNotBlank()) {
+            builder.appendLine("🔗 *مرتبط بالفاتورة رقم:* #${voucher.invoiceNumber}")
+        }
+        builder.appendLine("─────────────────────────")
+        builder.appendLine("💰 *مبلغ السند الحالي:* ${voucher.amount.toInt()} ريال يمني")
+        builder.appendLine("💵 *المبلغ المسدد:* ${if (voucher.isVoided) 0 else voucher.amount.toInt()} ريال يمني")
+        if (retailerBalanceOwed != null) {
+            builder.appendLine("💳 *إجمالي الرصيد التراكمي المستحق الكلي في ذمتكم حتى تاريخه:* ${retailerBalanceOwed.toInt()} ريال يمني")
+        }
+        builder.appendLine(if (isReceipt) "📥 *استلمنا من الأخ:* ${voucher.partyName}" else "📤 *صرفنا إلى الأخ:* ${voucher.partyName}")
         if (!retailerPhone.isNullOrBlank()) {
             builder.appendLine("📱 *هاتف العميل:* $retailerPhone")
         }

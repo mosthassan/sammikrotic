@@ -1002,6 +1002,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun voidVoucher(voucher: FinancialVoucherEntity, reason: String = "", onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.voidVoucher(voucher, reason)
+            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+            firebaseService.pushVoucher(
+                voucher.copy(isVoided = true),
+                userEmail
+            )
+            onComplete()
+        }
+    }
+
     // =========================================================
     // Investment, Partners & Fixed Assets (CAPEX & Equity System)
     // =========================================================
@@ -1117,27 +1129,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val itemsArray = JSONArray()
             items.forEach { item ->
                 val itemObj = JSONObject().apply {
+                    put("id", item.id)
                     put("name", item.name)
                     put("quantity", item.quantity)
                     put("unitPrice", item.unitPrice)
                     put("subtotal", item.subtotal)
                     put("category", item.category)
+                    put("currency", invoice.currency)
                 }
                 itemsArray.put(itemObj)
             }
-            val summaryText = items.joinToString("، ") { "${it.name} (${it.quantity.toInt()} × ${it.unitPrice.toInt()})" }
+            val currSym = com.example.util.CurrencyHelper.getCurrencySymbol(invoice.currency)
+            val summaryText = items.joinToString("، ") { "${it.name} (${it.quantity.toInt()} × ${it.unitPrice.toInt()} $currSym)" }
             val totalCalc = items.sumOf { it.subtotal }
 
+            val isEdit = invoice.id > 0L
             val invoiceToSave = invoice.copy(
                 totalAmount = if (totalCalc > 0) totalCalc else invoice.totalAmount,
                 itemsJson = itemsArray.toString(),
                 itemsSummary = summaryText,
                 status = "APPROVED"
             )
-            repository.saveInvoice(invoiceToSave)
+            val savedInvoiceId = repository.saveInvoice(invoiceToSave)
+            val finalInvoiceNumber = invoiceToSave.invoiceNumber
 
-            // 1. If user designated as Assets or requested saving items to Fixed Assets
-            if (saveAsAssets || invoice.targetType == "ASSETS") {
+            // 1. If user designated as Assets or requested saving items to Fixed Assets (only for new invoices to avoid duplication)
+            if ((saveAsAssets || invoiceToSave.targetType == "ASSETS") && !isEdit) {
                 items.forEach { item ->
                     val assetCat = when (item.category.uppercase()) {
                         "SERVERS", "ROUTERS" -> "SERVERS"
@@ -1146,16 +1163,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         "CABLES", "FIBER" -> "FIBER_CABLES"
                         else -> "OTHER"
                     }
+                    val costInYer = convertToYer(item.subtotal, invoiceToSave.currency)
                     val asset = NetworkAssetEntity(
                         assetName = item.name,
                         category = assetCat,
-                        purchaseCost = item.subtotal,
-                        estimatedCurrentValue = item.subtotal,
-                        purchaseDateMillis = invoice.invoiceDateMillis,
+                        purchaseCost = costInYer,
+                        estimatedCurrentValue = costInYer,
+                        currency = invoiceToSave.currency,
+                        originalCost = item.subtotal,
+                        purchaseDateMillis = invoiceToSave.invoiceDateMillis,
                         location = "المركز الرئيسي والشبكة",
                         serialNumber = "",
                         status = "ACTIVE",
-                        notes = "مستورد من فاتورة رقم: ${invoice.invoiceNumber} (المورد: ${invoice.supplierName})"
+                        notes = "مستورد من فاتورة رقم: $finalInvoiceNumber (المورد: ${invoiceToSave.supplierName})"
                     )
                     repository.saveAsset(asset)
                 }
@@ -1163,20 +1183,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // 2. If user requested recording in financial accounting vouchers (سند صرف مشتريات)
             if (saveAsVoucher) {
-                val voucherNum = "PAY-${System.currentTimeMillis() % 100000}"
+                val existingVouchers = db.financialVoucherDao().getVouchersByInvoiceNumber(finalInvoiceNumber)
+                val existingVoucher = existingVouchers.firstOrNull()
+                val voucherNum = existingVoucher?.voucherNumber ?: "PAY-${System.currentTimeMillis() % 100000}"
                 val voucherCat = if (invoiceToSave.targetType == "ASSETS") "أصول ومعدات شبكة" else "صيانة ومعدات"
-                val desc = "سداد فاتورة مشتريات #${invoiceToSave.invoiceNumber} (${invoiceToSave.supplierName}): $summaryText"
+                val desc = "سداد فاتورة مشتريات #$finalInvoiceNumber (${invoiceToSave.supplierName}): $summaryText"
+
                 val voucher = FinancialVoucherEntity(
+                    id = existingVoucher?.id ?: 0L,
                     voucherNumber = voucherNum,
                     voucherType = "PAYMENT",
                     amount = invoiceToSave.totalAmount,
+                    currency = invoiceToSave.currency,
                     partyName = invoiceToSave.supplierName.ifBlank { "مورد معدات" },
                     category = voucherCat,
                     paymentMethod = invoiceToSave.paymentMethod,
                     description = desc,
                     issuerName = _currentUser.value?.fullName ?: "المهندس سام",
                     dateMillis = invoiceToSave.invoiceDateMillis,
-                    notes = invoiceToSave.notes
+                    notes = invoiceToSave.notes,
+                    invoiceId = savedInvoiceId,
+                    invoiceNumber = finalInvoiceNumber,
+                    allocatedAmount = invoiceToSave.totalAmount
                 )
                 repository.insertVoucher(voucher)
                 val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
@@ -1197,10 +1225,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val journalEntry = JournalEntryEntity(
-                    entryNumber = "JE-PURCHASE-${invoiceToSave.invoiceNumber}-${System.currentTimeMillis() % 100000}",
+                    entryNumber = "JE-PURCHASE-$finalInvoiceNumber-${System.currentTimeMillis() % 100000}",
                     dateMillis = invoiceToSave.invoiceDateMillis,
-                    referenceType = "PURCHASE_INVOICE",
-                    referenceId = invoiceToSave.invoiceNumber,
+                    referenceType = if (isEdit) "PURCHASE_INVOICE_EDIT" else "PURCHASE_INVOICE",
+                    referenceId = finalInvoiceNumber,
                     debitAccount = debitAcc,
                     creditAccount = creditAcc,
                     amount = convertedAmountYer,

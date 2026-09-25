@@ -1004,7 +1004,7 @@ class NetworkRepository(private val db: AppDatabase) {
 
                 val retailerReceipts = allVouchers.filter {
                     (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
-                    it.voucherType == "RECEIPT"
+                    it.voucherType == "RECEIPT" && !it.isVoided
                 }
 
                 // تقسيم السندات إلى:
@@ -1563,6 +1563,31 @@ class NetworkRepository(private val db: AppDatabase) {
 
             val id = db.financialVoucherDao().insertVoucher(voucher)
 
+            // إنشاء وحفظ قيد محاسبي مزدوج تلقائي إذا لم يكن السند مرتبطاً بفاتورة مسبقاً
+            if (invoiceId == null && invoiceNumber.isBlank()) {
+                val (debitAcc, creditAcc) = if (voucherType == "RECEIPT") {
+                    val credit = if (retailerId != null) "1201 - ذمم الوكلاء / $partyName" else "4101 - إيرادات عامة"
+                    "1101 - الصندوق الرئيسي" to credit
+                } else {
+                    "5201 - مصروفات / $category" to "1101 - الصندوق الرئيسي"
+                }
+
+                db.journalEntryDao().insertEntry(
+                    JournalEntryEntity(
+                        entryNumber = "JE-$voucherNumberGenerated",
+                        referenceType = "FINANCIAL_VOUCHER",
+                        referenceId = voucherNumberGenerated,
+                        debitAccount = debitAcc,
+                        creditAccount = creditAcc,
+                        amount = amount,
+                        currency = voucher.currency,
+                        exchangeRate = 1.0,
+                        description = description,
+                        createdBy = issuerName
+                    )
+                )
+            }
+
             reconcileAccountingLedgerInternal()
 
             id
@@ -1576,8 +1601,71 @@ class NetworkRepository(private val db: AppDatabase) {
         }
     }
 
+    suspend fun voidVoucher(voucher: FinancialVoucherEntity, reason: String = "إلغاء السند المالي") = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            // 1. تحديث حالة السند لتصبح ملغاة
+            val voidedVoucher = voucher.copy(isVoided = true)
+            db.financialVoucherDao().updateVoucher(voidedVoucher)
+
+            // 2. إنشاء قيد يومية عكسي تلقائي (Reversal Journal Entry) لإلغاء الأثر المالي للسند
+            val (origDebit, origCredit) = if (voucher.voucherType == "RECEIPT") {
+                val credit = if (voucher.retailerId != null) "1201 - ذمم الوكلاء / ${voucher.partyName}" else "4101 - إيرادات عامة"
+                "1101 - الصندوق الرئيسي" to credit
+            } else {
+                "5201 - مصروفات / ${voucher.category}" to "1101 - الصندوق الرئيسي"
+            }
+
+            db.journalEntryDao().insertEntry(
+                JournalEntryEntity(
+                    entryNumber = "REV-${voucher.voucherNumber}",
+                    referenceType = "VOID_VOUCHER",
+                    referenceId = voucher.voucherNumber,
+                    debitAccount = origCredit,   // Reversal: Swap Debit and Credit
+                    creditAccount = origDebit,
+                    amount = voucher.amount,
+                    currency = voucher.currency,
+                    exchangeRate = 1.0,
+                    description = "قيد عكسي لإلغاء السند رقم ${voucher.voucherNumber}${if (reason.isNotBlank()) " - $reason" else ""}",
+                    createdBy = voucher.issuerName
+                )
+            )
+
+            // 3. إعادة ضبط رصيد الحساب المربوط فوراً
+            reconcileAccountingLedgerInternal()
+        }
+    }
+
     suspend fun insertVoucher(voucher: FinancialVoucherEntity): Long = withContext(Dispatchers.IO) {
-        db.financialVoucherDao().insertVoucher(voucher)
+        db.withTransaction {
+            val id = db.financialVoucherDao().insertVoucher(voucher)
+
+            // إنشاء وحفظ قيد محاسبي مزدوج تلقائي إذا لم يكن السند مرتبطاً بفاتورة مسبقاً
+            if (voucher.invoiceId == null && voucher.invoiceNumber.isBlank()) {
+                val (debitAcc, creditAcc) = if (voucher.voucherType == "RECEIPT") {
+                    val credit = if (voucher.retailerId != null) "1201 - ذمم الوكلاء / ${voucher.partyName}" else "4101 - إيرادات عامة"
+                    "1101 - الصندوق الرئيسي" to credit
+                } else {
+                    "5201 - مصروفات / ${voucher.category}" to "1101 - الصندوق الرئيسي"
+                }
+
+                db.journalEntryDao().insertEntry(
+                    JournalEntryEntity(
+                        entryNumber = "JE-${voucher.voucherNumber}",
+                        referenceType = "FINANCIAL_VOUCHER",
+                        referenceId = voucher.voucherNumber,
+                        debitAccount = debitAcc,
+                        creditAccount = creditAcc,
+                        amount = voucher.amount,
+                        currency = voucher.currency,
+                        exchangeRate = 1.0,
+                        description = voucher.description,
+                        createdBy = voucher.issuerName
+                    )
+                )
+            }
+
+            id
+        }
     }
 
     suspend fun saveJournalEntry(entry: JournalEntryEntity): Long = withContext(Dispatchers.IO) {

@@ -11,7 +11,8 @@ data class InvoiceItem(
     var quantity: Double = 1.0,
     var unitPrice: Double = 0.0,
     var subtotal: Double = quantity * unitPrice,
-    var category: String = "GENERAL" // SERVERS, TOWERS, SOLAR_POWER, CABLES, FUEL, MAINTENANCE, GENERAL
+    var category: String = "GENERAL", // SERVERS, TOWERS, SOLAR_POWER, CABLES, FUEL, MAINTENANCE, GENERAL
+    var currency: String = ""
 )
 
 /**

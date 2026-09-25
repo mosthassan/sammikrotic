@@ -22,5 +22,6 @@ data class FinancialVoucherEntity(
     val description: String,             // البيان والتفاصيل
     val issuerName: String = "المهندس سام", // المحرر / المسؤول
     val dateMillis: Long = System.currentTimeMillis(),
-    val notes: String = ""
+    val notes: String = "",
+    val isVoided: Boolean = false        // حالة إلغاء السند المالي
 )

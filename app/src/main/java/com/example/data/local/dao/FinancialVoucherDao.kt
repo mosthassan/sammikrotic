@@ -50,6 +50,12 @@ interface FinancialVoucherDao {
     @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'PAYMENT' AND isVoided = 0")
     fun getTotalPayments(): Flow<Double?>
 
+    @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'RECEIPT' AND isVoided = 0 AND dateMillis BETWEEN :startDate AND :endDate")
+    suspend fun getTotalReceiptsAmount(startDate: Long, endDate: Long): Double?
+
+    @Query("SELECT SUM(amount) FROM financial_vouchers WHERE voucherType = 'PAYMENT' AND isVoided = 0 AND dateMillis BETWEEN :startDate AND :endDate")
+    suspend fun getTotalExpensesAmount(startDate: Long, endDate: Long): Double?
+
     @Query("DELETE FROM financial_vouchers")
     suspend fun deleteAllVouchers()
 }

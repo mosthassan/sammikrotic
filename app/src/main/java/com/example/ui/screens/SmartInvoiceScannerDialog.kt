@@ -309,58 +309,62 @@ fun SmartInvoiceScannerDialog(
     }
 
     val totalCalculated = itemsList.sumOf { it.subtotal }
+    var isSavingInvoice by remember { mutableStateOf(false) }
 
     val performSaveInvoice: () -> Unit = {
-        if (itemsList.isEmpty()) {
-            Toast.makeText(context, "يرجى إضافة صنف واحد على الأقل للفاتورة", Toast.LENGTH_SHORT).show()
-        } else {
-            val finalDateMillis = try {
-                SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(invoiceDate)?.time ?: System.currentTimeMillis()
-            } catch (e: Exception) {
-                invoiceToEdit?.invoiceDateMillis ?: System.currentTimeMillis()
-            }
-
-            val finalInvNum = invoiceNumber.ifBlank { "INV-${System.currentTimeMillis() % 100000}" }
-            val finalSupp = supplierName.ifBlank { "مورد أجهزة ومعدات" }
-
-            val finalInvoice = if (invoiceToEdit != null) {
-                invoiceToEdit.copy(
-                    invoiceNumber = finalInvNum,
-                    supplierName = finalSupp,
-                    invoiceDateMillis = finalDateMillis,
-                    targetType = targetType,
-                    totalAmount = totalCalculated,
-                    currency = currency,
-                    originalAmount = totalCalculated,
-                    paidAmount = totalCalculated,
-                    paymentMethod = paymentMethod,
-                    notes = notes
-                )
+        if (!isSavingInvoice) {
+            if (itemsList.isEmpty()) {
+                Toast.makeText(context, "يرجى إضافة صنف واحد على الأقل للفاتورة", Toast.LENGTH_SHORT).show()
             } else {
-                PurchaseInvoiceEntity(
-                    invoiceNumber = finalInvNum,
-                    supplierName = finalSupp,
-                    invoiceDateMillis = finalDateMillis,
-                    targetType = targetType,
-                    totalAmount = totalCalculated,
-                    currency = currency,
-                    originalAmount = totalCalculated,
-                    paidAmount = totalCalculated,
-                    paymentMethod = paymentMethod,
-                    notes = notes
+                isSavingInvoice = true
+                val finalDateMillis = try {
+                    SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(invoiceDate)?.time ?: System.currentTimeMillis()
+                } catch (e: Exception) {
+                    invoiceToEdit?.invoiceDateMillis ?: System.currentTimeMillis()
+                }
+
+                val finalInvNum = invoiceNumber.ifBlank { "INV-${System.currentTimeMillis() % 100000}" }
+                val finalSupp = supplierName.ifBlank { "مورد أجهزة ومعدات" }
+
+                val finalInvoice = if (invoiceToEdit != null) {
+                    invoiceToEdit.copy(
+                        invoiceNumber = finalInvNum,
+                        supplierName = finalSupp,
+                        invoiceDateMillis = finalDateMillis,
+                        targetType = targetType,
+                        totalAmount = totalCalculated,
+                        currency = currency,
+                        originalAmount = totalCalculated,
+                        paidAmount = totalCalculated,
+                        paymentMethod = paymentMethod,
+                        notes = notes
+                    )
+                } else {
+                    PurchaseInvoiceEntity(
+                        invoiceNumber = finalInvNum,
+                        supplierName = finalSupp,
+                        invoiceDateMillis = finalDateMillis,
+                        targetType = targetType,
+                        totalAmount = totalCalculated,
+                        currency = currency,
+                        originalAmount = totalCalculated,
+                        paidAmount = totalCalculated,
+                        paymentMethod = paymentMethod,
+                        notes = notes
+                    )
+                }
+
+                viewModel.approveAndSaveInvoice(
+                    invoice = finalInvoice,
+                    items = itemsList.toList(),
+                    saveAsAssets = saveAsAssets,
+                    saveAsVoucher = saveAsVoucher,
+                    onComplete = {
+                        Toast.makeText(context, if (invoiceToEdit != null) "تم تحديث بيانات الفاتورة بنجاح! ✓" else "تم اعتماد وحفظ الفاتورة والأصناف بنجاح! ✓", Toast.LENGTH_LONG).show()
+                        onDismissRequest()
+                    }
                 )
             }
-
-            viewModel.approveAndSaveInvoice(
-                invoice = finalInvoice,
-                items = itemsList.toList(),
-                saveAsAssets = saveAsAssets,
-                saveAsVoucher = saveAsVoucher,
-                onComplete = {
-                    Toast.makeText(context, if (invoiceToEdit != null) "تم تحديث بيانات الفاتورة بنجاح! ✓" else "تم اعتماد وحفظ الفاتورة والأصناف بنجاح! ✓", Toast.LENGTH_LONG).show()
-                    onDismissRequest()
-                }
-            )
         }
     }
 
@@ -1264,6 +1268,7 @@ fun SmartInvoiceScannerDialog(
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Button(
                                         onClick = { performSaveInvoice() },
+                                        enabled = !isSavingInvoice,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(46.dp)
@@ -1271,15 +1276,21 @@ fun SmartInvoiceScannerDialog(
                                         colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "اعتماد وحفظ الفاتورة الآن 💾 ✓",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            fontFamily = CairoFontFamily,
-                                            color = Color.White
-                                        )
+                                        if (isSavingInvoice) {
+                                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("جاري الحفظ...", fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = CairoFontFamily, color = Color.White)
+                                        } else {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "اعتماد وحفظ الفاتورة الآن 💾 ✓",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                fontFamily = CairoFontFamily,
+                                                color = Color.White
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1315,6 +1326,7 @@ fun SmartInvoiceScannerDialog(
 
                             Button(
                                 onClick = { performSaveInvoice() },
+                                enabled = !isSavingInvoice,
                                 modifier = Modifier
                                     .weight(2f)
                                     .height(46.dp)
@@ -1322,9 +1334,15 @@ fun SmartInvoiceScannerDialog(
                                 colors = ButtonDefaults.buttonColors(containerColor = ProfitEmerald),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("اعتماد وحفظ الفاتورة والأصناف 💾", fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = CairoFontFamily)
+                                if (isSavingInvoice) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("جاري الحفظ...", fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = CairoFontFamily, color = Color.White)
+                                } else {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("اعتماد وحفظ الفاتورة والأصناف 💾", fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = CairoFontFamily)
+                                }
                             }
                         }
                     }

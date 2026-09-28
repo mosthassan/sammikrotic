@@ -137,9 +137,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         // 5. Depreciation of Assets
         val assetDepreciation = (assetCost - assetVal).coerceAtLeast(0.0)
 
-        // 6. Net True Profit (Revenues - Expenses - Depreciation & Card Costs)
-        val grossMargin = totalSales - estimatedCostOfGoods
-        val netTrueProfit = grossMargin - totalExpenses - (assetDepreciation * 0.1) // Monthly portion
+        // 6. Net True Profit (إجمالي مبيعات الكروت - إجمالي المصروفات التشغيلية والإهلاك)
+        val netTrueProfit = totalSales - totalExpenses - assetDepreciation
         val profitMarginPercent = if (totalSales > 0) (netTrueProfit / totalSales) * 100.0 else 0.0
 
         // 7. Top 5 Agents by Purchase Volume in Period
@@ -332,12 +331,32 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 val (startMillis, endMillis) = getTimeRangeBoundaries(_selectedTimeRange.value, _customStartMillis.value, _customEndMillis.value)
                 val timeLabel = getTimeRangeLabel(_selectedTimeRange.value, _customStartMillis.value, _customEndMillis.value)
 
-                val agentInvoices = allInvoices.value.filter {
-                    it.retailerId == retailer.id && it.invoiceDateMillis in startMillis..endMillis
+                val agentInvoices = allInvoices.value
+                    .filter {
+                        (it.retailerId == retailer.id || it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                        !it.invoiceNumber.startsWith("INV-DELIV-") &&
+                        it.invoiceDateMillis in startMillis..endMillis
+                    }
+                    .distinctBy { if (it.invoiceNumber.isNotBlank()) it.invoiceNumber else it.id.toString() }
+
+                val agentVouchers = allVouchers.value
+                    .filter {
+                        (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                        !it.isVoided &&
+                        it.voucherType == "RECEIPT" &&
+                        it.dateMillis in startMillis..endMillis
+                    }
+                    .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
+
+                val totalPurchases = agentInvoices.sumOf { it.totalAmount }
+                val unlinkedInvoicePaidSum = agentInvoices.sumOf { inv ->
+                    val hasVoucher = agentVouchers.any { v ->
+                        v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
+                    }
+                    if (!hasVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
                 }
-                val agentVouchers = allVouchers.value.filter {
-                    it.retailerId == retailer.id && !it.isVoided && it.dateMillis in startMillis..endMillis
-                }
+                val totalPaid = agentVouchers.sumOf { it.amount } + unlinkedInvoicePaidSum
+                val finalBalance = totalPurchases - totalPaid
 
                 val pdfFile = ReportPdfManager.generateAgentAccountStatementPdfFile(
                     context = context,
@@ -352,7 +371,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                     context = context,
                     pdfFile = pdfFile,
                     subject = "كشف حساب الوكيل ${retailer.name} - ${identity.networkName}",
-                    text = "مرفق كشف الحساب التفصيلي للوكيل / البقالة (${retailer.name}) وإجمالي الرصيد المتبقي (${retailer.balanceOwed.toInt()} ريال)"
+                    text = "مرفق كشف الحساب التفصيلي للوكيل / البقالة (${retailer.name}) وإجمالي الرصيد المتبقي (${String.format(Locale.US, "%,.0f", finalBalance)} ريال)"
                 )
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error exporting agent statement PDF", e)
@@ -369,15 +388,32 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         val (startMillis, endMillis) = getTimeRangeBoundaries(_selectedTimeRange.value, _customStartMillis.value, _customEndMillis.value)
         val timeLabel = getTimeRangeLabel(_selectedTimeRange.value, _customStartMillis.value, _customEndMillis.value)
 
-        val agentInvoices = allInvoices.value.filter {
-            it.retailerId == retailer.id && it.invoiceDateMillis in startMillis..endMillis
-        }
-        val agentVouchers = allVouchers.value.filter {
-            it.retailerId == retailer.id && !it.isVoided && it.dateMillis in startMillis..endMillis
-        }
+        val agentInvoices = allInvoices.value
+            .filter {
+                (it.retailerId == retailer.id || it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                !it.invoiceNumber.startsWith("INV-DELIV-") &&
+                it.invoiceDateMillis in startMillis..endMillis
+            }
+            .distinctBy { if (it.invoiceNumber.isNotBlank()) it.invoiceNumber else it.id.toString() }
+
+        val agentVouchers = allVouchers.value
+            .filter {
+                (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                !it.isVoided &&
+                it.voucherType == "RECEIPT" &&
+                it.dateMillis in startMillis..endMillis
+            }
+            .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
 
         val totalPurchases = agentInvoices.sumOf { it.totalAmount }
-        val totalPaid = agentVouchers.filter { it.voucherType == "RECEIPT" }.sumOf { it.amount } + agentInvoices.sumOf { it.paidAmount }
+        val unlinkedInvoicePaidSum = agentInvoices.sumOf { inv ->
+            val hasVoucher = agentVouchers.any { v ->
+                v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
+            }
+            if (!hasVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
+        }
+        val totalPaid = agentVouchers.sumOf { it.amount } + unlinkedInvoicePaidSum
+        val finalBalance = totalPurchases - totalPaid
 
         val statementText = """
             🧾 كشف حساب وكيل تفصيلي:
@@ -388,7 +424,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             
             💰 إجمالي المبيعات (مدين): ${String.format(Locale.US, "%,.0f", totalPurchases)} ريال
             📥 إجمالي المسدد (دائن): ${String.format(Locale.US, "%,.0f", totalPaid)} ريال
-            🔴 الرصيد الإجمالي المتبقي (المديونية): ${String.format(Locale.US, "%,.0f", retailer.balanceOwed)} ريال
+            🔴 الرصيد الإجمالي المتبقي (المديونية): ${String.format(Locale.US, "%,.0f", finalBalance)} ريال
             
             نُرجى التكرم بالاطلاع ومطابقة الرصيد.
             خدمة العملاء: ${identity.supportPhone}

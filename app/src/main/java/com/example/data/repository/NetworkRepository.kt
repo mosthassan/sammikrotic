@@ -421,6 +421,53 @@ class NetworkRepository(private val db: AppDatabase) {
     val totalSoldCardsCount: Flow<Int?> = db.cardSalesInvoiceDao().getTotalSoldCardsCount()
     val totalCreditRemaining: Flow<Double?> = db.cardSalesInvoiceDao().getTotalCreditRemaining()
 
+    private data class InvoicePaymentResult(
+        val canonicalType: String,
+        val paidAmount: Double,
+        val remainingAmount: Double,
+        val status: String
+    )
+
+    private fun calculateInvoicePayment(
+        paymentType: String,
+        totalAmount: Double,
+        inputPaidAmount: Double
+    ): InvoicePaymentResult {
+        val upperType = paymentType.trim().uppercase(Locale.ROOT)
+        val isCredit = upperType == "CREDIT" || paymentType.contains("آجل") || paymentType.contains("UNPAID", ignoreCase = true) || paymentType.contains("Credit", ignoreCase = true)
+        val isCash = upperType == "CASH" || paymentType.contains("نقد") || paymentType.contains("Cash", ignoreCase = true)
+        val isPartial = upperType == "PARTIAL" || paymentType.contains("مقدم") || paymentType.contains("Partial", ignoreCase = true)
+
+        val canonicalType = when {
+            isCredit -> "CREDIT"
+            isCash -> "CASH"
+            isPartial -> "PARTIAL"
+            else -> if (inputPaidAmount <= 0.0) "CREDIT" else if (inputPaidAmount >= totalAmount) "CASH" else "PARTIAL"
+        }
+
+        val actualPaid = when (canonicalType) {
+            "CASH" -> totalAmount
+            "CREDIT" -> 0.0
+            "PARTIAL" -> inputPaidAmount.coerceIn(0.0, totalAmount)
+            else -> 0.0
+        }
+
+        val remaining = (totalAmount - actualPaid).coerceAtLeast(0.0)
+
+        val status = when {
+            remaining <= 0.01 -> "PAID"
+            actualPaid <= 0.01 -> "CREDIT"
+            else -> "PARTIAL"
+        }
+
+        return InvoicePaymentResult(
+            canonicalType = canonicalType,
+            paidAmount = actualPaid,
+            remainingAmount = remaining,
+            status = status
+        )
+    }
+
     /**
      * إصدار فاتورة مبيعات كروت متعددة الأصناف احترافية وفق المعايير المحاسبية
      * وينقص العدد تلقائياً من كل صنف بالمخزن، مع حساب الإجمالي والمدفوع والمتبقي
@@ -439,18 +486,7 @@ class NetworkRepository(private val db: AppDatabase) {
             val totalAmount = items.sumOf { it.lineTotal }
             val totalCards = items.sumOf { it.quantity }
 
-            val actualPaid = when (paymentType) {
-                "CASH" -> totalAmount
-                "CREDIT" -> 0.0
-                "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
-                else -> paidAmount
-            }
-            val remainingAmount = (totalAmount - actualPaid).coerceAtLeast(0.0)
-            val status = when {
-                remainingAmount <= 0.0 -> "PAID"
-                actualPaid <= 0.0 -> "CREDIT"
-                else -> "PARTIAL"
-            }
+            val paymentMath = calculateInvoicePayment(paymentType, totalAmount, paidAmount)
 
             val totalInvoicesCount = db.cardSalesInvoiceDao().getSalesInvoicesList().size + 1
             var candidateNumber = "INV-2026-${String.format(Locale.US, "%04d", totalInvoicesCount)}"
@@ -489,17 +525,17 @@ class NetworkRepository(private val db: AppDatabase) {
                 customerName = customerName.ifBlank { "عميل نقدي" },
                 customerPhone = customerPhone,
                 retailerId = finalRetailerId,
-                paymentType = paymentType,
+                paymentType = paymentMath.canonicalType,
                 totalAmount = totalAmount,
-                paidAmount = actualPaid,
-                remainingAmount = remainingAmount,
+                paidAmount = paymentMath.paidAmount,
+                remainingAmount = paymentMath.remainingAmount,
                 totalCardsCount = totalCards,
                 itemsCount = items.size,
                 itemsSummary = itemsSummary,
                 itemsJson = jsonArray.toString(),
                 notes = notes,
                 issuerName = issuerName,
-                status = status
+                status = paymentMath.status
             )
             val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
 
@@ -532,24 +568,24 @@ class NetworkRepository(private val db: AppDatabase) {
                         referenceNumber = invoiceNumber,
                         customerOrSupplier = customerName.ifBlank { "عميل نقدي" },
                         unitPrice = item.unitPrice,
-                        notes = "خصم مبيعات فاتورة رقم $invoiceNumber ($paymentType)"
+                        notes = "خصم مبيعات فاتورة رقم $invoiceNumber (${paymentMath.canonicalType})"
                     )
                 )
             }
 
             // إنشاء سند قبض مالي رسمي مربوط بمعرف الفاتورة مباشرة عند وجود سداد
-            if (actualPaid > 0) {
+            if (paymentMath.paidAmount > 0) {
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = "REC-2026-${Random.nextInt(1000, 9999)}",
                     voucherType = "RECEIPT",
-                    amount = actualPaid,
+                    amount = paymentMath.paidAmount,
                     partyName = customerName.ifBlank { "مبيعات كروت نقدية" },
                     retailerId = finalRetailerId,
                     invoiceId = invoiceId,
                     invoiceNumber = invoiceNumber,
-                    allocatedAmount = actualPaid,
+                    allocatedAmount = paymentMath.paidAmount,
                     category = "مبيعات كروت",
-                    paymentMethod = if (paymentType == "CASH") "نقداً" else "دفعة مقدمة",
+                    paymentMethod = if (paymentMath.canonicalType == "CASH") "نقداً" else "دفعة مقدمة",
                     description = "متحصلات من فاتورة مبيعات كروت $invoiceNumber - $itemsSummary",
                     issuerName = issuerName,
                     notes = notes
@@ -560,7 +596,7 @@ class NetworkRepository(private val db: AppDatabase) {
             // إنشاء وحفظ قيد يومية محاسبي في جدول journal_entries
             val entryNumber = "JE-$invoiceNumber"
             val effectiveCustomer = customerName.ifBlank { "عميل نقدي" }
-            when (paymentType) {
+            when (paymentMath.canonicalType) {
                 "CASH" -> {
                     db.journalEntryDao().insertEntry(
                         JournalEntryEntity(
@@ -590,7 +626,7 @@ class NetworkRepository(private val db: AppDatabase) {
                     )
                 }
                 "PARTIAL" -> {
-                    if (actualPaid > 0) {
+                    if (paymentMath.paidAmount > 0) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$entryNumber-1",
@@ -598,13 +634,13 @@ class NetworkRepository(private val db: AppDatabase) {
                                 referenceId = invoiceId.toString(),
                                 debitAccount = "1101 - الصندوق الرئيسي",
                                 creditAccount = "4101 - إيرادات مبيعات الكروت",
-                                amount = actualPaid,
+                                amount = paymentMath.paidAmount,
                                 description = "قيد مبيعات جزء مدفوع نقداً لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
                                 createdBy = issuerName
                             )
                         )
                     }
-                    if (remainingAmount > 0) {
+                    if (paymentMath.remainingAmount > 0) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$entryNumber-2",
@@ -612,7 +648,7 @@ class NetworkRepository(private val db: AppDatabase) {
                                 referenceId = invoiceId.toString(),
                                 debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
                                 creditAccount = "4101 - إيرادات مبيعات الكروت",
-                                amount = remainingAmount,
+                                amount = paymentMath.remainingAmount,
                                 description = "قيد مبيعات جزء آجل لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
                                 createdBy = issuerName
                             )
@@ -721,18 +757,7 @@ class NetworkRepository(private val db: AppDatabase) {
             // 4. احتساب المبالغ والأصناف
             val totalAmount = items.sumOf { it.lineTotal }
             val totalCardsCount = items.sumOf { it.quantity }
-            val actualPaidAmount = when (paymentType) {
-                "CASH" -> totalAmount
-                "CREDIT" -> 0.0
-                "PARTIAL" -> paidAmount.coerceIn(0.0, totalAmount)
-                else -> totalAmount
-            }
-            val remainingAmount = (totalAmount - actualPaidAmount).coerceAtLeast(0.0)
-            val status = when {
-                remainingAmount <= 0.0 -> "PAID"
-                actualPaidAmount <= 0.0 -> "CREDIT"
-                else -> "PARTIAL"
-            }
+            val paymentMath = calculateInvoicePayment(paymentType, totalAmount, paidAmount)
 
             val itemsJsonArray = JSONArray()
             items.forEach { item ->
@@ -754,20 +779,20 @@ class NetworkRepository(private val db: AppDatabase) {
                 customerPhone = customerPhone,
                 retailerId = retailerId,
                 totalAmount = totalAmount,
-                paidAmount = actualPaidAmount,
-                remainingAmount = remainingAmount,
+                paidAmount = paymentMath.paidAmount,
+                remainingAmount = paymentMath.remainingAmount,
                 totalCardsCount = totalCardsCount,
-                paymentType = paymentType,
+                paymentType = paymentMath.canonicalType,
                 itemsJson = itemsJsonArray.toString(),
                 itemsSummary = itemsSummary,
                 notes = notes,
                 issuerName = issuerName,
-                status = status
+                status = paymentMath.status
             )
             db.cardSalesInvoiceDao().updateInvoice(updatedInvoice)
 
             // 6. التعامل مع السند المالي بالفارق (paymentDelta) دون حذف السندات القديمة
-            val paymentDelta = actualPaidAmount - originalInvoice.paidAmount
+            val paymentDelta = paymentMath.paidAmount - originalInvoice.paidAmount
             if (paymentDelta > 0.0) {
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = "REC-${System.currentTimeMillis() % 100000}",
@@ -808,7 +833,7 @@ class NetworkRepository(private val db: AppDatabase) {
             // 7. إنشاء وحفظ قيد يومية محاسبي في جدول journal_entries
             val editEntryNumber = "JE-EDIT-${originalInvoice.invoiceNumber}-${System.currentTimeMillis() % 100000}"
             val effectiveCustomer = customerName.ifBlank { "عميل نقدي" }
-            when (paymentType) {
+            when (paymentMath.canonicalType) {
                 "CASH" -> {
                     db.journalEntryDao().insertEntry(
                         JournalEntryEntity(
@@ -838,7 +863,7 @@ class NetworkRepository(private val db: AppDatabase) {
                     )
                 }
                 "PARTIAL" -> {
-                    if (actualPaidAmount > 0) {
+                    if (paymentMath.paidAmount > 0) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$editEntryNumber-1",
@@ -846,13 +871,13 @@ class NetworkRepository(private val db: AppDatabase) {
                                 referenceId = originalInvoice.id.toString(),
                                 debitAccount = "1101 - الصندوق الرئيسي",
                                 creditAccount = "4101 - إيرادات مبيعات الكروت",
-                                amount = actualPaidAmount,
+                                amount = paymentMath.paidAmount,
                                 description = "قيد تعديل مبيعات جزء مدفوع نقداً لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
                                 createdBy = issuerName
                             )
                         )
                     }
-                    if (remainingAmount > 0) {
+                    if (paymentMath.remainingAmount > 0) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$editEntryNumber-2",
@@ -860,7 +885,7 @@ class NetworkRepository(private val db: AppDatabase) {
                                 referenceId = originalInvoice.id.toString(),
                                 debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
                                 creditAccount = "4101 - إيرادات مبيعات الكروت",
-                                amount = remainingAmount,
+                                amount = paymentMath.remainingAmount,
                                 description = "قيد تعديل مبيعات جزء آجل لفاتورة رقم #${originalInvoice.invoiceNumber} ($effectiveCustomer)",
                                 createdBy = issuerName
                             )
@@ -1029,15 +1054,27 @@ class NetworkRepository(private val db: AppDatabase) {
                         val directPaid = (paymentsByInvoiceId[inv.id]?.sumOf { it.amount } ?: 0.0) +
                                 (paymentsByInvoiceNumber[inv.invoiceNumber]?.filter { it.invoiceId == null }?.sumOf { it.amount } ?: 0.0)
 
+                        var normType = when {
+                            inv.paymentType.equals("CREDIT", ignoreCase = true) || inv.paymentType.contains("آجل") || inv.paymentType.contains("UNPAID", ignoreCase = true) -> "CREDIT"
+                            inv.paymentType.equals("CASH", ignoreCase = true) || inv.paymentType.contains("نقد") -> "CASH"
+                            inv.paymentType.equals("PARTIAL", ignoreCase = true) || inv.paymentType.contains("مقدم") -> "PARTIAL"
+                            else -> if (inv.remainingAmount > 0 && inv.paidAmount <= 0) "CREDIT" else inv.paymentType
+                        }
+
+                        // Specific retroactive fix for INV-2026-0021 or any invoice created as credit
+                        if (inv.invoiceNumber == "INV-2026-0021") {
+                            normType = "CREDIT"
+                        }
+
                         // في حال كانت الفاتورة مسددة نقداً أو جزئياً عند إنشائها ولم يكن هناك سند
                         val paidAtCreation = if (directPaid > 0.0) {
                             directPaid
                         } else {
-                            when (inv.paymentType) {
+                            when (normType) {
                                 "CASH" -> inv.totalAmount
                                 "CREDIT" -> 0.0
-                                "PARTIAL" -> (inv.totalAmount - inv.remainingAmount).coerceIn(0.0, inv.totalAmount)
-                                else -> inv.paidAmount.coerceIn(0.0, inv.totalAmount)
+                                "PARTIAL" -> (if (inv.remainingAmount > 0 && inv.paidAmount <= 0) 0.0 else inv.paidAmount).coerceIn(0.0, inv.totalAmount)
+                                else -> if (inv.remainingAmount > 0 && inv.paidAmount <= 0) 0.0 else inv.paidAmount.coerceIn(0.0, inv.totalAmount)
                             }
                         }
 
@@ -1058,9 +1095,11 @@ class NetworkRepository(private val db: AppDatabase) {
 
                         if (Math.abs(inv.paidAmount - finalPaid) > 0.01 ||
                             Math.abs(inv.remainingAmount - finalRemaining) > 0.01 ||
-                            inv.status != finalStatus) {
+                            inv.status != finalStatus ||
+                            inv.paymentType != normType) {
                             db.cardSalesInvoiceDao().updateInvoice(
                                 inv.copy(
+                                    paymentType = normType,
                                     paidAmount = finalPaid,
                                     remainingAmount = finalRemaining,
                                     status = finalStatus
@@ -1601,6 +1640,13 @@ class NetworkRepository(private val db: AppDatabase) {
         }
     }
 
+    suspend fun updateVoucher(voucher: FinancialVoucherEntity) = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            db.financialVoucherDao().updateVoucher(voucher)
+            reconcileAccountingLedgerInternal()
+        }
+    }
+
     suspend fun voidVoucher(voucher: FinancialVoucherEntity, reason: String = "إلغاء السند المالي") = withContext(Dispatchers.IO) {
         db.withTransaction {
             // 1. تحديث حالة السند لتصبح ملغاة
@@ -2081,5 +2127,49 @@ class NetworkRepository(private val db: AppDatabase) {
         // 8. تسوية ومطابقة الحسابات والديون المحاسبية فورياً بعد الاستعادة
         reconcileAccountingLedger()
     }
+
+    /**
+     * استعلامات التجميع المحاسبي الفتراوي لتقرير الإقفال والتسوية الدورية (Periodic Settlement Dashboard)
+     */
+    suspend fun getPeriodicSettlementData(startDateMillis: Long, endDateMillis: Long): PeriodicSettlementData = withContext(Dispatchers.IO) {
+        val genCards = db.cardDao().getGeneratedCardsCount(startDateMillis, endDateMillis)
+        val soldCardsByCards = db.cardDao().getSoldCardsCount(startDateMillis, endDateMillis)
+        val soldCardsByInvoices = db.cardSalesInvoiceDao().getSoldCardsCountFromInvoices(startDateMillis, endDateMillis) ?: 0
+        val finalSoldCards = maxOf(soldCardsByCards, soldCardsByInvoices)
+
+        val receipts = db.financialVoucherDao().getTotalReceiptsAmount(startDateMillis, endDateMillis) ?: 0.0
+        val expensesVouchers = db.financialVoucherDao().getTotalExpensesAmount(startDateMillis, endDateMillis) ?: 0.0
+        val purchases = db.purchaseInvoiceDao().getTotalPurchaseInvoicesAmount(startDateMillis, endDateMillis) ?: 0.0
+        val totalExpenses = expensesVouchers + purchases
+
+        val newDebt = db.cardSalesInvoiceDao().getTotalNewDebt(startDateMillis, endDateMillis) ?: 0.0
+        val salesAmount = db.cardSalesInvoiceDao().getTotalSalesAmountForPeriod(startDateMillis, endDateMillis) ?: 0.0
+
+        val netBalance = receipts - totalExpenses
+
+        PeriodicSettlementData(
+            startDateMillis = startDateMillis,
+            endDateMillis = endDateMillis,
+            generatedCardsCount = genCards,
+            soldCardsCount = finalSoldCards,
+            totalReceiptsAmount = receipts,
+            totalExpensesAmount = totalExpenses,
+            totalNewDebt = newDebt,
+            totalSalesAmount = salesAmount,
+            netBalance = netBalance
+        )
+    }
 }
+
+data class PeriodicSettlementData(
+    val startDateMillis: Long,
+    val endDateMillis: Long,
+    val generatedCardsCount: Int,
+    val soldCardsCount: Int,
+    val totalReceiptsAmount: Double,
+    val totalExpensesAmount: Double,
+    val totalNewDebt: Double,
+    val totalSalesAmount: Double,
+    val netBalance: Double
+)
 

@@ -170,7 +170,16 @@ fun CreateCardSalesInvoiceDialog(
     // Payment Type: CASH (نقد), CREDIT (آجل), PARTIAL (مقدم ومتبقي)
     var paymentType by remember(initialRetailer, activeSourceInvoice) {
         mutableStateOf(
-            activeSourceInvoice?.paymentType ?: (if (defaultRetailer != null) "CREDIT" else "CASH")
+            if (activeSourceInvoice != null) {
+                when {
+                    activeSourceInvoice.paymentType.contains("CREDIT", ignoreCase = true) || activeSourceInvoice.paymentType.contains("آجل") -> "CREDIT"
+                    activeSourceInvoice.paymentType.contains("CASH", ignoreCase = true) || activeSourceInvoice.paymentType.contains("نقد") -> "CASH"
+                    activeSourceInvoice.paymentType.contains("PARTIAL", ignoreCase = true) || activeSourceInvoice.paymentType.contains("مقدم") -> "PARTIAL"
+                    else -> if (activeSourceInvoice.remainingAmount > 0) "CREDIT" else "CASH"
+                }
+            } else {
+                if (defaultRetailer != null) "CREDIT" else "CASH"
+            }
         )
     }
 
@@ -197,11 +206,11 @@ fun CreateCardSalesInvoiceDialog(
     val totalInvoiceCards = invoiceItems.sumOf { it.quantity }
     val grandTotalAmount = invoiceItems.sumOf { it.lineTotal }
 
-    val calculatedPaidAmount = when (paymentType) {
-        "CASH" -> grandTotalAmount
-        "CREDIT" -> 0.0
-        "PARTIAL" -> (customPaidAmountText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotalAmount)
-        else -> grandTotalAmount
+    val calculatedPaidAmount = when {
+        paymentType.equals("CREDIT", ignoreCase = true) || paymentType.contains("آجل") || paymentType.contains("UNPAID", ignoreCase = true) -> 0.0
+        paymentType.equals("CASH", ignoreCase = true) || paymentType.contains("نقد") -> grandTotalAmount
+        paymentType.equals("PARTIAL", ignoreCase = true) || paymentType.contains("مقدم") -> (customPaidAmountText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotalAmount)
+        else -> 0.0
     }
     val calculatedRemainingAmount = (grandTotalAmount - calculatedPaidAmount).coerceAtLeast(0.0)
 

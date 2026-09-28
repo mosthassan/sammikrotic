@@ -2,6 +2,9 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,8 +40,10 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.TrendingDown
@@ -49,6 +54,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +65,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -101,10 +111,7 @@ import com.example.ui.theme.TextSecondaryDark
 import com.example.ui.theme.WhatsAppDarkGreen
 import com.example.ui.theme.WhatsAppGreen
 import com.example.util.WhatsAppHelper
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun ReportsDashboardScreen(
@@ -113,12 +120,39 @@ fun ReportsDashboardScreen(
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    var reportSubTab by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+
+    if (reportSubTab == 1) {
+        PeriodicReportScreen(
+            onNavigateBack = { reportSubTab = 0 },
+            modifier = modifier
+        )
+        return
+    }
 
     val selectedTimeRange by reportsViewModel.selectedTimeRange.collectAsState()
     val summary by reportsViewModel.financialReportSummary.collectAsState()
     val aiSummary by reportsViewModel.aiSummary.collectAsState()
     val isAiLoading by reportsViewModel.isAiLoading.collectAsState()
     val networkIdentity by reportsViewModel.networkIdentity.collectAsState()
+
+    val allRetailers by reportsViewModel.allRetailers.collectAsState()
+    var selectedCustomerForLedger by remember { mutableStateOf<RetailerEntity?>(null) }
+    var customerSearchQueryInReports by remember { mutableStateOf("") }
+    var isCustomerDropdownExpanded by remember { mutableStateOf(false) }
+
+    val filteredRetailersForReports = remember(allRetailers, customerSearchQueryInReports) {
+        if (customerSearchQueryInReports.isBlank()) {
+            allRetailers
+        } else {
+            val q = customerSearchQueryInReports.trim()
+            allRetailers.filter {
+                it.name.contains(q, ignoreCase = true) ||
+                it.phone.contains(q) ||
+                it.ownerName.contains(q, ignoreCase = true)
+            }
+        }
+    }
 
     var showCustomDateDialog by remember { mutableStateOf(false) }
     var selectedAgentForStatement by remember { mutableStateOf<RetailerEntity?>(null) }
@@ -176,6 +210,52 @@ fun ReportsDashboardScreen(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+            }
+        }
+
+        // Sub-Tab Navigation Bar (التقرير المالي الشامل vs تقرير الإقفال الدوري)
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (reportSubTab == 0) MikroTikPrimary else CyberDarkSurface,
+                    border = BorderStroke(1.dp, if (reportSubTab == 0) MikroTikPrimary else CyberBorder),
+                    onClick = { reportSubTab = 0 },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (reportSubTab == 0) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("التقرير الشامل", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (reportSubTab == 0) Color.White else TextSecondaryDark)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (reportSubTab == 1) MikroTikPrimary else CyberDarkSurface,
+                    border = BorderStroke(1.dp, if (reportSubTab == 1) MikroTikPrimary else CyberBorder),
+                    onClick = { reportSubTab = 1 },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (reportSubTab == 1) Color.White else TextSecondaryDark)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("الإقفال الدوري 📋", fontFamily = CairoFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (reportSubTab == 1) Color.White else TextSecondaryDark)
                     }
                 }
             }
@@ -663,6 +743,154 @@ fun ReportsDashboardScreen(
             }
         }
 
+        // 5. Customer Selection & Financial Ledger Picker (كشف حساب عميل / بقالة مخصص)
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CyberDarkSurface),
+                border = BorderStroke(1.dp, MikroTikCyan.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("customer_ledger_section")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MikroTikCyan.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Store, contentDescription = null, tint = MikroTikCyan, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "كشف حساب عميل / سوبرماركت تفصيلي",
+                                color = Color.White,
+                                fontFamily = CairoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "ابحث بالاسم لعرض كشف حساب أي عميل فورياً بدقة متناهية",
+                                color = TextSecondaryDark,
+                                fontFamily = CairoFontFamily,
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    @OptIn(ExperimentalMaterial3Api::class)
+                    ExposedDropdownMenuBox(
+                        expanded = isCustomerDropdownExpanded,
+                        onExpandedChange = { isCustomerDropdownExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = if (selectedCustomerForLedger != null && customerSearchQueryInReports.isEmpty()) selectedCustomerForLedger!!.name else customerSearchQueryInReports,
+                            onValueChange = {
+                                customerSearchQueryInReports = it
+                                isCustomerDropdownExpanded = true
+                                if (it.isBlank()) selectedCustomerForLedger = null
+                            },
+                            label = { Text("بحث واختيار عميل / بقالة *", fontFamily = CairoFontFamily) },
+                            placeholder = { Text("اكتب اسم المحل أو رقم الهاتف...", fontSize = 11.5.sp, color = TextSecondaryDark) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MikroTikCyan) },
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (customerSearchQueryInReports.isNotEmpty() || selectedCustomerForLedger != null) {
+                                        IconButton(onClick = {
+                                            customerSearchQueryInReports = ""
+                                            selectedCustomerForLedger = null
+                                            isCustomerDropdownExpanded = false
+                                        }) {
+                                            Icon(Icons.Default.Close, contentDescription = "مسح", tint = TextSecondaryDark, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCustomerDropdownExpanded)
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = CyberDarkCardElevated,
+                                unfocusedContainerColor = CyberDarkCardElevated,
+                                focusedBorderColor = MikroTikCyan,
+                                unfocusedBorderColor = CyberBorder,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor()
+                                .testTag("customer_ledger_dropdown")
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = isCustomerDropdownExpanded && filteredRetailersForReports.isNotEmpty(),
+                            onDismissRequest = { isCustomerDropdownExpanded = false },
+                            modifier = Modifier.background(CyberDarkCardElevated)
+                        ) {
+                            filteredRetailersForReports.forEach { retailer ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(retailer.name, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.5.sp)
+                                                if (retailer.phone.isNotBlank()) {
+                                                    Text(retailer.phone, fontSize = 10.sp, color = TextSecondaryDark)
+                                                }
+                                            }
+                                            Text(
+                                                text = "دين: ${retailer.balanceOwed.toInt()} ر.ي",
+                                                fontFamily = CairoFontFamily,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (retailer.balanceOwed > 0) PaymentRed else ReceiptGreen
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedCustomerForLedger = retailer
+                                        selectedAgentForStatement = retailer
+                                        customerSearchQueryInReports = retailer.name
+                                        isCustomerDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (selectedCustomerForLedger != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Button(
+                                onClick = { selectedAgentForStatement = selectedCustomerForLedger },
+                                colors = ButtonDefaults.buttonColors(containerColor = MikroTikPrimary),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("عرض كشف الحساب المالي المباشر", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 6. Report Export Action Bar
         item {
             Card(
@@ -794,6 +1022,17 @@ fun ReportKpiCard(
     }
 }
 
+data class StatementTxItem(
+    val id: String,
+    val dateMillis: Long,
+    val typeLabel: String,
+    val isReceipt: Boolean,
+    val referenceNumber: String,
+    val details: String,
+    val debitAmount: Double,  // المبيعات (عليها)
+    val creditAmount: Double  // المسدد (لها)
+)
+
 @Composable
 fun AgentAccountStatementModal(
     retailer: RetailerEntity,
@@ -804,11 +1043,89 @@ fun AgentAccountStatementModal(
     val allInvoices by reportsViewModel.allInvoices.collectAsState()
     val allVouchers by reportsViewModel.allVouchers.collectAsState()
 
-    val agentInvoices = allInvoices.filter { it.retailerId == retailer.id }
-    val agentVouchers = allVouchers.filter { it.retailerId == retailer.id && !it.isVoided }
+    val agentInvoices = remember(allInvoices, retailer) {
+        allInvoices
+            .filter {
+                (it.retailerId == retailer.id || it.customerName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                !it.invoiceNumber.startsWith("INV-DELIV-")
+            }
+            .distinctBy { if (it.invoiceNumber.isNotBlank()) it.invoiceNumber else it.id.toString() }
+    }
+
+    val agentReceiptVouchers = remember(allVouchers, retailer) {
+        allVouchers
+            .filter {
+                (it.retailerId == retailer.id || it.partyName.trim().equals(retailer.name.trim(), ignoreCase = true)) &&
+                !it.isVoided &&
+                it.voucherType == "RECEIPT"
+            }
+            .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
+    }
 
     val totalPurchases = agentInvoices.sumOf { it.totalAmount }
-    val totalPaid = agentVouchers.filter { it.voucherType == "RECEIPT" }.sumOf { it.amount } + agentInvoices.sumOf { it.paidAmount }
+
+    val unlinkedInvoicePaidSum = agentInvoices.sumOf { inv ->
+        val hasVoucher = agentReceiptVouchers.any { v ->
+            v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
+        }
+        if (!hasVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
+    }
+
+    val totalPaid = agentReceiptVouchers.sumOf { it.amount } + unlinkedInvoicePaidSum
+    val finalBalance = totalPurchases - totalPaid
+
+    val txList = remember(agentInvoices, agentReceiptVouchers) {
+        val list = mutableListOf<StatementTxItem>()
+        agentInvoices.forEach { inv ->
+            list.add(
+                StatementTxItem(
+                    id = "INV_${inv.id}",
+                    dateMillis = inv.invoiceDateMillis,
+                    typeLabel = "فاتورة مبيعات",
+                    isReceipt = false,
+                    referenceNumber = inv.invoiceNumber,
+                    details = "${inv.totalCardsCount} كرت ${if (inv.itemsSummary.isNotBlank()) "• ${inv.itemsSummary}" else ""}",
+                    debitAmount = inv.totalAmount,
+                    creditAmount = 0.0
+                )
+            )
+
+            val hasVoucher = agentReceiptVouchers.any { v ->
+                v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
+            }
+            if (!hasVoucher && inv.paidAmount > 0) {
+                list.add(
+                    StatementTxItem(
+                        id = "INV_PAY_${inv.id}",
+                        dateMillis = inv.invoiceDateMillis,
+                        typeLabel = "سداد مع الفاتورة",
+                        isReceipt = true,
+                        referenceNumber = "REC-${inv.invoiceNumber}",
+                        details = "دفعة مسددة مع الفاتورة ${inv.invoiceNumber}",
+                        debitAmount = 0.0,
+                        creditAmount = inv.paidAmount
+                    )
+                )
+            }
+        }
+
+        agentReceiptVouchers.forEach { v ->
+            list.add(
+                StatementTxItem(
+                    id = "VOUCHER_${v.id}",
+                    dateMillis = v.dateMillis,
+                    typeLabel = "سند قبض",
+                    isReceipt = true,
+                    referenceNumber = v.voucherNumber,
+                    details = "${v.category} ${if (v.description.isNotBlank()) "• ${v.description}" else ""}",
+                    debitAmount = 0.0,
+                    creditAmount = v.amount
+                )
+            )
+        }
+
+        list.sortedByDescending { it.dateMillis }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -838,7 +1155,7 @@ fun AgentAccountStatementModal(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("إجمالي المبيعات:", fontSize = 11.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
+                                Text("إجمالي المبيعات (مدين):", fontSize = 11.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
                                 Text("${String.format(Locale.US, "%,.0f", totalPurchases)} ر.ي", fontSize = 11.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = MikroTikCyan)
                             }
 
@@ -846,7 +1163,7 @@ fun AgentAccountStatementModal(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("إجمالي المسدد:", fontSize = 11.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
+                                Text("إجمالي المسدد (دائن):", fontSize = 11.sp, fontFamily = CairoFontFamily, color = TextSecondaryDark)
                                 Text("${String.format(Locale.US, "%,.0f", totalPaid)} ر.ي", fontSize = 11.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = ReceiptGreen)
                             }
 
@@ -857,22 +1174,22 @@ fun AgentAccountStatementModal(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("الرصيد المستحق النهائي:", fontSize = 11.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("${String.format(Locale.US, "%,.0f", retailer.balanceOwed)} ر.ي", fontSize = 12.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.ExtraBold, color = PaymentRed)
+                                Text("${String.format(Locale.US, "%,.0f", finalBalance)} ر.ي", fontSize = 12.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.ExtraBold, color = if (finalBalance > 0) PaymentRed else ReceiptGreen)
                             }
                         }
                     }
                 }
 
                 item {
-                    Text("سجل الحركات الأخير (${agentInvoices.size + agentVouchers.size} حركات):", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextSecondaryDark)
+                    Text("سجل الحركات الأخير (${txList.size} حركات):", fontFamily = CairoFontFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextSecondaryDark)
                 }
 
-                if (agentInvoices.isEmpty() && agentVouchers.isEmpty()) {
+                if (txList.isEmpty()) {
                     item {
                         Text("لا توجد فواتير أو سندات سابقة لهذا الوكيل", fontFamily = CairoFontFamily, fontSize = 11.sp, color = TextSecondaryDark)
                     }
                 } else {
-                    items(agentInvoices.take(5)) { inv ->
+                    items(txList, key = { it.id }) { item ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = CyberDarkCardElevated,
@@ -883,32 +1200,16 @@ fun AgentAccountStatementModal(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text("فاتورة: ${inv.invoiceNumber}", fontSize = 11.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("${inv.totalCardsCount} كرت • ${SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(inv.invoiceDateMillis))}", fontSize = 10.sp, color = TextSecondaryDark)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${item.referenceNumber} (${item.typeLabel})", fontSize = 11.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = if (item.isReceipt) ReceiptGreen else Color.White)
+                                    Text("${item.details} • ${SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(item.dateMillis))}", fontSize = 10.sp, color = TextSecondaryDark)
                                 }
-                                Text("${inv.totalAmount.toInt()} ر.ي", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MikroTikCyan)
-                            }
-                        }
-                    }
-
-                    items(agentVouchers.take(5)) { v ->
-                        val isRec = v.voucherType == "RECEIPT"
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = CyberDarkCardElevated,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("${v.voucherNumber} (${if (isRec) "سند قبض" else "سند صرف"})", fontSize = 11.5.sp, fontFamily = CairoFontFamily, fontWeight = FontWeight.Bold, color = if (isRec) ReceiptGreen else PaymentRed)
-                                    Text("${v.category} • ${v.description}", fontSize = 10.sp, color = TextSecondaryDark)
-                                }
-                                Text("${v.amount.toInt()} ر.ي", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isRec) ReceiptGreen else PaymentRed)
+                                Text(
+                                    text = if (item.isReceipt) "-${item.creditAmount.toInt()} ر.ي" else "+${item.debitAmount.toInt()} ر.ي",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (item.isReceipt) ReceiptGreen else MikroTikCyan
+                                )
                             }
                         }
                     }

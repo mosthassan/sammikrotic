@@ -59,6 +59,12 @@ interface CardDao {
     @Query("SELECT COUNT(*) FROM cards WHERE status = 'SOLD'")
     fun countSoldCards(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM cards WHERE createdAt BETWEEN :startDate AND :endDate")
+    suspend fun getGeneratedCardsCount(startDate: Long, endDate: Long): Int
+
+    @Query("SELECT COUNT(*) FROM cards WHERE status = 'SOLD' AND soldAt BETWEEN :startDate AND :endDate")
+    suspend fun getSoldCardsCount(startDate: Long, endDate: Long): Int
+
     @Query("DELETE FROM cards")
     suspend fun deleteAllCards()
 

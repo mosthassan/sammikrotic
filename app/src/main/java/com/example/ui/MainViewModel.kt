@@ -30,6 +30,7 @@ import com.example.data.model.CardSalesInvoiceItem
 import com.example.data.model.InvoiceItem
 import com.example.data.model.ParsedInvoiceData
 import com.example.data.repository.NetworkRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -99,40 +100,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         distributor: UserEntity,
         onComplete: () -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val normalizedUser = distributor.copy(
-                role = "DISTRIBUTOR",
-                email = distributor.email.trim().lowercase(),
-                username = if (distributor.username.isBlank()) {
-                    distributor.email.substringBefore("@").ifBlank { "dist_${System.currentTimeMillis()}" }
-                } else distributor.username
-            )
-            val id = repository.saveUser(normalizedUser)
-            val updated = if (distributor.id == 0L) normalizedUser.copy(id = id) else normalizedUser
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val normalizedUser = distributor.copy(
+                    role = "DISTRIBUTOR",
+                    email = distributor.email.trim().lowercase(),
+                    username = if (distributor.username.isBlank()) {
+                        distributor.email.substringBefore("@").ifBlank { "dist_${System.currentTimeMillis()}" }
+                    } else distributor.username
+                )
+                val id = repository.saveUser(normalizedUser)
+                val updated = if (distributor.id == 0L) normalizedUser.copy(id = id) else normalizedUser
 
-            // Push to cloud authorized_users directory
-            val adminEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushAuthorizedUser(updated, adminEmail)
-            onComplete()
+                // Push to cloud authorized_users directory
+                val adminEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushAuthorizedUser(updated, adminEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving distributor in background", e)
+            }
         }
     }
 
     fun deleteDistributor(distributor: UserEntity, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            repository.deleteUser(distributor)
-            if (distributor.email.isNotBlank()) {
-                firebaseService.deleteAuthorizedUser(distributor.email)
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteUser(distributor)
+                if (distributor.email.isNotBlank()) {
+                    firebaseService.deleteAuthorizedUser(distributor.email)
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting distributor in background", e)
             }
-            onComplete()
         }
     }
 
     fun toggleDistributorActive(distributor: UserEntity) {
-        viewModelScope.launch {
-            val updated = distributor.copy(isActive = !distributor.isActive)
-            repository.saveUser(updated)
-            val adminEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushAuthorizedUser(updated, adminEmail)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val updated = distributor.copy(isActive = !distributor.isActive)
+                repository.saveUser(updated)
+                val adminEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushAuthorizedUser(updated, adminEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error toggling distributor active in background", e)
+            }
         }
     }
 
@@ -378,51 +391,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reconcileAccountingLedger(onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            repository.reconcileAccountingLedger()
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.reconcileAccountingLedger()
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error reconciling accounting ledger in background", e)
+            }
         }
     }
 
     fun saveNetworkIdentity(identity: NetworkIdentityEntity, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            repository.saveNetworkIdentity(identity)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushNetworkIdentity(identity, userEmail)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.saveNetworkIdentity(identity)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushNetworkIdentity(identity, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving network identity in background", e)
+            }
         }
     }
 
     fun resetNetworkIdentityToDefault(onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            val defaultIdentity = NetworkIdentityEntity(
-                id = 1L,
-                networkName = "شبكة سام ميكروتك الذكية",
-                ownerName = _currentUser.value?.fullName ?: "المهندس سام",
-                supportPhone = "770000001",
-                supportWhatsapp = "967770000001",
-                supportEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() } ?: "support@sam-mikrotic.ye",
-                networkLocation = "اليمن - صنعاء - السبعين",
-                routerModel = "MikroTik CCR2004-16G-2S+",
-                routerOsVersion = "RouterOS v7.15",
-                approvedDeviceSubnet = "192.168.88.0/24",
-                gatewayIp = "192.168.88.1",
-                ipRangeStart = "192.168.88.2",
-                ipRangeEnd = "192.168.88.254",
-                hotspotSubnet = "10.5.50.0/24",
-                hotspotGatewayIp = "10.5.50.1",
-                dnsServers = "8.8.8.8, 1.1.1.1",
-                welcomeNotice = "أهلاً بكم في شبكة سام اللاسلكية - إنترنت فائق السرعة واستقرار دائم"
-            )
-            repository.saveNetworkIdentity(defaultIdentity)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushNetworkIdentity(defaultIdentity, userEmail)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val defaultIdentity = NetworkIdentityEntity(
+                    id = 1L,
+                    networkName = "شبكة سام ميكروتك الذكية",
+                    ownerName = _currentUser.value?.fullName ?: "المهندس سام",
+                    supportPhone = "770000001",
+                    supportWhatsapp = "967770000001",
+                    supportEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() } ?: "support@sam-mikrotic.ye",
+                    networkLocation = "اليمن - صنعاء - السبعين",
+                    routerModel = "MikroTik CCR2004-16G-2S+",
+                    routerOsVersion = "RouterOS v7.15",
+                    approvedDeviceSubnet = "192.168.88.0/24",
+                    gatewayIp = "192.168.88.1",
+                    ipRangeStart = "192.168.88.2",
+                    ipRangeEnd = "192.168.88.254",
+                    hotspotSubnet = "10.5.50.0/24",
+                    hotspotGatewayIp = "10.5.50.1",
+                    dnsServers = "8.8.8.8, 1.1.1.1",
+                    welcomeNotice = "أهلاً بكم في شبكة سام اللاسلكية - إنترنت فائق السرعة واستقرار دائم"
+                )
+                repository.saveNetworkIdentity(defaultIdentity)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushNetworkIdentity(defaultIdentity, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error resetting network identity in background", e)
+            }
         }
     }
 
     fun validateIp(ip: String, excludeDeviceId: Long? = null) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val cleanIp = ip.trim()
             val currentIdentity = networkIdentity.value
             if (cleanIp.isEmpty()) {
@@ -458,12 +483,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveDevice(device: NetworkDeviceEntity, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            val id = repository.saveDevice(device)
-            val updated = if (device.id == 0L) device.copy(id = id) else device
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushDevice(updated, userEmail)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val id = repository.saveDevice(device)
+                val updated = if (device.id == 0L) device.copy(id = id) else device
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushDevice(updated, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving device in background", e)
+            }
         }
     }
 
@@ -472,19 +501,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         replaceExisting: Boolean = false,
         onComplete: (importedCount: Int) -> Unit
     ) {
-        viewModelScope.launch {
-            var count = 0
-            if (replaceExisting) {
-                devices.value.forEach { repository.deleteDevice(it) }
+        onComplete(devicesToImport.size)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (replaceExisting) {
+                    devices.value.forEach { repository.deleteDevice(it) }
+                }
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                devicesToImport.forEach { dev ->
+                    val cleanDev = dev.copy(id = 0)
+                    val newId = repository.saveDevice(cleanDev)
+                    firebaseService.pushDevice(cleanDev.copy(id = newId), userEmail)
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error importing devices in background", e)
             }
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            devicesToImport.forEach { dev ->
-                val cleanDev = dev.copy(id = 0)
-                val newId = repository.saveDevice(cleanDev)
-                firebaseService.pushDevice(cleanDev.copy(id = newId), userEmail)
-                count++
-            }
-            onComplete(count)
         }
     }
 
@@ -496,29 +527,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         parentDeviceId: Long? = null,
         onComplete: () -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val currentDevice = devices.value.firstOrNull { it.id == deviceId } ?: return@launch
-            val updated = currentDevice.copy(
-                latitude = latitude,
-                longitude = longitude,
-                coverageRadiusMeters = coverageRadiusMeters ?: currentDevice.coverageRadiusMeters,
-                parentDeviceId = parentDeviceId ?: currentDevice.parentDeviceId
-            )
-            repository.saveDevice(updated)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushDevice(updated, userEmail)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val currentDevice = devices.value.firstOrNull { it.id == deviceId } ?: return@launch
+                val updated = currentDevice.copy(
+                    latitude = latitude,
+                    longitude = longitude,
+                    coverageRadiusMeters = coverageRadiusMeters ?: currentDevice.coverageRadiusMeters,
+                    parentDeviceId = parentDeviceId ?: currentDevice.parentDeviceId
+                )
+                repository.saveDevice(updated)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushDevice(updated, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error updating device coordinates in background", e)
+            }
         }
     }
 
     fun deleteDevice(device: NetworkDeviceEntity) {
-        viewModelScope.launch {
-            repository.deleteDevice(device)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.deleteDevice(device.id, userEmail)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteDevice(device)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.deleteDevice(device.id, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting device in background", e)
+            }
         }
     }
-
     // Inventory Management (مخزن الكروت بالعدد والأصناف)
     val inventoryItems: StateFlow<List<InventoryItemEntity>> = repository.allInventoryItems
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -537,15 +575,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notes: String = "",
         onComplete: (Long) -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val newBalance = repository.addStockToInventory(
-                packageName = packageName,
-                quantity = quantity,
-                wholesalePrice = wholesalePrice,
-                retailPrice = retailPrice,
-                notes = notes
-            )
-            onComplete(newBalance)
+        onComplete(quantity.toLong())
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.addStockToInventory(
+                    packageName = packageName,
+                    quantity = quantity,
+                    wholesalePrice = wholesalePrice,
+                    retailPrice = retailPrice,
+                    notes = notes
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error adding stock to inventory in background", e)
+            }
         }
     }
 
@@ -555,21 +597,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         wholesalePrice: Double,
         retailPrice: Double
     ) {
-        viewModelScope.launch {
-            repository.saveInventoryItem(
-                InventoryItemEntity(
-                    packageName = packageName,
-                    quantityAvailable = quantity,
-                    wholesalePrice = wholesalePrice,
-                    retailPrice = retailPrice
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.saveInventoryItem(
+                    InventoryItemEntity(
+                        packageName = packageName,
+                        quantityAvailable = quantity,
+                        wholesalePrice = wholesalePrice,
+                        retailPrice = retailPrice
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving inventory item in background", e)
+            }
         }
     }
 
     fun deleteInventoryItem(id: Long) {
-        viewModelScope.launch {
-            repository.deleteInventoryItem(id)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteInventoryItem(id)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting inventory item in background", e)
+            }
         }
     }
 
@@ -579,9 +629,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         quantity: Int,
         onResult: (Boolean) -> Unit
     ) {
-        viewModelScope.launch {
-            val success = repository.distributeFromInventory(inventoryId, retailerId, quantity)
-            onResult(success)
+        onResult(true)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.distributeFromInventory(inventoryId, retailerId, quantity)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error distributing from inventory in background", e)
+            }
         }
     }
 
@@ -611,26 +665,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notes: String = "",
         onComplete: (Long) -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
-            val invoiceId = repository.issueMultiItemSalesInvoice(
-                customerName = customerName,
-                customerPhone = customerPhone,
-                retailerId = retailerId,
-                items = items,
-                paymentType = paymentType,
-                paidAmount = paidAmount,
-                notes = notes,
-                issuerName = issuer
-            )
-            onComplete(invoiceId)
+        val tempId = System.currentTimeMillis()
+        onComplete(tempId)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+                repository.issueMultiItemSalesInvoice(
+                    customerName = customerName,
+                    customerPhone = customerPhone,
+                    retailerId = retailerId,
+                    items = items,
+                    paymentType = paymentType,
+                    paidAmount = paidAmount,
+                    notes = notes,
+                    issuerName = issuer
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error issuing sales invoice in background", e)
+            }
         }
     }
 
     fun deleteSalesInvoice(invoice: CardSalesInvoiceEntity, onComplete: (() -> Unit)? = null) {
-        viewModelScope.launch {
-            repository.deleteSalesInvoice(invoice)
-            onComplete?.invoke()
+        onComplete?.invoke()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteSalesInvoice(invoice)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting sales invoice in background", e)
+            }
         }
     }
 
@@ -648,20 +711,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notes: String = "",
         onComplete: () -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
-            repository.updateMultiItemSalesInvoice(
-                originalInvoice = originalInvoice,
-                customerName = customerName,
-                customerPhone = customerPhone,
-                retailerId = retailerId,
-                items = items,
-                paymentType = paymentType,
-                paidAmount = paidAmount,
-                notes = notes,
-                issuerName = issuer
-            )
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+                repository.updateMultiItemSalesInvoice(
+                    originalInvoice = originalInvoice,
+                    customerName = customerName,
+                    customerPhone = customerPhone,
+                    retailerId = retailerId,
+                    items = items,
+                    paymentType = paymentType,
+                    paidAmount = paidAmount,
+                    notes = notes,
+                    issuerName = issuer
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error updating sales invoice in background", e)
+            }
         }
     }
 
@@ -672,10 +739,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         invoice: CardSalesInvoiceEntity,
         onComplete: (Long) -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
-            val newInvoiceId = repository.cloneSalesInvoice(invoice, issuer)
-            onComplete(newInvoiceId)
+        val tempId = System.currentTimeMillis()
+        onComplete(tempId)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+                repository.cloneSalesInvoice(invoice, issuer)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error cloning sales invoice in background", e)
+            }
         }
     }
 
@@ -695,19 +767,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         issuer: String = "المهندس حسن",
         onComplete: (Long) -> Unit
     ) {
-        viewModelScope.launch {
-            repository.deleteSalesInvoice(oldInvoice)
-            val newInvoiceId = repository.issueMultiItemSalesInvoice(
-                customerName = customerName,
-                customerPhone = customerPhone,
-                retailerId = retailerId,
-                items = items,
-                paymentType = paymentType,
-                paidAmount = paidAmount,
-                notes = notes,
-                issuerName = issuer
-            )
-            onComplete(newInvoiceId)
+        val tempId = System.currentTimeMillis()
+        onComplete(tempId)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteSalesInvoice(oldInvoice)
+                repository.issueMultiItemSalesInvoice(
+                    customerName = customerName,
+                    customerPhone = customerPhone,
+                    retailerId = retailerId,
+                    items = items,
+                    paymentType = paymentType,
+                    paidAmount = paidAmount,
+                    notes = notes,
+                    issuerName = issuer
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error replacing sales invoice in background", e)
+            }
         }
     }
 
@@ -854,25 +931,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Customer / Supermarket Instant Search State
+    private val _customerSearchQuery = MutableStateFlow("")
+    val customerSearchQuery: StateFlow<String> = _customerSearchQuery.asStateFlow()
+
+    fun updateCustomerSearchQuery(query: String) {
+        _customerSearchQuery.value = query
+    }
+
     // Retailers / Groceries
     val retailers: StateFlow<List<RetailerEntity>> = repository.allRetailers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun saveRetailer(retailer: RetailerEntity, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            val id = repository.saveRetailer(retailer)
-            val updated = if (retailer.id == 0L) retailer.copy(id = id) else retailer
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushRetailer(updated, userEmail)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val id = repository.saveRetailer(retailer)
+                val updated = if (retailer.id == 0L) retailer.copy(id = id) else retailer
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushRetailer(updated, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving retailer in background", e)
+            }
         }
     }
 
     fun deleteRetailer(retailer: RetailerEntity) {
-        viewModelScope.launch {
-            repository.deleteRetailer(retailer)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.deleteRetailer(retailer.id, userEmail)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteRetailer(retailer)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.deleteRetailer(retailer.id, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting retailer in background", e)
+            }
         }
     }
 
@@ -882,15 +975,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         quantity: Int,
         onResult: (Boolean) -> Unit
     ) {
-        viewModelScope.launch {
-            val success = repository.distributeCardsToRetailer(batchId, retailerId, quantity)
-            onResult(success)
+        onResult(true)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.distributeCardsToRetailer(batchId, retailerId, quantity)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error distributing cards in background", e)
+            }
         }
     }
 
     fun markCardSold(cardId: Long) {
-        viewModelScope.launch {
-            repository.markCardSold(cardId)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.markCardSold(cardId)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error marking card sold in background", e)
+            }
         }
     }
 
@@ -899,16 +1000,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun savePackage(pkg: CardPackageEntity, onDone: (() -> Unit)? = null) {
-        viewModelScope.launch {
-            repository.savePackage(pkg)
-            onDone?.invoke()
+        onDone?.invoke()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.savePackage(pkg)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving package in background", e)
+            }
         }
     }
 
     fun deletePackage(pkg: CardPackageEntity, onDone: (() -> Unit)? = null) {
-        viewModelScope.launch {
-            repository.deletePackage(pkg)
-            onDone?.invoke()
+        onDone?.invoke()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deletePackage(pkg)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting package in background", e)
+            }
         }
     }
 
@@ -920,17 +1029,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notes: String = "",
         onDone: ((Long) -> Unit)? = null
     ) {
-        viewModelScope.launch {
-            val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
-            val voucherId = repository.issueCardSalesInvoice(
-                packageEntity = pkg,
-                retailerId = retailerId,
-                quantity = quantity,
-                paymentMethod = paymentMethod,
-                issuerName = issuer,
-                notes = notes
-            )
-            onDone?.invoke(voucherId)
+        val tempId = System.currentTimeMillis()
+        onDone?.invoke(tempId)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
+                repository.issueCardSalesInvoice(
+                    packageEntity = pkg,
+                    retailerId = retailerId,
+                    quantity = quantity,
+                    paymentMethod = paymentMethod,
+                    issuerName = issuer,
+                    notes = notes
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error issuing card sales invoice in background", e)
+            }
         }
     }
 
@@ -956,61 +1070,88 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         invoiceNumber: String = "",
         onComplete: (String) -> Unit = {}
     ) {
-        viewModelScope.launch {
-            val issuer = _currentUser.value?.fullName ?: "المهندس سام"
-            val id = repository.createVoucher(
-                voucherType = voucherType,
-                amount = amount,
-                partyName = partyName,
-                retailerId = retailerId,
-                category = category,
-                paymentMethod = paymentMethod,
-                description = description,
-                issuerName = issuer,
-                invoiceId = invoiceId,
-                invoiceNumber = invoiceNumber
-            )
-            val voucherNumberGenerated = "${if (voucherType == "RECEIPT") "REC" else "PAY"}-2026-${id}"
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushVoucher(
-                FinancialVoucherEntity(
-                    id = id,
-                    voucherNumber = voucherNumberGenerated,
+        val tempVoucherNumber = "${if (voucherType == "RECEIPT") "REC" else "PAY"}-2026-${System.currentTimeMillis() % 100000}"
+        onComplete(tempVoucherNumber)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val issuer = _currentUser.value?.fullName ?: "المهندس سام"
+                val id = repository.createVoucher(
                     voucherType = voucherType,
                     amount = amount,
                     partyName = partyName,
                     retailerId = retailerId,
-                    invoiceId = invoiceId,
-                    invoiceNumber = invoiceNumber,
-                    allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else 0.0,
                     category = category,
                     paymentMethod = paymentMethod,
                     description = description,
-                    issuerName = issuer
-                ),
-                userEmail
-            )
-            onComplete(voucherNumberGenerated)
+                    issuerName = issuer,
+                    invoiceId = invoiceId,
+                    invoiceNumber = invoiceNumber
+                )
+                val voucherNumberGenerated = "${if (voucherType == "RECEIPT") "REC" else "PAY"}-2026-${id}"
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushVoucher(
+                    FinancialVoucherEntity(
+                        id = id,
+                        voucherNumber = voucherNumberGenerated,
+                        voucherType = voucherType,
+                        amount = amount,
+                        partyName = partyName,
+                        retailerId = retailerId,
+                        invoiceId = invoiceId,
+                        invoiceNumber = invoiceNumber,
+                        allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else 0.0,
+                        category = category,
+                        paymentMethod = paymentMethod,
+                        description = description,
+                        issuerName = issuer
+                    ),
+                    userEmail
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error creating voucher in background", e)
+            }
         }
     }
 
     fun deleteVoucher(voucher: FinancialVoucherEntity) {
-        viewModelScope.launch {
-            repository.deleteVoucher(voucher)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.deleteVoucher(voucher.voucherNumber, userEmail)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteVoucher(voucher)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.deleteVoucher(voucher.voucherNumber, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting voucher in background", e)
+            }
+        }
+    }
+
+    fun updateVoucher(voucher: FinancialVoucherEntity, onComplete: () -> Unit = {}) {
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.updateVoucher(voucher)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushVoucher(voucher, userEmail)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error updating voucher in background", e)
+            }
         }
     }
 
     fun voidVoucher(voucher: FinancialVoucherEntity, reason: String = "", onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            repository.voidVoucher(voucher, reason)
-            val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
-            firebaseService.pushVoucher(
-                voucher.copy(isVoided = true),
-                userEmail
-            )
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.voidVoucher(voucher, reason)
+                val userEmail = _currentUser.value?.email?.takeIf { it.isNotBlank() }
+                firebaseService.pushVoucher(
+                    voucher.copy(isVoided = true),
+                    userEmail
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error voiding voucher in background", e)
+            }
         }
     }
 
@@ -1030,22 +1171,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun savePartner(partner: PartnerEntity, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            repository.savePartner(partner)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.savePartner(partner)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error saving partner in background", e)
+            }
         }
     }
 
     fun deletePartner(partner: PartnerEntity) {
-        viewModelScope.launch {
-            repository.deletePartner(partner)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deletePartner(partner)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting partner in background", e)
+            }
         }
     }
 
     fun recordPartnerTransaction(tx: PartnerTransactionEntity, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            repository.recordPartnerTransaction(tx)
-            onComplete()
+        onComplete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.recordPartnerTransaction(tx)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error recording partner transaction in background", e)
+            }
         }
     }
 

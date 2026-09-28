@@ -504,34 +504,47 @@ object ReportPdfManager {
             val credit: Double  // Receipt Voucher amount
         )
 
+        val cleanInvoices = invoices
+            .filter { !it.invoiceNumber.startsWith("INV-DELIV-") }
+            .distinctBy { if (it.invoiceNumber.isNotBlank()) it.invoiceNumber else it.id.toString() }
+
+        val cleanVouchers = vouchers
+            .filter { !it.isVoided && it.voucherType == "RECEIPT" }
+            .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
+
         val allTxs = mutableListOf<StatementTx>()
-        invoices.forEach { inv ->
+        cleanInvoices.forEach { inv ->
+            val hasTiedVoucher = cleanVouchers.any { v ->
+                v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
+            }
             allTxs.add(
                 StatementTx(
                     dateMillis = inv.invoiceDateMillis,
                     reference = inv.invoiceNumber,
                     description = "فاتورة مبيعات كروت (${inv.totalCardsCount} كرت)",
                     debit = inv.totalAmount,
-                    credit = inv.paidAmount
+                    credit = if (!hasTiedVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
                 )
             )
         }
-        vouchers.forEach { v ->
-            if (!v.isVoided) {
-                val isRec = v.voucherType == "RECEIPT"
-                allTxs.add(
-                    StatementTx(
-                        dateMillis = v.dateMillis,
-                        reference = v.voucherNumber,
-                        description = if (isRec) "سند قبض توريد (${v.paymentMethod})" else "سند صرف (${v.category})",
-                        debit = if (!isRec) v.amount else 0.0,
-                        credit = if (isRec) v.amount else 0.0
-                    )
+        cleanVouchers.forEach { v ->
+            val isRec = v.voucherType == "RECEIPT"
+            allTxs.add(
+                StatementTx(
+                    dateMillis = v.dateMillis,
+                    reference = v.voucherNumber,
+                    description = if (isRec) "سند قبض توريد (${v.paymentMethod.ifBlank { "نقداً" }})" else "سند صرف (${v.category})",
+                    debit = if (!isRec) v.amount else 0.0,
+                    credit = if (isRec) v.amount else 0.0
                 )
-            }
+            )
         }
 
         allTxs.sortBy { it.dateMillis }
+
+        val totalDebitSum = allTxs.sumOf { it.debit }
+        val totalCreditSum = allTxs.sumOf { it.credit }
+        val calcBalance = totalDebitSum - totalCreditSum
 
         val rowBgEven = Paint().apply { color = AndroidColor.WHITE; style = Paint.Style.FILL }
         val rowBgOdd = Paint().apply { color = AndroidColor.parseColor("#F8FAFC"); style = Paint.Style.FILL }
@@ -593,9 +606,6 @@ object ReportPdfManager {
         canvas.drawRoundRect(totalSummaryRect, 6f, 6f, sumBg)
         canvas.drawRoundRect(totalSummaryRect, 6f, 6f, sumBorder)
 
-        val totalDebitSum = allTxs.sumOf { it.debit }
-        val totalCreditSum = allTxs.sumOf { it.credit }
-
         val sLabel = Paint().apply { color = AndroidColor.parseColor("#475569"); textSize = 9f; textAlign = Paint.Align.RIGHT }
         val sVal = Paint().apply { color = AndroidColor.parseColor("#0F172A"); textSize = 9.5f; isFakeBoldText = true; textAlign = Paint.Align.LEFT }
 
@@ -607,9 +617,9 @@ object ReportPdfManager {
         canvas.drawText("${totalCreditSum.toInt()} ريال", PAGE_WIDTH - 268f, currentY + 36f, creditValPaint)
 
         canvas.drawText("الرصيد المتبقي النهائي:", PAGE_WIDTH - 42f, currentY + 54f, sLabel)
-        val remColor = if (retailer.balanceOwed > 0) AndroidColor.parseColor("#DC2626") else AndroidColor.parseColor("#16A34A")
+        val remColor = if (calcBalance > 0) AndroidColor.parseColor("#DC2626") else AndroidColor.parseColor("#16A34A")
         val remValPaint = Paint(sVal).apply { color = remColor; textSize = 10.5f }
-        canvas.drawText("${retailer.balanceOwed.toInt()} ريال", PAGE_WIDTH - 268f, currentY + 54f, remValPaint)
+        canvas.drawText("${calcBalance.toInt()} ريال", PAGE_WIDTH - 268f, currentY + 54f, remValPaint)
 
         // 6. Signature section
         val signY = PAGE_HEIGHT - 95f

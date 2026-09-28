@@ -32,6 +32,9 @@ interface PurchaseInvoiceDao {
     @Query("SELECT SUM(totalAmount) FROM purchase_invoices")
     fun getTotalInvoicesAmount(): Flow<Double?>
 
+    @Query("SELECT SUM(totalAmount) FROM purchase_invoices WHERE invoiceDateMillis BETWEEN :startDate AND :endDate")
+    suspend fun getTotalPurchaseInvoicesAmount(startDate: Long, endDate: Long): Double?
+
     @Query("DELETE FROM purchase_invoices")
     suspend fun deleteAllInvoices()
 }

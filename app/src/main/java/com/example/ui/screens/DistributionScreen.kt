@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Store
@@ -63,6 +65,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -105,6 +108,19 @@ import com.example.ui.theme.WhatsAppGreen
 import com.example.util.WhatsAppHelper
 
 @Composable
+fun CustomersListScreen(
+    viewModel: MainViewModel,
+    onNavigateToVouchers: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    DistributionScreen(
+        viewModel = viewModel,
+        onNavigateToVouchers = onNavigateToVouchers,
+        modifier = modifier
+    )
+}
+
+@Composable
 fun DistributionScreen(
     viewModel: MainViewModel,
     onNavigateToVouchers: () -> Unit,
@@ -130,6 +146,8 @@ fun DistributionScreen(
     var selectedRetailerForInvoice by remember { mutableStateOf<RetailerEntity?>(null) }
     var invoiceToClone by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
     var invoiceToEdit by remember { mutableStateOf<CardSalesInvoiceEntity?>(null) }
+
+    val customerSearchQuery by viewModel.customerSearchQuery.collectAsState()
 
     // حساب الأرصدة والكروت الحقيقية بشكل فوري ومباشر 100% من واقع الفواتير والسندات
     val dynamicRetailers = remember(retailers, salesInvoices, vouchers) {
@@ -159,6 +177,22 @@ fun DistributionScreen(
                 )
             } else {
                 r
+            }
+        }
+    }
+
+    // تصفية فورية فائقة السرعة للعملاء والبقالات بدون أي تأخير أثناء الكتابة
+    val filteredRetailers = remember(dynamicRetailers, customerSearchQuery) {
+        if (customerSearchQuery.isBlank()) {
+            dynamicRetailers
+        } else {
+            val q = customerSearchQuery.trim()
+            dynamicRetailers.filter { r ->
+                r.name.contains(q, ignoreCase = true) ||
+                r.ownerName.contains(q, ignoreCase = true) ||
+                r.phone.contains(q) ||
+                r.location.contains(q, ignoreCase = true) ||
+                r.notes.contains(q, ignoreCase = true)
             }
         }
     }
@@ -410,6 +444,35 @@ fun DistributionScreen(
                         }
                     }
 
+                    // Instant Search Bar for Customers / Supermarkets List
+                    OutlinedTextField(
+                        value = customerSearchQuery,
+                        onValueChange = { viewModel.updateCustomerSearchQuery(it) },
+                        placeholder = { Text("بحث فوري عن عميل / بقالة / سوبرماركت...", fontSize = 11.5.sp, color = TextSecondaryDark) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "بحث", tint = MikroTikCyan) },
+                        trailingIcon = {
+                            if (customerSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.updateCustomerSearchQuery("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "مسح", tint = TextSecondaryDark)
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = CyberDarkCardElevated,
+                            unfocusedContainerColor = CyberDarkSurface,
+                            focusedBorderColor = MikroTikCyan,
+                            unfocusedBorderColor = CyberBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                            .testTag("customers_search_input")
+                    )
+
                     // Debt & Cards Banner
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -468,20 +531,25 @@ fun DistributionScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Retailers List
-                    if (dynamicRetailers.isEmpty()) {
+                    // Retailers / Customers List
+                    if (filteredRetailers.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxWidth().weight(1f),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "لا توجد بقالات مسجلة بعد. اضغط إضافة بقالة للبدء.", color = Color.Gray)
+                            Text(
+                                text = if (customerSearchQuery.isNotBlank()) "لا توجد نتائج مطابقة للبحث: ($customerSearchQuery)" else "لا توجد بقالات مسجلة بعد. اضغط إضافة بقالة للبدء.",
+                                color = Color.Gray,
+                                fontFamily = CairoFontFamily,
+                                fontSize = 12.5.sp
+                            )
                         }
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            items(dynamicRetailers, key = { it.id }) { retailer ->
+                            items(filteredRetailers, key = { it.id }) { retailer ->
                                 RetailerCard(
                                     retailer = retailer,
                                     onCall = {

@@ -38,6 +38,7 @@ data class FinancialReportSummary(
     val totalSales: Double = 0.0,
     val totalReceipts: Double = 0.0,
     val totalExpenses: Double = 0.0,
+    val totalCapexAssets: Double = 0.0,
     val estimatedCostOfGoods: Double = 0.0,
     val assetDepreciation: Double = 0.0,
     val netTrueProfit: Double = 0.0,
@@ -125,19 +126,33 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         // 2. Total Receipts (سندات قبض)
         val totalReceipts = periodVouchers.filter { it.voucherType == "RECEIPT" }.sumOf { it.amount }
 
-        // 3. Total Expenses (سندات صرف)
-        val totalExpenses = periodVouchers.filter { it.voucherType == "PAYMENT" }.sumOf { it.amount }
+        // 3. Total OpEx Expenses (سندات صرف تشغيلية - مستثنى منها أصول CAPEX)
+        val totalExpenses = periodVouchers
+            .filter {
+                it.voucherType == "PAYMENT" &&
+                !it.category.equals("CAPEX", ignoreCase = true) &&
+                !it.category.contains("أصول", ignoreCase = true) &&
+                !it.category.contains("CAPEX", ignoreCase = true)
+            }
+            .sumOf { it.amount }
+
+        // Dedicated Total CAPEX Assets Value (أصول ثابتة)
+        val totalCapexAssets = periodVouchers
+            .filter {
+                it.voucherType == "PAYMENT" &&
+                (it.category.equals("CAPEX", ignoreCase = true) || it.category.contains("أصول", ignoreCase = true) || it.category.contains("CAPEX", ignoreCase = true))
+            }
+            .sumOf { it.amount } + assetCost
 
         // 4. Cost of Goods Sold / Purchase Cost
         val estimatedCostOfGoods = periodInvoices.sumOf { inv ->
-            // Estimated cost: ~65% wholesale cost if not explicitly recorded
             inv.totalAmount * 0.65
         }
 
         // 5. Depreciation of Assets
         val assetDepreciation = (assetCost - assetVal).coerceAtLeast(0.0)
 
-        // 6. Net True Profit (إجمالي مبيعات الكروت - إجمالي المصروفات التشغيلية والإهلاك)
+        // 6. Net True Profit (إجمالي المبيعات - المصروفات التشغيلية OpEx - الإهلاك)
         val netTrueProfit = totalSales - totalExpenses - assetDepreciation
         val profitMarginPercent = if (totalSales > 0) (netTrueProfit / totalSales) * 100.0 else 0.0
 
@@ -167,6 +182,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             totalSales = totalSales,
             totalReceipts = totalReceipts,
             totalExpenses = totalExpenses,
+            totalCapexAssets = totalCapexAssets,
             estimatedCostOfGoods = estimatedCostOfGoods,
             assetDepreciation = assetDepreciation,
             netTrueProfit = netTrueProfit,

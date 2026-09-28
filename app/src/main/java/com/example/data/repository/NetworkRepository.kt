@@ -486,7 +486,26 @@ class NetworkRepository(private val db: AppDatabase) {
             val totalAmount = items.sumOf { it.lineTotal }
             val totalCards = items.sumOf { it.quantity }
 
+            // 1. Check stock for ALL items in transaction first
+            for (item in items) {
+                val inventoryItem = db.inventoryDao().getItemByPackageName(item.packageName)
+                val availableInventoryQty = inventoryItem?.quantityAvailable ?: 0
+                val availableCardsCount = db.cardDao().getAvailableCardsByCategory(item.packageName, item.quantity).size
+                val effectiveAvailableStock = maxOf(availableInventoryQty, availableCardsCount)
+
+                if (effectiveAvailableStock < item.quantity) {
+                    throw IllegalStateException("عفواً، الكمية المطلوبة غير متوفرة في المخزن (${item.packageName})")
+                }
+            }
+
             val paymentMath = calculateInvoicePayment(paymentType, totalAmount, paidAmount)
+
+            // Explicit Credit Persistence Rule
+            val isCreditType = paymentMath.canonicalType == "CREDIT" || paymentType.contains("آجل") || paymentType.contains("UNPAID", ignoreCase = true)
+            val finalCanonicalType = if (isCreditType) "CREDIT" else paymentMath.canonicalType
+            val finalPaidAmount = if (isCreditType) 0.0 else paymentMath.paidAmount
+            val finalRemainingAmount = if (isCreditType) totalAmount else paymentMath.remainingAmount
+            val finalStatus = if (isCreditType) "CREDIT" else paymentMath.status
 
             val totalInvoicesCount = db.cardSalesInvoiceDao().getSalesInvoicesList().size + 1
             var candidateNumber = "INV-2026-${String.format(Locale.US, "%04d", totalInvoicesCount)}"
@@ -525,36 +544,35 @@ class NetworkRepository(private val db: AppDatabase) {
                 customerName = customerName.ifBlank { "عميل نقدي" },
                 customerPhone = customerPhone,
                 retailerId = finalRetailerId,
-                paymentType = paymentMath.canonicalType,
+                paymentType = finalCanonicalType,
                 totalAmount = totalAmount,
-                paidAmount = paymentMath.paidAmount,
-                remainingAmount = paymentMath.remainingAmount,
+                paidAmount = finalPaidAmount,
+                remainingAmount = finalRemainingAmount,
                 totalCardsCount = totalCards,
                 itemsCount = items.size,
                 itemsSummary = itemsSummary,
                 itemsJson = jsonArray.toString(),
                 notes = notes,
                 issuerName = issuerName,
-                status = paymentMath.status
+                status = finalStatus
             )
             val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
 
-            // خصم الكميات من المخزن لكل صنف وتسجيل حركات الصرف
+            // 2. Stock Deduction & Card Status Update
+            val timestamp = System.currentTimeMillis()
             items.forEach { item ->
+                val availableCards = db.cardDao().getAvailableCardsByCategory(item.packageName, item.quantity)
+                if (availableCards.isNotEmpty()) {
+                    val cardIds = availableCards.map { it.id }
+                    db.cardDao().markCardsSoldForInvoice(cardIds, invoiceId, timestamp)
+                }
+
                 val existing = db.inventoryDao().getItemByPackageName(item.packageName)
                 val newQty = if (existing != null) {
                     val updated = (existing.quantityAvailable - item.quantity).coerceAtLeast(0)
                     db.inventoryDao().updateItem(existing.copy(quantityAvailable = updated))
                     updated
                 } else {
-                    db.inventoryDao().insertItem(
-                        InventoryItemEntity(
-                            packageName = item.packageName,
-                            quantityAvailable = 0,
-                            wholesalePrice = item.unitPrice,
-                            retailPrice = item.retailPrice
-                        )
-                    )
                     0
                 }
 
@@ -568,7 +586,7 @@ class NetworkRepository(private val db: AppDatabase) {
                         referenceNumber = invoiceNumber,
                         customerOrSupplier = customerName.ifBlank { "عميل نقدي" },
                         unitPrice = item.unitPrice,
-                        notes = "خصم مبيعات فاتورة رقم $invoiceNumber (${paymentMath.canonicalType})"
+                        notes = "خصم مبيعات فاتورة رقم $invoiceNumber ($finalCanonicalType)"
                     )
                 )
             }

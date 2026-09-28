@@ -47,6 +47,12 @@ interface CardDao {
     @Query("UPDATE cards SET status = 'DISTRIBUTED', retailerId = :retailerId, retailerName = :retailerName, distributedAt = :timestamp WHERE id IN (:cardIds)")
     suspend fun assignCardsToRetailer(cardIds: List<Long>, retailerId: Long, retailerName: String, timestamp: Long)
 
+    @Query("SELECT * FROM cards WHERE status = 'AVAILABLE' AND (categoryName = :categoryName OR batchId IN (SELECT id FROM card_batches WHERE categoryName = :categoryName)) ORDER BY id ASC LIMIT :limit")
+    suspend fun getAvailableCardsByCategory(categoryName: String, limit: Int): List<CardEntity>
+
+    @Query("UPDATE cards SET status = 'SOLD', soldAt = :timestamp, invoiceId = :invoiceId WHERE id IN (:cardIds)")
+    suspend fun markCardsSoldForInvoice(cardIds: List<Long>, invoiceId: Long, timestamp: Long)
+
     @Query("UPDATE cards SET status = 'SOLD', soldAt = :timestamp WHERE id = :cardId")
     suspend fun markCardSold(cardId: Long, timestamp: Long)
 

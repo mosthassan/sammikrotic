@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -92,7 +93,27 @@ fun ProfitLossScreen(
     val context = LocalContext.current
 
     val grossRevenue = totalReceipts ?: 0.0
-    val totalOpex = totalPayments ?: 0.0
+    val totalOpex = remember(vouchers) {
+        vouchers
+            .filter {
+                it.voucherType == "PAYMENT" &&
+                !it.isVoided &&
+                !it.category.contains("CAPEX", ignoreCase = true) &&
+                !it.category.contains("أصول", ignoreCase = true)
+            }
+            .sumOf { it.amount }
+    }
+    val totalCapexAssets = remember(vouchers, totalAssetPurchaseCost) {
+        val capexVouchersSum = vouchers
+            .filter {
+                it.voucherType == "PAYMENT" &&
+                !it.isVoided &&
+                (it.category.contains("CAPEX", ignoreCase = true) || it.category.contains("أصول", ignoreCase = true))
+            }
+            .sumOf { it.amount }
+        capexVouchersSum + (totalAssetPurchaseCost ?: 0.0)
+    }
+
     val netOperatingProfit = grossRevenue - totalOpex
     val profitMarginPercent = if (grossRevenue > 0) (netOperatingProfit / grossRevenue) * 100.0 else 0.0
 
@@ -299,6 +320,58 @@ fun ProfitLossScreen(
                             .clip(RoundedCornerShape(5.dp)),
                         color = ReceiptGreen,
                         trackColor = PaymentRed
+                    )
+                }
+            }
+        }
+
+        // Section: Fixed Assets & Company Equity Card (CAPEX)
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, AssetPurple.copy(alpha = 0.4f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AssetPurple.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.AccountBalance, contentDescription = null, tint = AssetPurple, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "إجمالي الأصول الثابتة والرأسمالية (CAPEX)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "قيمة المعدات والأبراج والأجهزة المملوكة للشبكة (حقوق الملكية)",
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "${String.format(Locale.US, "%,.0f", totalCapexAssets)} ر.ي",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp,
+                        color = AssetPurple
                     )
                 }
             }

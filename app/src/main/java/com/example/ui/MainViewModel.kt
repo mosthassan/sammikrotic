@@ -31,6 +31,7 @@ import com.example.data.model.InvoiceItem
 import com.example.data.model.ParsedInvoiceData
 import com.example.data.repository.NetworkRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -665,12 +666,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notes: String = "",
         onComplete: (Long) -> Unit = {}
     ) {
-        val tempId = System.currentTimeMillis()
-        onComplete(tempId)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val issuer = _currentUser.value?.fullName ?: "المهندس حسن"
-                repository.issueMultiItemSalesInvoice(
+                val newInvoiceId = repository.issueMultiItemSalesInvoice(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     retailerId = retailerId,
@@ -680,8 +679,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notes = notes,
                     issuerName = issuer
                 )
+                withContext(Dispatchers.Main) {
+                    onComplete(newInvoiceId)
+                }
             } catch (e: Exception) {
-                Log.e("MainViewModel", "Error issuing sales invoice in background", e)
+                Log.e("MainViewModel", "Error issuing sales invoice", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(-1L)
+                }
             }
         }
     }

@@ -26,5 +26,6 @@ data class CardEntity(
     val retailerName: String? = null,    // اسم البقالة
     val distributedAt: Long? = null,
     val soldAt: Long? = null,
+    val invoiceId: Long? = null,         // معرف الفاتورة التي تم بيع الكرت فيها
     val createdAt: Long = System.currentTimeMillis()
 )

@@ -7,11 +7,13 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,10 +30,12 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
@@ -121,9 +125,18 @@ fun NetworkIdentityScreen(
 
     // Multi-Currency & Exchange Rates State
     var defaultCurrency by remember(identityFromDb) { mutableStateOf(identityFromDb.defaultCurrency.ifBlank { "YER" }) }
-    var sarToYerRateText by remember(identityFromDb) { mutableStateOf((if (identityFromDb.sarToYerRate > 0) identityFromDb.sarToYerRate else 430.0).toString()) }
-    var usdToYerRateText by remember(identityFromDb) { mutableStateOf((if (identityFromDb.usdToYerRate > 0) identityFromDb.usdToYerRate else 1630.0).toString()) }
-    var usdToSarRateText by remember(identityFromDb) { mutableStateOf((if (identityFromDb.usdToSarRate > 0) identityFromDb.usdToSarRate else 3.79).toString()) }
+    var isRatesEditing by remember { mutableStateOf(false) }
+    var sarToYerRateText by remember { mutableStateOf((if (identityFromDb.sarToYerRate > 0) identityFromDb.sarToYerRate else 140.0).toString()) }
+    var usdToYerRateText by remember { mutableStateOf((if (identityFromDb.usdToYerRate > 0) identityFromDb.usdToYerRate else 530.0).toString()) }
+    var usdToSarRateText by remember { mutableStateOf((if (identityFromDb.usdToSarRate > 0) identityFromDb.usdToSarRate else 3.79).toString()) }
+
+    LaunchedEffect(identityFromDb) {
+        if (!isRatesEditing) {
+            sarToYerRateText = (if (identityFromDb.sarToYerRate > 0) identityFromDb.sarToYerRate else 140.0).toString()
+            usdToYerRateText = (if (identityFromDb.usdToYerRate > 0) identityFromDb.usdToYerRate else 530.0).toString()
+            usdToSarRateText = (if (identityFromDb.usdToSarRate > 0) identityFromDb.usdToSarRate else 3.79).toString()
+        }
+    }
 
     var isReconciling by remember { mutableStateOf(false) }
 
@@ -773,27 +786,71 @@ fun NetworkIdentityScreen(
                             }
                         }
 
-                        // Base currency badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(MikroTikPrimary.copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "العملة الأساسية: ريال يمني",
-                                color = MikroTikPrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        // Base currency badge & Edit Button
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MikroTikPrimary.copy(alpha = 0.15f))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "العملة الأساسية: YER",
+                                    color = MikroTikPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (isRatesEditing) {
+                                        val newSar = sarToYerRateText.toDoubleOrNull() ?: 140.0
+                                        val newUsd = usdToYerRateText.toDoubleOrNull() ?: 530.0
+                                        val newUsdSar = usdToSarRateText.toDoubleOrNull() ?: 3.79
+
+                                        val updatedIdentity = identityFromDb.copy(
+                                            sarToYerRate = newSar,
+                                            usdToYerRate = newUsd,
+                                            usdToSarRate = newUsdSar,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                        viewModel.saveNetworkIdentity(updatedIdentity) {
+                                            Toast.makeText(context, "تم تثبيت وحفظ أسعار الصرف بنجاح ✓", Toast.LENGTH_SHORT).show()
+                                        }
+                                        isRatesEditing = false
+                                    } else {
+                                        isRatesEditing = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, if (isRatesEditing) ProfitEmerald else MikroTikCyan),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isRatesEditing) Icons.Default.Check else Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = if (isRatesEditing) ProfitEmerald else MikroTikCyan,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isRatesEditing) "حفظ وتثبيت" else "تعديل",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isRatesEditing) ProfitEmerald else MikroTikCyan
+                                )
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "يتيح النظام تسجيل المشتريات والأجهزة ومساهمات الشركاء بالدولار أو السعودي، مع تحويلها آلياً للريال اليمني لتوحيد الحسابات والميزانية والتقارير بدقة مالية عالية.",
+                        text = if (isRatesEditing) "حالة التعديل: مفتوحة ✏️ (قم بإدخال أسعار الصرف الجديدة ثم اضغط حفظ وتثبيت)" else "حالة أسعار الصرف: مثبتة ومحفوظة 🔒 (اضغط زر تعديل للتغيير والحفظ)",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isRatesEditing) ProfitEmerald else MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -806,8 +863,9 @@ fun NetworkIdentityScreen(
                         OutlinedTextField(
                             value = sarToYerRateText,
                             onValueChange = { sarToYerRateText = it },
+                            enabled = isRatesEditing,
                             label = { Text("1 ريال سعودي = (ريال يمني)") },
-                            placeholder = { Text("430") },
+                            placeholder = { Text("140") },
                             singleLine = true,
                             modifier = Modifier.weight(1f).testTag("input_sar_to_yer")
                         )
@@ -815,8 +873,9 @@ fun NetworkIdentityScreen(
                         OutlinedTextField(
                             value = usdToYerRateText,
                             onValueChange = { usdToYerRateText = it },
+                            enabled = isRatesEditing,
                             label = { Text("1 دولار أمريكي = (ريال يمني)") },
-                            placeholder = { Text("1630") },
+                            placeholder = { Text("530") },
                             singleLine = true,
                             modifier = Modifier.weight(1f).testTag("input_usd_to_yer")
                         )
@@ -827,6 +886,7 @@ fun NetworkIdentityScreen(
                     OutlinedTextField(
                         value = usdToSarRateText,
                         onValueChange = { usdToSarRateText = it },
+                        enabled = isRatesEditing,
                         label = { Text("1 دولار أمريكي = (ريال سعودي)") },
                         placeholder = { Text("3.79") },
                         singleLine = true,
@@ -1086,8 +1146,8 @@ fun NetworkIdentityScreen(
                             dnsServers = dnsServers.trim(),
                             welcomeNotice = welcomeNotice.trim(),
                             defaultCurrency = defaultCurrency.trim().ifBlank { "YER" },
-                            sarToYerRate = sarToYerRateText.toDoubleOrNull() ?: 430.0,
-                            usdToYerRate = usdToYerRateText.toDoubleOrNull() ?: 1630.0,
+                            sarToYerRate = sarToYerRateText.toDoubleOrNull() ?: 140.0,
+                            usdToYerRate = usdToYerRateText.toDoubleOrNull() ?: 530.0,
                             usdToSarRate = usdToSarRateText.toDoubleOrNull() ?: 3.79,
                             updatedAt = System.currentTimeMillis()
                         )

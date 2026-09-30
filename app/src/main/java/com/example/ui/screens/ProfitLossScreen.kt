@@ -101,7 +101,7 @@ fun ProfitLossScreen(
                 !it.category.contains("CAPEX", ignoreCase = true) &&
                 !it.category.contains("أصول", ignoreCase = true)
             }
-            .sumOf { it.amount }
+            .sumOf { it.amount.toDouble() }
     }
     val totalCapexAssets = remember(vouchers, totalAssetPurchaseCost) {
         val capexVouchersSum = vouchers
@@ -110,7 +110,7 @@ fun ProfitLossScreen(
                 !it.isVoided &&
                 (it.category.contains("CAPEX", ignoreCase = true) || it.category.contains("أصول", ignoreCase = true))
             }
-            .sumOf { it.amount }
+            .sumOf { it.amount.toDouble() }
         capexVouchersSum + (totalAssetPurchaseCost ?: 0.0)
     }
 
@@ -131,7 +131,7 @@ fun ProfitLossScreen(
         vouchers
             .filter { it.voucherType == "PAYMENT" }
             .groupBy { if (it.category.isNotBlank()) it.category else "مصاريف تشغيل عامة" }
-            .mapValues { entry -> entry.value.sumOf { it.amount } }
+            .mapValues { entry -> entry.value.sumOf { it.amount.toDouble() } }
             .toList()
             .sortedByDescending { it.second }
     }

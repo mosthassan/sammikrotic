@@ -694,3 +694,7 @@ private fun shareInvoiceSummary(context: android.content.Context, invoice: Purch
 private fun formatMoney(amount: Double): String {
     return String.format(Locale.US, "%,.0f", amount)
 }
+
+private fun formatMoney(amount: java.math.BigDecimal): String {
+    return formatMoney(amount.toDouble())
+}

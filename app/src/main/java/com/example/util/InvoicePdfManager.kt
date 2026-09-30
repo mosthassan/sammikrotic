@@ -449,7 +449,7 @@ object InvoicePdfManager {
         canvas.drawText("${invoice.paidAmount.toInt()} ريال", PAGE_WIDTH - 268f, currentY + 74f, paidVal)
 
         // Remaining
-        val remColor = if (invoice.remainingAmount > 0) AndroidColor.parseColor("#DC2626") else AndroidColor.parseColor("#16A34A")
+        val remColor = if (invoice.remainingAmount > java.math.BigDecimal.ZERO) AndroidColor.parseColor("#DC2626") else AndroidColor.parseColor("#16A34A")
         val remVal = Paint(sValPaint).apply { color = remColor }
         canvas.drawText("المتبقي (آجل):", PAGE_WIDTH - 42f, currentY + 98f, sLabelPaint)
         canvas.drawText("${invoice.remainingAmount.toInt()} ريال", PAGE_WIDTH - 268f, currentY + 98f, remVal)
@@ -482,18 +482,18 @@ object InvoicePdfManager {
 
         // Status Badge in Notes
         val statusBgPaint = Paint().apply {
-            color = if (invoice.remainingAmount <= 0) AndroidColor.parseColor("#DCFCE7") else AndroidColor.parseColor("#FEE2E2")
+            color = if (invoice.remainingAmount <= java.math.BigDecimal.ZERO) AndroidColor.parseColor("#DCFCE7") else AndroidColor.parseColor("#FEE2E2")
             style = Paint.Style.FILL
         }
         canvas.drawRoundRect(RectF(40f, currentY + 80f, PAGE_WIDTH - 305f, currentY + 104f), 4f, 4f, statusBgPaint)
 
         val statusTextPaint = Paint().apply {
-            color = if (invoice.remainingAmount <= 0) AndroidColor.parseColor("#15803D") else AndroidColor.parseColor("#B91C1C")
+            color = if (invoice.remainingAmount <= java.math.BigDecimal.ZERO) AndroidColor.parseColor("#15803D") else AndroidColor.parseColor("#B91C1C")
             textSize = 9f
             isFakeBoldText = true
             textAlign = Paint.Align.CENTER
         }
-        val statusBadgeText = if (invoice.remainingAmount <= 0) "خالصة الحساب بالكامل ✓" else "متبقي مديونية: ${invoice.remainingAmount.toInt()} ريال"
+        val statusBadgeText = if (invoice.remainingAmount <= java.math.BigDecimal.ZERO) "خالصة الحساب بالكامل ✓" else "متبقي مديونية: ${invoice.remainingAmount.toInt()} ريال"
         val badgeCenterX = (40f + (PAGE_WIDTH - 305f)) / 2f
         canvas.drawText(statusBadgeText, badgeCenterX, currentY + 96f, statusTextPaint)
 

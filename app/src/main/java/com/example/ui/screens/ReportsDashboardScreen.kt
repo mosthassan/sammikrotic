@@ -1062,16 +1062,16 @@ fun AgentAccountStatementModal(
             .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
     }
 
-    val totalPurchases = agentInvoices.sumOf { it.totalAmount }
+    val totalPurchases = agentInvoices.sumOf { it.totalAmount.toDouble() }
 
     val unlinkedInvoicePaidSum = agentInvoices.sumOf { inv ->
         val hasVoucher = agentReceiptVouchers.any { v ->
             v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
         }
-        if (!hasVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
+        if (!hasVoucher && inv.paidAmount > java.math.BigDecimal.ZERO) inv.paidAmount.toDouble() else 0.0
     }
 
-    val totalPaid = agentReceiptVouchers.sumOf { it.amount } + unlinkedInvoicePaidSum
+    val totalPaid = agentReceiptVouchers.sumOf { it.amount.toDouble() } + unlinkedInvoicePaidSum
     val finalBalance = totalPurchases - totalPaid
 
     val txList = remember(agentInvoices, agentReceiptVouchers) {
@@ -1085,7 +1085,7 @@ fun AgentAccountStatementModal(
                     isReceipt = false,
                     referenceNumber = inv.invoiceNumber,
                     details = "${inv.totalCardsCount} كرت ${if (inv.itemsSummary.isNotBlank()) "• ${inv.itemsSummary}" else ""}",
-                    debitAmount = inv.totalAmount,
+                    debitAmount = inv.totalAmount.toDouble(),
                     creditAmount = 0.0
                 )
             )
@@ -1093,7 +1093,7 @@ fun AgentAccountStatementModal(
             val hasVoucher = agentReceiptVouchers.any { v ->
                 v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
             }
-            if (!hasVoucher && inv.paidAmount > 0) {
+            if (!hasVoucher && inv.paidAmount > java.math.BigDecimal.ZERO) {
                 list.add(
                     StatementTxItem(
                         id = "INV_PAY_${inv.id}",
@@ -1103,7 +1103,7 @@ fun AgentAccountStatementModal(
                         referenceNumber = "REC-${inv.invoiceNumber}",
                         details = "دفعة مسددة مع الفاتورة ${inv.invoiceNumber}",
                         debitAmount = 0.0,
-                        creditAmount = inv.paidAmount
+                        creditAmount = inv.paidAmount.toDouble()
                     )
                 )
             }
@@ -1119,7 +1119,7 @@ fun AgentAccountStatementModal(
                     referenceNumber = v.voucherNumber,
                     details = "${v.category} ${if (v.description.isNotBlank()) "• ${v.description}" else ""}",
                     debitAmount = 0.0,
-                    creditAmount = v.amount
+                    creditAmount = v.amount.toDouble()
                 )
             )
         }

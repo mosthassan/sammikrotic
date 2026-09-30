@@ -1068,9 +1068,9 @@ fun DividendPayoutDialog(
                                 partnerId = partner.id,
                                 partnerName = partner.name,
                                 transactionType = "DIVIDEND_PAYOUT",
-                                amount = amountInYer,
+                                amount = java.math.BigDecimal.valueOf(amountInYer),
                                 currency = selectedCurrency,
-                                originalAmount = originalAmount,
+                                originalAmount = java.math.BigDecimal.valueOf(originalAmount),
                                 notes = notes
                             )
                         )

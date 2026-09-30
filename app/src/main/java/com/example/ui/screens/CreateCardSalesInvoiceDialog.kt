@@ -175,7 +175,7 @@ fun CreateCardSalesInvoiceDialog(
                     activeSourceInvoice.paymentType.contains("CREDIT", ignoreCase = true) || activeSourceInvoice.paymentType.contains("آجل") -> "CREDIT"
                     activeSourceInvoice.paymentType.contains("CASH", ignoreCase = true) || activeSourceInvoice.paymentType.contains("نقد") -> "CASH"
                     activeSourceInvoice.paymentType.contains("PARTIAL", ignoreCase = true) || activeSourceInvoice.paymentType.contains("مقدم") -> "PARTIAL"
-                    else -> if (activeSourceInvoice.remainingAmount > 0) "CREDIT" else "CASH"
+                    else -> if (activeSourceInvoice.remainingAmount > java.math.BigDecimal.ZERO) "CREDIT" else "CASH"
                 }
             } else {
                 if (defaultRetailer != null) "CREDIT" else "CASH"
@@ -185,7 +185,7 @@ fun CreateCardSalesInvoiceDialog(
 
     var customPaidAmountText by remember(activeSourceInvoice) {
         mutableStateOf(
-            if (activeSourceInvoice != null && activeSourceInvoice.paidAmount > 0) {
+            if (activeSourceInvoice != null && activeSourceInvoice.paidAmount > java.math.BigDecimal.ZERO) {
                 activeSourceInvoice.paidAmount.toInt().toString()
             } else ""
         )

@@ -2,6 +2,7 @@ package com.example.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.math.BigDecimal
 
 /**
  * يمثل فاتورة مبيعات كروت متعددة الأصناف في النظام المحاسبي
@@ -17,9 +18,9 @@ data class CardSalesInvoiceEntity(
     val retailerId: Long? = null,
     val invoiceDateMillis: Long = System.currentTimeMillis(),
     val paymentType: String = "CASH", // "CASH" (نقد), "CREDIT" (آجل), "PARTIAL" (مقدم ومتبقي)
-    val totalAmount: Double = 0.0,
-    val paidAmount: Double = 0.0,
-    val remainingAmount: Double = 0.0,
+    val totalAmount: BigDecimal = BigDecimal.ZERO,
+    val paidAmount: BigDecimal = BigDecimal.ZERO,
+    val remainingAmount: BigDecimal = BigDecimal.ZERO,
     val totalCardsCount: Int = 0,
     val itemsCount: Int = 0,
     val itemsSummary: String = "",

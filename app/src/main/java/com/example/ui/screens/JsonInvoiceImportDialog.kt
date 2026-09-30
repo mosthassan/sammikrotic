@@ -648,7 +648,7 @@ fun JsonInvoiceImportDialog(
                                         supplierName = data.supplierName.ifBlank { "مورد مشتريات" },
                                         invoiceDateMillis = finalDateMillis,
                                         targetType = finalTarget,
-                                        totalAmount = if (data.totalAmount > 0) data.totalAmount else data.items.sumOf { it.subtotal },
+                                        totalAmount = if (data.totalAmount > 0) java.math.BigDecimal.valueOf(data.totalAmount) else java.math.BigDecimal.valueOf(data.items.sumOf { it.subtotal }),
                                         currency = data.currency,
                                         paymentMethod = "نقداً",
                                         notes = data.notes,

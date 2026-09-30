@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.graphics.Bitmap
 import android.util.Log
+import java.math.BigDecimal
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ai.GeminiAiService
@@ -374,20 +375,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, NetworkIdentityEntity())
 
     val sarToYerRate: StateFlow<Double> = networkIdentity
-        .map { if (it.sarToYerRate > 0) it.sarToYerRate else 430.0 }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, 430.0)
+        .map { if (it.sarToYerRate > 0) it.sarToYerRate else 140.0 }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 140.0)
 
     val usdToYerRate: StateFlow<Double> = networkIdentity
-        .map { if (it.usdToYerRate > 0) it.usdToYerRate else 1630.0 }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, 1630.0)
+        .map { if (it.usdToYerRate > 0) it.usdToYerRate else 530.0 }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 530.0)
 
     fun convertToYer(amount: Double, fromCurrency: String): Double {
         val identity = networkIdentity.value
         return com.example.util.CurrencyHelper.convertToYer(
             amount,
             fromCurrency,
-            if (identity.sarToYerRate > 0) identity.sarToYerRate else 430.0,
-            if (identity.usdToYerRate > 0) identity.usdToYerRate else 1630.0
+            if (identity.sarToYerRate > 0) identity.sarToYerRate else 140.0,
+            if (identity.usdToYerRate > 0) identity.usdToYerRate else 530.0
         )
     }
 
@@ -948,6 +949,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val retailers: StateFlow<List<RetailerEntity>> = repository.allRetailers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun getCustomerAccountSummary(customerId: Long): kotlinx.coroutines.flow.Flow<com.example.data.local.dao.CustomerAccountSummary> {
+        return repository.getCustomerAccountSummary(customerId)
+    }
+
+    fun getCustomerLedger(customerId: Long): kotlinx.coroutines.flow.Flow<List<com.example.data.local.entity.CustomerLedgerEntity>> {
+        return repository.getCustomerLedger(customerId)
+    }
+
     fun saveRetailer(retailer: RetailerEntity, onComplete: () -> Unit = {}) {
         onComplete()
         viewModelScope.launch(Dispatchers.IO) {
@@ -1100,12 +1109,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         id = id,
                         voucherNumber = voucherNumberGenerated,
                         voucherType = voucherType,
-                        amount = amount,
+                        amount = BigDecimal.valueOf(amount),
                         partyName = partyName,
                         retailerId = retailerId,
                         invoiceId = invoiceId,
                         invoiceNumber = invoiceNumber,
-                        allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else 0.0,
+                        allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) BigDecimal.valueOf(amount) else BigDecimal.ZERO,
                         category = category,
                         paymentMethod = paymentMethod,
                         description = description,
@@ -1303,7 +1312,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val isEdit = invoice.id > 0L
             val invoiceToSave = invoice.copy(
-                totalAmount = if (totalCalc > 0) totalCalc else invoice.totalAmount,
+                totalAmount = if (totalCalc > 0) BigDecimal.valueOf(totalCalc) else invoice.totalAmount,
                 itemsJson = itemsArray.toString(),
                 itemsSummary = summaryText,
                 status = "APPROVED"
@@ -1369,11 +1378,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 firebaseService.pushVoucher(voucher, userEmail)
 
                 // حفظ قيد يومية محاسبي مزدوج في جدول journal_entries عبر repository
-                val convertedAmountYer = convertToYer(invoiceToSave.totalAmount, invoiceToSave.currency)
-                val exchangeRate = if (invoiceToSave.totalAmount > 0) {
-                    convertedAmountYer / invoiceToSave.totalAmount
+                val convertedAmountYer = convertToYer(invoiceToSave.totalAmount.toDouble(), invoiceToSave.currency)
+                val exchangeRate = if (invoiceToSave.totalAmount > java.math.BigDecimal.ZERO) {
+                    java.math.BigDecimal.valueOf(convertedAmountYer).divide(invoiceToSave.totalAmount, 4, java.math.RoundingMode.HALF_UP)
                 } else {
-                    1.0
+                    java.math.BigDecimal.ONE
                 }
 
                 val (debitAcc, creditAcc) = if (invoiceToSave.targetType == "ASSETS") {
@@ -1389,7 +1398,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     referenceId = finalInvoiceNumber,
                     debitAccount = debitAcc,
                     creditAccount = creditAcc,
-                    amount = convertedAmountYer,
+                    amount = java.math.BigDecimal.valueOf(convertedAmountYer),
                     currency = invoiceToSave.currency,
                     exchangeRate = exchangeRate,
                     description = desc,

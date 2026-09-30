@@ -792,7 +792,7 @@ fun AssetInvoiceCard(
     onShare: () -> Unit
 ) {
     val dateStr = SimpleDateFormat("yyyy/MM/dd", Locale.ENGLISH).format(Date(invoice.invoiceDateMillis))
-    val origAmount = if (invoice.originalAmount > 0) invoice.originalAmount else invoice.totalAmount
+    val origAmount = if (invoice.originalAmount > java.math.BigDecimal.ZERO) invoice.originalAmount else invoice.totalAmount
     val currencySymbol = CurrencyHelper.getCurrencySymbol(invoice.currency)
     val formattedOriginalTotal = "${String.format(Locale.US, "%,.2f", origAmount).replace(".00", "")} $currencySymbol"
 
@@ -890,7 +890,7 @@ fun AssetInvoiceCard(
                     )
                 }
 
-                if (invoice.currency != "YER" && invoice.totalAmount > 0) {
+                if (invoice.currency != "YER" && invoice.totalAmount > java.math.BigDecimal.ZERO) {
                     Text(
                         text = "(${String.format(Locale.US, "%,.0f", invoice.totalAmount)} ر.ي)",
                         fontSize = 11.sp,
@@ -964,7 +964,7 @@ fun AssetInvoiceCard(
 
 private fun shareInvoice(context: android.content.Context, invoice: PurchaseInvoiceEntity) {
     val dateStr = SimpleDateFormat("yyyy/MM/dd", Locale.ENGLISH).format(Date(invoice.invoiceDateMillis))
-    val origAmount = if (invoice.originalAmount > 0) invoice.originalAmount else invoice.totalAmount
+    val origAmount = if (invoice.originalAmount > java.math.BigDecimal.ZERO) invoice.originalAmount else invoice.totalAmount
     val currencySymbol = CurrencyHelper.getCurrencySymbol(invoice.currency)
     val formattedOriginalTotal = "${String.format(Locale.US, "%,.2f", origAmount).replace(".00", "")} $currencySymbol"
 

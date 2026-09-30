@@ -458,7 +458,7 @@ fun VouchersListSubScreen(
                         viewModel.updateVoucher(
                             voucherToEdit!!.copy(
                                 voucherType = type,
-                                amount = amount,
+                                amount = java.math.BigDecimal.valueOf(amount),
                                 partyName = party,
                                 retailerId = retailerId,
                                 category = cat,
@@ -491,7 +491,7 @@ fun VouchersListSubScreen(
                                 val tempVoucher = FinancialVoucherEntity(
                                     voucherNumber = "NEW",
                                     voucherType = type,
-                                    amount = amount,
+                                    amount = java.math.BigDecimal.valueOf(amount),
                                     partyName = party,
                                     retailerId = retailerId,
                                     category = cat,

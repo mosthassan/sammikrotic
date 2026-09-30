@@ -157,9 +157,9 @@ fun DistributionScreen(
                 it.retailerId == r.id || it.customerName.trim().equals(r.name.trim(), ignoreCase = true)
             }
             if (matchingInvoices.isNotEmpty()) {
-                val debtFromInvoices = matchingInvoices.sumOf { it.remainingAmount }
-                val cardsFromInvoices = matchingInvoices.filter { it.remainingAmount > 0.01 }.sumOf { it.totalCardsCount }
-                val paidFromInvoices = matchingInvoices.sumOf { it.paidAmount }
+                val debtFromInvoices = matchingInvoices.sumOf { it.remainingAmount.toDouble() }
+                val cardsFromInvoices = matchingInvoices.filter { it.remainingAmount.compareTo(java.math.BigDecimal("0.01")) > 0 }.sumOf { it.totalCardsCount }
+                val paidFromInvoices = matchingInvoices.sumOf { it.paidAmount.toDouble() }
 
                 // خصم أي سندات قبض مستقلة على البقالة لم تخصم من الفاتورة
                 val independentReceipts = vouchers.filter {
@@ -167,7 +167,7 @@ fun DistributionScreen(
                     it.voucherType == "RECEIPT" &&
                     !it.description.contains("INV-") &&
                     !it.category.contains("فاتورة")
-                }.sumOf { it.amount }
+                }.sumOf { it.amount.toDouble() }
 
                 val finalDebt = (debtFromInvoices - independentReceipts).coerceAtLeast(0.0)
                 r.copy(
@@ -710,7 +710,7 @@ fun DistributionScreen(
                             val savedReceiptVoucher = com.example.data.local.entity.FinancialVoucherEntity(
                                 voucherNumber = voucherNumber,
                                 voucherType = "RECEIPT",
-                                amount = amount,
+                                amount = java.math.BigDecimal.valueOf(amount),
                                 partyName = r.name,
                                 retailerId = r.id,
                                 category = "توريد مبيعات كروت",

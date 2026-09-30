@@ -80,9 +80,9 @@ fun CardSalesInvoicesSubScreen(
     }
 
     // مؤشرات KPI المالية العامة
-    val totalSalesAmount = remember(invoices) { invoices.sumOf { it.totalAmount } }
-    val totalPaidAmount = remember(invoices) { invoices.sumOf { it.paidAmount } }
-    val totalCreditRemaining = remember(invoices) { invoices.sumOf { it.remainingAmount } }
+    val totalSalesAmount = remember(invoices) { invoices.fold(java.math.BigDecimal.ZERO) { acc, inv -> acc.add(inv.totalAmount) } }
+    val totalPaidAmount = remember(invoices) { invoices.fold(java.math.BigDecimal.ZERO) { acc, inv -> acc.add(inv.paidAmount) } }
+    val totalCreditRemaining = remember(invoices) { invoices.fold(java.math.BigDecimal.ZERO) { acc, inv -> acc.add(inv.remainingAmount) } }
     val totalSoldCards = remember(invoices) { invoices.sumOf { it.totalCardsCount } }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -99,8 +99,8 @@ fun CardSalesInvoicesSubScreen(
     var expandedInvoiceId by remember { mutableStateOf<Long?>(null) }
 
     // إحصاءات الفلاتر
-    val creditCount = remember(invoices) { invoices.count { it.paymentType == "CREDIT" || it.remainingAmount > 0 } }
-    val cashCount = remember(invoices) { invoices.count { it.paymentType == "CASH" && it.remainingAmount <= 0 } }
+    val creditCount = remember(invoices) { invoices.count { it.paymentType == "CREDIT" || it.remainingAmount.compareTo(java.math.BigDecimal.ZERO) > 0 } }
+    val cashCount = remember(invoices) { invoices.count { it.paymentType == "CASH" && it.remainingAmount.compareTo(java.math.BigDecimal.ZERO) <= 0 } }
     val partialCount = remember(invoices) { invoices.count { it.paymentType == "PARTIAL" } }
 
     val filteredInvoices = remember(invoices, searchQuery, selectedFilter) {
@@ -113,8 +113,8 @@ fun CardSalesInvoicesSubScreen(
                     inv.notes.contains(searchQuery, ignoreCase = true)
 
             val matchesFilter = when (selectedFilter) {
-                "CREDIT" -> inv.paymentType == "CREDIT" || inv.remainingAmount > 0
-                "CASH" -> inv.paymentType == "CASH" && inv.remainingAmount <= 0
+                "CREDIT" -> inv.paymentType == "CREDIT" || inv.remainingAmount.compareTo(java.math.BigDecimal.ZERO) > 0
+                "CASH" -> inv.paymentType == "CASH" && inv.remainingAmount.compareTo(java.math.BigDecimal.ZERO) <= 0
                 "PARTIAL" -> inv.paymentType == "PARTIAL"
                 else -> true
             }
@@ -149,21 +149,21 @@ fun CardSalesInvoicesSubScreen(
                     Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
                     Spacer(modifier = Modifier.width(3.dp))
                     Text("المبيعات: ", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("${totalSalesAmount.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                    Text("${totalSalesAmount.setScale(0, java.math.RoundingMode.HALF_UP)} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
                 }
                 // المحصل
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Payments, contentDescription = null, tint = ProfitEmerald, modifier = Modifier.size(13.dp))
                     Spacer(modifier = Modifier.width(3.dp))
                     Text("المحصل: ", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("${totalPaidAmount.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitEmerald)
+                    Text("${totalPaidAmount.setScale(0, java.math.RoundingMode.HALF_UP)} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitEmerald)
                 }
                 // الآجل
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = if (totalCreditRemaining > 0) Color(0xFFEF4444) else ProfitEmerald, modifier = Modifier.size(13.dp))
+                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = if (totalCreditRemaining.compareTo(java.math.BigDecimal.ZERO) > 0) Color(0xFFEF4444) else ProfitEmerald, modifier = Modifier.size(13.dp))
                     Spacer(modifier = Modifier.width(3.dp))
                     Text("الآجل: ", fontFamily = CairoFontFamily, fontSize = 10.sp, color = TextSecondaryDark)
-                    Text("${totalCreditRemaining.toInt()} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (totalCreditRemaining > 0) Color(0xFFEF4444) else ProfitEmerald)
+                    Text("${totalCreditRemaining.setScale(0, java.math.RoundingMode.HALF_UP)} ر.ي", fontFamily = CairoFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (totalCreditRemaining.compareTo(java.math.BigDecimal.ZERO) > 0) Color(0xFFEF4444) else ProfitEmerald)
                 }
                 // الكروت
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -628,8 +628,8 @@ private fun CardSalesInvoiceListItem(
 
     val (badgeText, badgeColor, badgeIcon) = remember(invoice.paymentType, invoice.remainingAmount) {
         when {
-            invoice.remainingAmount <= 0 -> Triple("خالص ✓", ProfitEmerald, Icons.Default.CheckCircle)
-            invoice.paidAmount <= 0 -> Triple("آجل ⏳", Color(0xFFEF4444), Icons.Default.Schedule)
+            invoice.remainingAmount <= java.math.BigDecimal.ZERO -> Triple("خالص ✓", ProfitEmerald, Icons.Default.CheckCircle)
+            invoice.paidAmount <= java.math.BigDecimal.ZERO -> Triple("آجل ⏳", Color(0xFFEF4444), Icons.Default.Schedule)
             else -> Triple("جزئي", StatusWarning, Icons.Default.PriceCheck)
         }
     }
@@ -772,7 +772,7 @@ private fun CardSalesInvoiceListItem(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (invoice.remainingAmount > 0) "آجل ${invoice.remainingAmount.toInt()}" else badgeText,
+                                text = if (invoice.remainingAmount > java.math.BigDecimal.ZERO) "آجل ${invoice.remainingAmount.toInt()}" else badgeText,
                                 fontFamily = CairoFontFamily,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,

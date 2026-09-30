@@ -522,8 +522,8 @@ object ReportPdfManager {
                     dateMillis = inv.invoiceDateMillis,
                     reference = inv.invoiceNumber,
                     description = "فاتورة مبيعات كروت (${inv.totalCardsCount} كرت)",
-                    debit = inv.totalAmount,
-                    credit = if (!hasTiedVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
+                    debit = inv.totalAmount.toDouble(),
+                    credit = if (!hasTiedVoucher && inv.paidAmount > java.math.BigDecimal.ZERO) inv.paidAmount.toDouble() else 0.0
                 )
             )
         }
@@ -534,8 +534,8 @@ object ReportPdfManager {
                     dateMillis = v.dateMillis,
                     reference = v.voucherNumber,
                     description = if (isRec) "سند قبض توريد (${v.paymentMethod.ifBlank { "نقداً" }})" else "سند صرف (${v.category})",
-                    debit = if (!isRec) v.amount else 0.0,
-                    credit = if (isRec) v.amount else 0.0
+                    debit = if (!isRec) v.amount.toDouble() else 0.0,
+                    credit = if (isRec) v.amount.toDouble() else 0.0
                 )
             )
         }

@@ -121,10 +121,10 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         val periodVouchers = vouchers.filter { !it.isVoided && it.dateMillis in startMillis..endMillis }
 
         // 1. Total Sales
-        val totalSales = periodInvoices.sumOf { it.totalAmount }
+        val totalSales = periodInvoices.sumOf { it.totalAmount.toDouble() }
 
         // 2. Total Receipts (سندات قبض)
-        val totalReceipts = periodVouchers.filter { it.voucherType == "RECEIPT" }.sumOf { it.amount }
+        val totalReceipts = periodVouchers.filter { it.voucherType == "RECEIPT" }.sumOf { it.amount.toDouble() }
 
         // 3. Total OpEx Expenses (سندات صرف تشغيلية - مستثنى منها أصول CAPEX)
         val totalExpenses = periodVouchers
@@ -134,7 +134,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 !it.category.contains("أصول", ignoreCase = true) &&
                 !it.category.contains("CAPEX", ignoreCase = true)
             }
-            .sumOf { it.amount }
+            .sumOf { it.amount.toDouble() }
 
         // Dedicated Total CAPEX Assets Value (أصول ثابتة)
         val totalCapexAssets = periodVouchers
@@ -142,11 +142,11 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 it.voucherType == "PAYMENT" &&
                 (it.category.equals("CAPEX", ignoreCase = true) || it.category.contains("أصول", ignoreCase = true) || it.category.contains("CAPEX", ignoreCase = true))
             }
-            .sumOf { it.amount } + assetCost
+            .sumOf { it.amount.toDouble() } + assetCost
 
         // 4. Cost of Goods Sold / Purchase Cost
         val estimatedCostOfGoods = periodInvoices.sumOf { inv ->
-            inv.totalAmount * 0.65
+            inv.totalAmount.toDouble() * 0.65
         }
 
         // 5. Depreciation of Assets
@@ -160,7 +160,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         val salesByAgentMap = mutableMapOf<Long, Double>()
         periodInvoices.forEach { inv ->
             inv.retailerId?.let { rId ->
-                salesByAgentMap[rId] = (salesByAgentMap[rId] ?: 0.0) + inv.totalAmount
+                salesByAgentMap[rId] = (salesByAgentMap[rId] ?: 0.0) + inv.totalAmount.toDouble()
             }
         }
         val topAgentsList = salesByAgentMap.entries
@@ -364,14 +364,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                     }
                     .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
 
-                val totalPurchases = agentInvoices.sumOf { it.totalAmount }
+                val totalPurchases = agentInvoices.sumOf { it.totalAmount.toDouble() }
                 val unlinkedInvoicePaidSum = agentInvoices.sumOf { inv ->
                     val hasVoucher = agentVouchers.any { v ->
                         v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
                     }
-                    if (!hasVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
+                    if (!hasVoucher && inv.paidAmount.compareTo(java.math.BigDecimal.ZERO) > 0) inv.paidAmount.toDouble() else 0.0
                 }
-                val totalPaid = agentVouchers.sumOf { it.amount } + unlinkedInvoicePaidSum
+                val totalPaid = agentVouchers.sumOf { it.amount.toDouble() } + unlinkedInvoicePaidSum
                 val finalBalance = totalPurchases - totalPaid
 
                 val pdfFile = ReportPdfManager.generateAgentAccountStatementPdfFile(
@@ -421,14 +421,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             }
             .distinctBy { if (it.voucherNumber.isNotBlank()) it.voucherNumber else it.id.toString() }
 
-        val totalPurchases = agentInvoices.sumOf { it.totalAmount }
+        val totalPurchases = agentInvoices.sumOf { it.totalAmount.toDouble() }
         val unlinkedInvoicePaidSum = agentInvoices.sumOf { inv ->
             val hasVoucher = agentVouchers.any { v ->
                 v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
             }
-            if (!hasVoucher && inv.paidAmount > 0) inv.paidAmount else 0.0
+            if (!hasVoucher && inv.paidAmount.compareTo(java.math.BigDecimal.ZERO) > 0) inv.paidAmount.toDouble() else 0.0
         }
-        val totalPaid = agentVouchers.sumOf { it.amount } + unlinkedInvoicePaidSum
+        val totalPaid = agentVouchers.sumOf { it.amount.toDouble() } + unlinkedInvoicePaidSum
         val finalBalance = totalPurchases - totalPaid
 
         val statementText = """

@@ -21,6 +21,7 @@ import com.example.data.model.CardSalesInvoiceItem
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.room.withTransaction
+import java.math.BigDecimal
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -45,7 +46,26 @@ class NetworkRepository(private val db: AppDatabase) {
     }
 
     suspend fun saveNetworkIdentity(identity: NetworkIdentityEntity): Long = withContext(Dispatchers.IO) {
-        db.networkIdentityDao().insertOrUpdate(identity.copy(id = 1L, updatedAt = System.currentTimeMillis()))
+        db.withTransaction {
+            val res = db.networkIdentityDao().insertOrUpdate(identity.copy(id = 1L, updatedAt = System.currentTimeMillis()))
+            db.currencyRateDao().insertOrUpdateRates(
+                listOf(
+                    com.example.data.local.entity.CurrencyRateEntity(
+                        currencyCode = "USD",
+                        rateToBase = BigDecimal.valueOf(if (identity.usdToYerRate > 0) identity.usdToYerRate else 530.0)
+                    ),
+                    com.example.data.local.entity.CurrencyRateEntity(
+                        currencyCode = "SAR",
+                        rateToBase = BigDecimal.valueOf(if (identity.sarToYerRate > 0) identity.sarToYerRate else 140.0)
+                    ),
+                    com.example.data.local.entity.CurrencyRateEntity(
+                        currencyCode = "YER",
+                        rateToBase = BigDecimal.ONE
+                    )
+                )
+            )
+            res
+        }
     }
 
     fun extractSubnetPrefix(subnetOrIp: String): String {
@@ -423,15 +443,15 @@ class NetworkRepository(private val db: AppDatabase) {
 
     private data class InvoicePaymentResult(
         val canonicalType: String,
-        val paidAmount: Double,
-        val remainingAmount: Double,
+        val paidAmount: BigDecimal,
+        val remainingAmount: BigDecimal,
         val status: String
     )
 
     private fun calculateInvoicePayment(
         paymentType: String,
-        totalAmount: Double,
-        inputPaidAmount: Double
+        totalAmount: BigDecimal,
+        inputPaidAmount: BigDecimal
     ): InvoicePaymentResult {
         val upperType = paymentType.trim().uppercase(Locale.ROOT)
         val isCredit = upperType == "CREDIT" || paymentType.contains("آجل") || paymentType.contains("UNPAID", ignoreCase = true) || paymentType.contains("Credit", ignoreCase = true)
@@ -442,21 +462,21 @@ class NetworkRepository(private val db: AppDatabase) {
             isCredit -> "CREDIT"
             isCash -> "CASH"
             isPartial -> "PARTIAL"
-            else -> if (inputPaidAmount <= 0.0) "CREDIT" else if (inputPaidAmount >= totalAmount) "CASH" else "PARTIAL"
+            else -> if (inputPaidAmount.compareTo(BigDecimal.ZERO) <= 0) "CREDIT" else if (inputPaidAmount.compareTo(totalAmount) >= 0) "CASH" else "PARTIAL"
         }
 
         val actualPaid = when (canonicalType) {
             "CASH" -> totalAmount
-            "CREDIT" -> 0.0
-            "PARTIAL" -> inputPaidAmount.coerceIn(0.0, totalAmount)
-            else -> 0.0
+            "CREDIT" -> BigDecimal.ZERO
+            "PARTIAL" -> inputPaidAmount.max(BigDecimal.ZERO).min(totalAmount)
+            else -> BigDecimal.ZERO
         }
 
-        val remaining = (totalAmount - actualPaid).coerceAtLeast(0.0)
+        val remaining = totalAmount.subtract(actualPaid).max(BigDecimal.ZERO)
 
         val status = when {
-            remaining <= 0.01 -> "PAID"
-            actualPaid <= 0.01 -> "CREDIT"
+            remaining.compareTo(BigDecimal("0.01")) <= 0 -> "PAID"
+            actualPaid.compareTo(BigDecimal("0.01")) <= 0 -> "CREDIT"
             else -> "PARTIAL"
         }
 
@@ -465,6 +485,18 @@ class NetworkRepository(private val db: AppDatabase) {
             paidAmount = actualPaid,
             remainingAmount = remaining,
             status = status
+        )
+    }
+
+    private fun calculateInvoicePayment(
+        paymentType: String,
+        totalAmount: Double,
+        inputPaidAmount: Double
+    ): InvoicePaymentResult {
+        return calculateInvoicePayment(
+            paymentType,
+            BigDecimal.valueOf(totalAmount),
+            BigDecimal.valueOf(inputPaidAmount)
         )
     }
 
@@ -483,7 +515,7 @@ class NetworkRepository(private val db: AppDatabase) {
         issuerName: String = "المهندس حسن"
     ): Long = withContext(Dispatchers.IO) {
         db.withTransaction {
-            val totalAmount = items.sumOf { it.lineTotal }
+            val totalAmount = BigDecimal.valueOf(items.sumOf { it.lineTotal })
             val totalCards = items.sumOf { it.quantity }
 
             // 1. Check stock for ALL items in transaction first
@@ -498,12 +530,12 @@ class NetworkRepository(private val db: AppDatabase) {
                 }
             }
 
-            val paymentMath = calculateInvoicePayment(paymentType, totalAmount, paidAmount)
+            val paymentMath = calculateInvoicePayment(paymentType, totalAmount, BigDecimal.valueOf(paidAmount))
 
             // Explicit Credit Persistence Rule
             val isCreditType = paymentMath.canonicalType == "CREDIT" || paymentType.contains("آجل") || paymentType.contains("UNPAID", ignoreCase = true)
             val finalCanonicalType = if (isCreditType) "CREDIT" else paymentMath.canonicalType
-            val finalPaidAmount = if (isCreditType) 0.0 else paymentMath.paidAmount
+            val finalPaidAmount = if (isCreditType) BigDecimal.ZERO else paymentMath.paidAmount
             val finalRemainingAmount = if (isCreditType) totalAmount else paymentMath.remainingAmount
             val finalStatus = if (isCreditType) "CREDIT" else paymentMath.status
 
@@ -558,6 +590,21 @@ class NetworkRepository(private val db: AppDatabase) {
             )
             val invoiceId = db.cardSalesInvoiceDao().insertInvoice(invoiceEntity)
 
+            // Synchronize invoice with customer_ledger
+            if (finalRetailerId != null && finalRetailerId > 0) {
+                db.customerLedgerDao().insertLedgerEntry(
+                    com.example.data.local.entity.CustomerLedgerEntity(
+                        customerId = finalRetailerId,
+                        transactionDate = System.currentTimeMillis(),
+                        transactionType = "INVOICE",
+                        referenceId = invoiceId.toString(),
+                        debit = totalAmount,
+                        credit = BigDecimal.ZERO,
+                        description = "فاتورة مبيعات #$invoiceNumber ($itemsSummary)"
+                    )
+                )
+            }
+
             // 2. Stock Deduction & Card Status Update
             val timestamp = System.currentTimeMillis()
             items.forEach { item ->
@@ -592,18 +639,18 @@ class NetworkRepository(private val db: AppDatabase) {
             }
 
             // إنشاء سند قبض مالي رسمي مربوط بمعرف الفاتورة مباشرة عند وجود سداد
-            if (paymentMath.paidAmount > 0) {
+            if (finalPaidAmount > BigDecimal.ZERO) {
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = "REC-2026-${Random.nextInt(1000, 9999)}",
                     voucherType = "RECEIPT",
-                    amount = paymentMath.paidAmount,
+                    amount = finalPaidAmount,
                     partyName = customerName.ifBlank { "مبيعات كروت نقدية" },
                     retailerId = finalRetailerId,
                     invoiceId = invoiceId,
                     invoiceNumber = invoiceNumber,
-                    allocatedAmount = paymentMath.paidAmount,
+                    allocatedAmount = finalPaidAmount,
                     category = "مبيعات كروت",
-                    paymentMethod = if (paymentMath.canonicalType == "CASH") "نقداً" else "دفعة مقدمة",
+                    paymentMethod = if (finalCanonicalType == "CASH") "نقداً" else "دفعة مقدمة",
                     description = "متحصلات من فاتورة مبيعات كروت $invoiceNumber - $itemsSummary",
                     issuerName = issuerName,
                     notes = notes
@@ -614,7 +661,7 @@ class NetworkRepository(private val db: AppDatabase) {
             // إنشاء وحفظ قيد يومية محاسبي في جدول journal_entries
             val entryNumber = "JE-$invoiceNumber"
             val effectiveCustomer = customerName.ifBlank { "عميل نقدي" }
-            when (paymentMath.canonicalType) {
+            when (finalCanonicalType) {
                 "CASH" -> {
                     db.journalEntryDao().insertEntry(
                         JournalEntryEntity(
@@ -644,7 +691,7 @@ class NetworkRepository(private val db: AppDatabase) {
                     )
                 }
                 "PARTIAL" -> {
-                    if (paymentMath.paidAmount > 0) {
+                    if (finalPaidAmount > BigDecimal.ZERO) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$entryNumber-1",
@@ -652,13 +699,13 @@ class NetworkRepository(private val db: AppDatabase) {
                                 referenceId = invoiceId.toString(),
                                 debitAccount = "1101 - الصندوق الرئيسي",
                                 creditAccount = "4101 - إيرادات مبيعات الكروت",
-                                amount = paymentMath.paidAmount,
+                                amount = finalPaidAmount,
                                 description = "قيد مبيعات جزء مدفوع نقداً لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
                                 createdBy = issuerName
                             )
                         )
                     }
-                    if (paymentMath.remainingAmount > 0) {
+                    if (finalRemainingAmount > BigDecimal.ZERO) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$entryNumber-2",
@@ -666,7 +713,7 @@ class NetworkRepository(private val db: AppDatabase) {
                                 referenceId = invoiceId.toString(),
                                 debitAccount = "1201 - ذمم الوكلاء / $effectiveCustomer",
                                 creditAccount = "4101 - إيرادات مبيعات الكروت",
-                                amount = paymentMath.remainingAmount,
+                                amount = finalRemainingAmount,
                                 description = "قيد مبيعات جزء آجل لفاتورة رقم $invoiceNumber ($effectiveCustomer)",
                                 createdBy = issuerName
                             )
@@ -773,9 +820,9 @@ class NetworkRepository(private val db: AppDatabase) {
             }
 
             // 4. احتساب المبالغ والأصناف
-            val totalAmount = items.sumOf { it.lineTotal }
+            val totalAmount = BigDecimal.valueOf(items.sumOf { it.lineTotal })
             val totalCardsCount = items.sumOf { it.quantity }
-            val paymentMath = calculateInvoicePayment(paymentType, totalAmount, paidAmount)
+            val paymentMath = calculateInvoicePayment(paymentType, totalAmount, BigDecimal.valueOf(paidAmount))
 
             val itemsJsonArray = JSONArray()
             items.forEach { item ->
@@ -810,8 +857,8 @@ class NetworkRepository(private val db: AppDatabase) {
             db.cardSalesInvoiceDao().updateInvoice(updatedInvoice)
 
             // 6. التعامل مع السند المالي بالفارق (paymentDelta) دون حذف السندات القديمة
-            val paymentDelta = paymentMath.paidAmount - originalInvoice.paidAmount
-            if (paymentDelta > 0.0) {
+            val paymentDelta = paymentMath.paidAmount.subtract(originalInvoice.paidAmount)
+            if (paymentDelta > java.math.BigDecimal.ZERO) {
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = "REC-${System.currentTimeMillis() % 100000}",
                     voucherType = "RECEIPT",
@@ -828,8 +875,8 @@ class NetworkRepository(private val db: AppDatabase) {
                     allocatedAmount = paymentDelta
                 )
                 db.financialVoucherDao().insertVoucher(voucher)
-            } else if (paymentDelta < 0.0) {
-                val refundAmount = kotlin.math.abs(paymentDelta)
+            } else if (paymentDelta < java.math.BigDecimal.ZERO) {
+                val refundAmount = paymentDelta.abs()
                 val voucher = FinancialVoucherEntity(
                     voucherNumber = "PAY-${System.currentTimeMillis() % 100000}",
                     voucherType = "PAYMENT",
@@ -881,7 +928,7 @@ class NetworkRepository(private val db: AppDatabase) {
                     )
                 }
                 "PARTIAL" -> {
-                    if (paymentMath.paidAmount > 0) {
+                    if (paymentMath.paidAmount > java.math.BigDecimal.ZERO) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$editEntryNumber-1",
@@ -895,7 +942,7 @@ class NetworkRepository(private val db: AppDatabase) {
                             )
                         )
                     }
-                    if (paymentMath.remainingAmount > 0) {
+                    if (paymentMath.remainingAmount > java.math.BigDecimal.ZERO) {
                         db.journalEntryDao().insertEntry(
                             JournalEntryEntity(
                                 entryNumber = "$editEntryNumber-2",
@@ -924,6 +971,23 @@ class NetworkRepository(private val db: AppDatabase) {
                         )
                     )
                 }
+            }
+
+            // Update customer_ledger
+            db.customerLedgerDao().deleteByReferenceId(originalInvoice.id.toString())
+            db.customerLedgerDao().deleteByReferenceId("INV_PAY_${originalInvoice.id}")
+            if (retailerId != null && retailerId > 0) {
+                db.customerLedgerDao().insertLedgerEntry(
+                    com.example.data.local.entity.CustomerLedgerEntity(
+                        customerId = retailerId,
+                        transactionDate = System.currentTimeMillis(),
+                        transactionType = "INVOICE",
+                        referenceId = originalInvoice.id.toString(),
+                        debit = totalAmount,
+                        credit = BigDecimal.ZERO,
+                        description = "تعديل فاتورة مبيعات #${originalInvoice.invoiceNumber} ($itemsSummary)"
+                    )
+                )
             }
 
             // 7. تسوية الدفاتر المحاسبية
@@ -967,8 +1031,8 @@ class NetworkRepository(private val db: AppDatabase) {
                 id = java.util.UUID.randomUUID().toString(),
                 packageName = "صنف كروت",
                 quantity = originalInvoice.totalCardsCount.coerceAtLeast(1),
-                unitPrice = if (originalInvoice.totalCardsCount > 0) originalInvoice.totalAmount / originalInvoice.totalCardsCount else originalInvoice.totalAmount,
-                retailPrice = if (originalInvoice.totalCardsCount > 0) originalInvoice.totalAmount / originalInvoice.totalCardsCount else originalInvoice.totalAmount
+                unitPrice = if (originalInvoice.totalCardsCount > 0) originalInvoice.totalAmount.toDouble() / originalInvoice.totalCardsCount else originalInvoice.totalAmount.toDouble(),
+                retailPrice = if (originalInvoice.totalCardsCount > 0) originalInvoice.totalAmount.toDouble() / originalInvoice.totalCardsCount else originalInvoice.totalAmount.toDouble()
             )
         )
 
@@ -978,7 +1042,7 @@ class NetworkRepository(private val db: AppDatabase) {
             retailerId = originalInvoice.retailerId,
             items = finalItems,
             paymentType = originalInvoice.paymentType,
-            paidAmount = originalInvoice.paidAmount,
+            paidAmount = originalInvoice.paidAmount.toDouble(),
             notes = if (originalInvoice.notes.isNotBlank()) "${originalInvoice.notes} (مستنسخة من #${originalInvoice.invoiceNumber})" else "مستنسخة من #${originalInvoice.invoiceNumber}",
             issuerName = issuerName
         )
@@ -1060,23 +1124,23 @@ class NetworkRepository(private val db: AppDatabase) {
                 val paymentsByInvoiceNumber = invoiceBoundReceipts.filter { it.invoiceNumber.isNotBlank() }.groupBy { it.invoiceNumber }
 
                 val generalReceipts = retailerReceipts.filter { it !in invoiceBoundReceipts }
-                var unallocatedPool = generalReceipts.sumOf { it.amount }
+                var unallocatedPool = generalReceipts.fold(BigDecimal.ZERO) { acc, v -> acc.add(v.amount) }
 
-                var totalDebt = 0.0
+                var totalDebt = BigDecimal.ZERO
                 var totalUnpaidCards = 0
-                var totalPaid = 0.0
+                var totalPaid = BigDecimal.ZERO
 
                 if (matchingInvoices.isNotEmpty()) {
                     for (inv in matchingInvoices) {
-                        // المدفوع المباشر المرتبط بهذه الفاتورة صراحة
-                        val directPaid = (paymentsByInvoiceId[inv.id]?.sumOf { it.amount } ?: 0.0) +
-                                (paymentsByInvoiceNumber[inv.invoiceNumber]?.filter { it.invoiceId == null }?.sumOf { it.amount } ?: 0.0)
+                        val directPaidId = paymentsByInvoiceId[inv.id]?.fold(BigDecimal.ZERO) { acc, v -> acc.add(v.amount) } ?: BigDecimal.ZERO
+                        val directPaidNum = paymentsByInvoiceNumber[inv.invoiceNumber]?.filter { it.invoiceId == null }?.fold(BigDecimal.ZERO) { acc, v -> acc.add(v.amount) } ?: BigDecimal.ZERO
+                        val directPaid = directPaidId.add(directPaidNum)
 
                         var normType = when {
                             inv.paymentType.equals("CREDIT", ignoreCase = true) || inv.paymentType.contains("آجل") || inv.paymentType.contains("UNPAID", ignoreCase = true) -> "CREDIT"
                             inv.paymentType.equals("CASH", ignoreCase = true) || inv.paymentType.contains("نقد") -> "CASH"
                             inv.paymentType.equals("PARTIAL", ignoreCase = true) || inv.paymentType.contains("مقدم") -> "PARTIAL"
-                            else -> if (inv.remainingAmount > 0 && inv.paidAmount <= 0) "CREDIT" else inv.paymentType
+                            else -> if (inv.remainingAmount > BigDecimal.ZERO && inv.paidAmount <= BigDecimal.ZERO) "CREDIT" else inv.paymentType
                         }
 
                         // Specific retroactive fix for INV-2026-0021 or any invoice created as credit
@@ -1085,34 +1149,34 @@ class NetworkRepository(private val db: AppDatabase) {
                         }
 
                         // في حال كانت الفاتورة مسددة نقداً أو جزئياً عند إنشائها ولم يكن هناك سند
-                        val paidAtCreation = if (directPaid > 0.0) {
+                        val paidAtCreation = if (directPaid > BigDecimal.ZERO) {
                             directPaid
                         } else {
                             when (normType) {
                                 "CASH" -> inv.totalAmount
-                                "CREDIT" -> 0.0
-                                "PARTIAL" -> (if (inv.remainingAmount > 0 && inv.paidAmount <= 0) 0.0 else inv.paidAmount).coerceIn(0.0, inv.totalAmount)
-                                else -> if (inv.remainingAmount > 0 && inv.paidAmount <= 0) 0.0 else inv.paidAmount.coerceIn(0.0, inv.totalAmount)
+                                "CREDIT" -> BigDecimal.ZERO
+                                "PARTIAL" -> (if (inv.remainingAmount > BigDecimal.ZERO && inv.paidAmount <= BigDecimal.ZERO) BigDecimal.ZERO else inv.paidAmount).max(BigDecimal.ZERO).min(inv.totalAmount)
+                                else -> if (inv.remainingAmount > BigDecimal.ZERO && inv.paidAmount <= BigDecimal.ZERO) BigDecimal.ZERO else inv.paidAmount.max(BigDecimal.ZERO).min(inv.totalAmount)
                             }
                         }
 
-                        val basePaid = maxOf(directPaid, paidAtCreation)
-                        val unpaidAmount = (inv.totalAmount - basePaid).coerceAtLeast(0.0)
+                        val basePaid = directPaid.max(paidAtCreation)
+                        val unpaidAmount = inv.totalAmount.subtract(basePaid).max(BigDecimal.ZERO)
 
                         // تخصيص المبالغ من صندوق سندات القبض العامة بنظام FIFO
-                        val extraPayment = minOf(unallocatedPool, unpaidAmount)
-                        unallocatedPool = (unallocatedPool - extraPayment).coerceAtLeast(0.0)
+                        val extraPayment = unallocatedPool.min(unpaidAmount)
+                        unallocatedPool = unallocatedPool.subtract(extraPayment).max(BigDecimal.ZERO)
 
-                        val finalPaid = (basePaid + extraPayment).coerceAtMost(inv.totalAmount)
-                        val finalRemaining = (inv.totalAmount - finalPaid).coerceAtLeast(0.0)
+                        val finalPaid = basePaid.add(extraPayment).min(inv.totalAmount)
+                        val finalRemaining = inv.totalAmount.subtract(finalPaid).max(BigDecimal.ZERO)
                         val finalStatus = when {
-                            finalRemaining <= 0.01 -> "PAID"
-                            finalPaid > 0.01 -> "PARTIAL"
+                            finalRemaining <= BigDecimal("0.01") -> "PAID"
+                            finalPaid > BigDecimal("0.01") -> "PARTIAL"
                             else -> "CREDIT"
                         }
 
-                        if (Math.abs(inv.paidAmount - finalPaid) > 0.01 ||
-                            Math.abs(inv.remainingAmount - finalRemaining) > 0.01 ||
+                        if (inv.paidAmount.subtract(finalPaid).abs() > BigDecimal("0.01") ||
+                            inv.remainingAmount.subtract(finalRemaining).abs() > BigDecimal("0.01") ||
                             inv.status != finalStatus ||
                             inv.paymentType != normType) {
                             db.cardSalesInvoiceDao().updateInvoice(
@@ -1125,44 +1189,81 @@ class NetworkRepository(private val db: AppDatabase) {
                             )
                         }
 
-                        totalDebt += finalRemaining
-                        if (finalRemaining > 0.01) {
+                        totalDebt = totalDebt.add(finalRemaining)
+                        if (finalRemaining > BigDecimal("0.01")) {
                             totalUnpaidCards += inv.totalCardsCount
                         }
-                        totalPaid += finalPaid
+                        totalPaid = totalPaid.add(finalPaid)
                     }
 
                     // في حال تبقت مبالغ من سندات القبض العامة تفوق مديونية كافة الفواتير
-                    totalDebt = (totalDebt - unallocatedPool).coerceAtLeast(0.0)
-                    totalPaid += unallocatedPool
+                    totalDebt = totalDebt.subtract(unallocatedPool).max(BigDecimal.ZERO)
+                    totalPaid = totalPaid.add(unallocatedPool)
+                }
 
-                    // الكروت الفيزيائية الموزعة من دفعات الكروت
-                    val physicalCards = db.cardDao().getDistributedCardsCountForRetailer(retailer.id)
-                    val finalActiveCards = maxOf(totalUnpaidCards, physicalCards)
+                // Sync customer_ledger records for retailer
+                db.customerLedgerDao().deleteByCustomerId(retailer.id)
 
-                    // تحديث بيانات البقالة بدقة 100%
-                    if (Math.abs(retailer.balanceOwed - totalDebt) > 0.01 ||
-                        retailer.activeCardsCount != finalActiveCards ||
-                        Math.abs(retailer.totalPaid - totalPaid) > 0.01) {
-                        db.retailerDao().updateRetailer(
-                            retailer.copy(
-                                balanceOwed = totalDebt,
-                                activeCardsCount = finalActiveCards,
-                                totalPaid = totalPaid
+                for (inv in matchingInvoices) {
+                    db.customerLedgerDao().insertLedgerEntry(
+                        com.example.data.local.entity.CustomerLedgerEntity(
+                            customerId = retailer.id,
+                            transactionDate = inv.invoiceDateMillis,
+                            transactionType = "INVOICE",
+                            referenceId = inv.id.toString(),
+                            debit = inv.totalAmount,
+                            credit = BigDecimal.ZERO,
+                            description = "فاتورة مبيعات #${inv.invoiceNumber}"
+                        )
+                    )
+
+                    // Insert an extra payment entry ONLY if there is no voucher in retailerReceipts linked to this invoice
+                    val hasLinkedVoucher = retailerReceipts.any { v ->
+                        v.invoiceId == inv.id || (v.invoiceNumber.isNotBlank() && v.invoiceNumber == inv.invoiceNumber)
+                    }
+                    if (!hasLinkedVoucher && inv.paidAmount > BigDecimal.ZERO) {
+                        db.customerLedgerDao().insertLedgerEntry(
+                            com.example.data.local.entity.CustomerLedgerEntity(
+                                customerId = retailer.id,
+                                transactionDate = inv.invoiceDateMillis,
+                                transactionType = "PAYMENT",
+                                referenceId = "INV_PAY_${inv.id}",
+                                debit = BigDecimal.ZERO,
+                                credit = inv.paidAmount,
+                                description = "سداد مع الفاتورة #${inv.invoiceNumber}"
                             )
                         )
                     }
-                } else {
-                    // إذا لم تكن هناك فواتير مبيعات مسجلة للبقالة
-                    val directTotalReceipts = retailerReceipts.sumOf { it.amount }
-                    if (directTotalReceipts > 0.0) {
-                        val newDebt = (retailer.balanceOwed - directTotalReceipts).coerceAtLeast(0.0)
-                        val newPaid = retailer.totalPaid + directTotalReceipts
-                        db.retailerDao().updateRetailer(
-                            retailer.copy(balanceOwed = newDebt, totalPaid = newPaid)
-                        )
-                    }
                 }
+
+                // Insert ALL non-voided receipt/payment vouchers for this retailer
+                for (v in retailerReceipts) {
+                    db.customerLedgerDao().insertLedgerEntry(
+                        com.example.data.local.entity.CustomerLedgerEntity(
+                            customerId = retailer.id,
+                            transactionDate = v.dateMillis,
+                            transactionType = if (v.voucherType == "RECEIPT") "PAYMENT" else "INVOICE",
+                            referenceId = v.id.toString(),
+                            debit = if (v.voucherType == "PAYMENT") v.amount else BigDecimal.ZERO,
+                            credit = if (v.voucherType == "RECEIPT") v.amount else BigDecimal.ZERO,
+                            description = "سند ${if (v.voucherType == "RECEIPT") "قبض" else "صرف"} #${v.voucherNumber}"
+                        )
+                    )
+                }
+
+                // Query EXCLUSIVELY via CustomerLedgerDao.getCustomerAccountSummary
+                val accountSummary = db.customerLedgerDao().getCustomerAccountSummary(retailer.id).first()
+
+                val physicalCards = db.cardDao().getDistributedCardsCountForRetailer(retailer.id)
+                val finalActiveCards = maxOf(totalUnpaidCards, physicalCards)
+
+                db.retailerDao().updateRetailer(
+                    retailer.copy(
+                        balanceOwed = accountSummary.finalBalance.toDouble(),
+                        activeCardsCount = finalActiveCards,
+                        totalPaid = accountSummary.totalPaid.toDouble()
+                    )
+                )
             }
         } catch (e: Exception) {
             android.util.Log.e("NetworkRepository", "reconcileAccountingLedger error: ${e.message}", e)
@@ -1213,7 +1314,7 @@ class NetworkRepository(private val db: AppDatabase) {
 
                 // 2. عدم حذف سندات القبض القديمة المرتبطة بالفاتورة نهائياً لحفظ السجل المالي
                 // إنشاء سند صرف/تسوية (PAYMENT) بمقدار المبلغ المسدد لحفظ توازن الصندوق عند وجود سداد
-                if (invoice.paidAmount > 0) {
+                if (invoice.paidAmount > java.math.BigDecimal.ZERO) {
                     val voucher = FinancialVoucherEntity(
                         voucherNumber = "PAY-CANCEL-${System.currentTimeMillis() % 100000}",
                         voucherType = "PAYMENT",
@@ -1266,7 +1367,7 @@ class NetworkRepository(private val db: AppDatabase) {
                         )
                     }
                     "PARTIAL" -> {
-                        if (invoice.paidAmount > 0) {
+                        if (invoice.paidAmount > java.math.BigDecimal.ZERO) {
                             db.journalEntryDao().insertEntry(
                                 JournalEntryEntity(
                                     entryNumber = "$cancelEntryNumber-1",
@@ -1280,7 +1381,7 @@ class NetworkRepository(private val db: AppDatabase) {
                                 )
                             )
                         }
-                        if (invoice.remainingAmount > 0) {
+                        if (invoice.remainingAmount > java.math.BigDecimal.ZERO) {
                             db.journalEntryDao().insertEntry(
                                 JournalEntryEntity(
                                     entryNumber = "$cancelEntryNumber-2",
@@ -1296,7 +1397,7 @@ class NetworkRepository(private val db: AppDatabase) {
                         }
                     }
                     else -> {
-                        if (invoice.paidAmount > 0) {
+                        if (invoice.paidAmount > java.math.BigDecimal.ZERO) {
                             db.journalEntryDao().insertEntry(
                                 JournalEntryEntity(
                                     entryNumber = cancelEntryNumber,
@@ -1310,7 +1411,7 @@ class NetworkRepository(private val db: AppDatabase) {
                                 )
                             )
                         }
-                        if (invoice.remainingAmount > 0) {
+                        if (invoice.remainingAmount > java.math.BigDecimal.ZERO) {
                             db.journalEntryDao().insertEntry(
                                 JournalEntryEntity(
                                     entryNumber = "$cancelEntryNumber-rem",
@@ -1327,14 +1428,21 @@ class NetworkRepository(private val db: AppDatabase) {
                     }
                 }
 
-                // 4. حذف الفاتورة
+                // 4. حذف الفاتورة والسجل الدفتري
                 db.cardSalesInvoiceDao().deleteInvoice(invoice)
+                db.customerLedgerDao().deleteByReferenceId(invoice.id.toString())
+                db.customerLedgerDao().deleteByReferenceId("INV_PAY_${invoice.id}")
+                if (invoice.invoiceNumber.isNotBlank()) {
+                    db.customerLedgerDao().deleteByReferenceId(invoice.invoiceNumber)
+                }
 
                 // 5. تسوية الحسابات المحاسبية فورا
                 reconcileAccountingLedgerInternal()
             } catch (e: Exception) {
                 android.util.Log.e("NetworkRepository", "deleteSalesInvoice error: ${e.message}", e)
                 db.cardSalesInvoiceDao().deleteInvoice(invoice)
+                db.customerLedgerDao().deleteByReferenceId(invoice.id.toString())
+                db.customerLedgerDao().deleteByReferenceId("INV_PAY_${invoice.id}")
                 reconcileAccountingLedgerInternal()
             }
         }
@@ -1389,9 +1497,9 @@ class NetworkRepository(private val db: AppDatabase) {
                 customerPhone = retailer.phone,
                 retailerId = retailerId,
                 paymentType = "CREDIT",
-                totalAmount = totalDebt,
-                paidAmount = 0.0,
-                remainingAmount = totalDebt,
+                totalAmount = BigDecimal.valueOf(totalDebt),
+                paidAmount = BigDecimal.ZERO,
+                remainingAmount = BigDecimal.valueOf(totalDebt),
                 totalCardsCount = quantity,
                 itemsCount = 1,
                 itemsSummary = "$quantity كرت [${item.packageName}]",
@@ -1447,9 +1555,9 @@ class NetworkRepository(private val db: AppDatabase) {
                 customerPhone = retailer.phone,
                 retailerId = retailerId,
                 paymentType = "CREDIT",
-                totalAmount = totalWholesaleDebt,
-                paidAmount = 0.0,
-                remainingAmount = totalWholesaleDebt,
+                totalAmount = BigDecimal.valueOf(totalWholesaleDebt),
+                paidAmount = BigDecimal.ZERO,
+                remainingAmount = BigDecimal.valueOf(totalWholesaleDebt),
                 totalCardsCount = countToDistribute,
                 itemsCount = 1,
                 itemsSummary = "$countToDistribute كرت [$categoryName]",
@@ -1501,9 +1609,9 @@ class NetworkRepository(private val db: AppDatabase) {
         db.withTransaction {
             val retailer = db.retailerDao().getRetailerById(retailerId)
             val retailerName = retailer?.name ?: "نقطة توزيع"
-            val totalWholesale = packageEntity.wholesalePrice * quantity
-            val totalRetail = packageEntity.retailPrice * quantity
-            val retailerProfit = (packageEntity.retailPrice - packageEntity.wholesalePrice) * quantity
+            val totalWholesale = packageEntity.wholesalePrice.multiply(BigDecimal.valueOf(quantity.toLong()))
+            val totalRetail = packageEntity.retailPrice.multiply(BigDecimal.valueOf(quantity.toLong()))
+            val retailerProfit = (packageEntity.retailPrice.subtract(packageEntity.wholesalePrice)).multiply(BigDecimal.valueOf(quantity.toLong()))
 
             val randomNum = Random.nextInt(1000, 9999)
             val invoiceNumber = "INV-2026-$randomNum"
@@ -1516,8 +1624,8 @@ class NetworkRepository(private val db: AppDatabase) {
                 retailerId = retailerId,
                 paymentType = if (isCash) "CASH" else "CREDIT",
                 totalAmount = totalWholesale,
-                paidAmount = if (isCash) totalWholesale else 0.0,
-                remainingAmount = if (isCash) 0.0 else totalWholesale,
+                paidAmount = if (isCash) totalWholesale else BigDecimal.ZERO,
+                remainingAmount = if (isCash) BigDecimal.ZERO else totalWholesale,
                 totalCardsCount = quantity,
                 itemsCount = 1,
                 itemsSummary = "$quantity كرت [${packageEntity.name}]",
@@ -1565,6 +1673,13 @@ class NetworkRepository(private val db: AppDatabase) {
     // Retailers
     val allRetailers: Flow<List<RetailerEntity>> = db.retailerDao().getAllRetailers()
 
+    // Customer Ledger - Single Source of Truth
+    fun getCustomerAccountSummary(customerId: Long): Flow<com.example.data.local.dao.CustomerAccountSummary> =
+        db.customerLedgerDao().getCustomerAccountSummary(customerId)
+
+    fun getCustomerLedger(customerId: Long): Flow<List<com.example.data.local.entity.CustomerLedgerEntity>> =
+        db.customerLedgerDao().getLedgerForCustomer(customerId)
+
     suspend fun saveRetailer(retailer: RetailerEntity): Long = withContext(Dispatchers.IO) {
         if (retailer.id == 0L) {
             db.retailerDao().insertRetailer(retailer)
@@ -1588,7 +1703,7 @@ class NetworkRepository(private val db: AppDatabase) {
 
     suspend fun createVoucher(
         voucherType: String, // "RECEIPT" or "PAYMENT"
-        amount: Double,
+        amount: BigDecimal,
         partyName: String,
         retailerId: Long?,
         category: String,
@@ -1611,7 +1726,7 @@ class NetworkRepository(private val db: AppDatabase) {
                 retailerId = retailerId,
                 invoiceId = invoiceId,
                 invoiceNumber = invoiceNumber,
-                allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else 0.0,
+                allocatedAmount = if (invoiceId != null || invoiceNumber.isNotBlank()) amount else BigDecimal.ZERO,
                 category = category,
                 paymentMethod = paymentMethod,
                 description = description,
@@ -1638,7 +1753,7 @@ class NetworkRepository(private val db: AppDatabase) {
                         creditAccount = creditAcc,
                         amount = amount,
                         currency = voucher.currency,
-                        exchangeRate = 1.0,
+                        exchangeRate = BigDecimal.ONE,
                         description = description,
                         createdBy = issuerName
                     )
@@ -1654,6 +1769,10 @@ class NetworkRepository(private val db: AppDatabase) {
     suspend fun deleteVoucher(voucher: FinancialVoucherEntity) = withContext(Dispatchers.IO) {
         db.withTransaction {
             db.financialVoucherDao().deleteVoucher(voucher)
+            db.customerLedgerDao().deleteByReferenceId(voucher.id.toString())
+            if (voucher.voucherNumber.isNotBlank()) {
+                db.customerLedgerDao().deleteByReferenceId(voucher.voucherNumber)
+            }
             reconcileAccountingLedgerInternal()
         }
     }
@@ -1670,6 +1789,10 @@ class NetworkRepository(private val db: AppDatabase) {
             // 1. تحديث حالة السند لتصبح ملغاة
             val voidedVoucher = voucher.copy(isVoided = true)
             db.financialVoucherDao().updateVoucher(voidedVoucher)
+            db.customerLedgerDao().deleteByReferenceId(voucher.id.toString())
+            if (voucher.voucherNumber.isNotBlank()) {
+                db.customerLedgerDao().deleteByReferenceId(voucher.voucherNumber)
+            }
 
             // 2. إنشاء قيد يومية عكسي تلقائي (Reversal Journal Entry) لإلغاء الأثر المالي للسند
             val (origDebit, origCredit) = if (voucher.voucherType == "RECEIPT") {
@@ -1688,7 +1811,7 @@ class NetworkRepository(private val db: AppDatabase) {
                     creditAccount = origDebit,
                     amount = voucher.amount,
                     currency = voucher.currency,
-                    exchangeRate = 1.0,
+                    exchangeRate = BigDecimal.ONE,
                     description = "قيد عكسي لإلغاء السند رقم ${voucher.voucherNumber}${if (reason.isNotBlank()) " - $reason" else ""}",
                     createdBy = voucher.issuerName
                 )
@@ -1699,9 +1822,47 @@ class NetworkRepository(private val db: AppDatabase) {
         }
     }
 
+    suspend fun createVoucher(
+        voucherType: String,
+        amount: Double,
+        partyName: String,
+        retailerId: Long?,
+        category: String,
+        paymentMethod: String,
+        description: String,
+        issuerName: String,
+        invoiceId: Long? = null,
+        invoiceNumber: String = ""
+    ): Long = createVoucher(
+        voucherType = voucherType,
+        amount = BigDecimal.valueOf(amount),
+        partyName = partyName,
+        retailerId = retailerId,
+        category = category,
+        paymentMethod = paymentMethod,
+        description = description,
+        issuerName = issuerName,
+        invoiceId = invoiceId,
+        invoiceNumber = invoiceNumber
+    )
+
     suspend fun insertVoucher(voucher: FinancialVoucherEntity): Long = withContext(Dispatchers.IO) {
         db.withTransaction {
             val id = db.financialVoucherDao().insertVoucher(voucher)
+
+            if (voucher.retailerId != null && voucher.retailerId > 0 && !voucher.isVoided) {
+                db.customerLedgerDao().insertLedgerEntry(
+                    com.example.data.local.entity.CustomerLedgerEntity(
+                        customerId = voucher.retailerId,
+                        transactionDate = voucher.dateMillis,
+                        transactionType = if (voucher.voucherType == "RECEIPT") "PAYMENT" else "INVOICE",
+                        referenceId = id.toString(),
+                        debit = if (voucher.voucherType == "PAYMENT") voucher.amount else BigDecimal.ZERO,
+                        credit = if (voucher.voucherType == "RECEIPT") voucher.amount else BigDecimal.ZERO,
+                        description = "سند ${if (voucher.voucherType == "RECEIPT") "قبض" else "صرف"} #${voucher.voucherNumber} - ${voucher.partyName}"
+                    )
+                )
+            }
 
             // إنشاء وحفظ قيد محاسبي مزدوج تلقائي إذا لم يكن السند مرتبطاً بفاتورة مسبقاً
             if (voucher.invoiceId == null && voucher.invoiceNumber.isBlank()) {
@@ -1721,7 +1882,7 @@ class NetworkRepository(private val db: AppDatabase) {
                         creditAccount = creditAcc,
                         amount = voucher.amount,
                         currency = voucher.currency,
-                        exchangeRate = 1.0,
+                        exchangeRate = BigDecimal.ONE,
                         description = voucher.description,
                         createdBy = voucher.issuerName
                     )
@@ -1957,11 +2118,33 @@ class NetworkRepository(private val db: AppDatabase) {
     val allPartnerTransactions: Flow<List<PartnerTransactionEntity>> = db.partnerDao().getAllPartnerTransactions()
 
     suspend fun savePartner(partner: PartnerEntity): Long = withContext(Dispatchers.IO) {
-        if (partner.id == 0L) {
-            db.partnerDao().insertPartner(partner)
-        } else {
-            db.partnerDao().updatePartner(partner)
-            partner.id
+        db.withTransaction {
+            val isNew = partner.id == 0L
+            val pId = if (isNew) {
+                db.partnerDao().insertPartner(partner)
+            } else {
+                db.partnerDao().updatePartner(partner)
+                partner.id
+            }
+
+            if (isNew && partner.capitalInvested > 0) {
+                val amount = BigDecimal.valueOf(partner.capitalInvested)
+                db.journalEntryDao().insertEntry(
+                    JournalEntryEntity(
+                        entryNumber = "JE-PARTNER-${pId}-${System.currentTimeMillis() % 100000}",
+                        referenceType = "PARTNER_CAPITAL",
+                        referenceId = pId.toString(),
+                        debitAccount = "1101 - الصندوق الرئيسي",
+                        creditAccount = "3101 - رأس مال الشركاء / ${partner.name}",
+                        amount = amount,
+                        currency = partner.currency.ifBlank { "YER" },
+                        exchangeRate = BigDecimal.ONE,
+                        description = "إيداع رأس مال مبدئي للشريك ${partner.name}",
+                        createdBy = "المهندس سام"
+                    )
+                )
+            }
+            pId
         }
     }
 
@@ -1970,20 +2153,49 @@ class NetworkRepository(private val db: AppDatabase) {
     }
 
     suspend fun recordPartnerTransaction(tx: PartnerTransactionEntity) = withContext(Dispatchers.IO) {
-        db.partnerDao().insertPartnerTransaction(tx)
-        // If it's a dividend payout, increment partner's withdrawn profit
-        if (tx.transactionType == "DIVIDEND_PAYOUT" || tx.transactionType == "DRAWING") {
+        db.withTransaction {
+            val txId = db.partnerDao().insertPartnerTransaction(tx)
             val partner = db.partnerDao().getPartnerById(tx.partnerId)
-            if (partner != null) {
-                db.partnerDao().updatePartner(
-                    partner.copy(totalWithdrawnProfit = partner.totalWithdrawnProfit + tx.amount)
+
+            if (tx.transactionType == "DIVIDEND_PAYOUT" || tx.transactionType == "DRAWING") {
+                if (partner != null) {
+                    db.partnerDao().updatePartner(
+                        partner.copy(totalWithdrawnProfit = partner.totalWithdrawnProfit + tx.amount.toDouble())
+                    )
+                }
+                db.journalEntryDao().insertEntry(
+                    JournalEntryEntity(
+                        entryNumber = "JE-DIV-${txId}-${System.currentTimeMillis() % 100000}",
+                        referenceType = "PARTNER_DIVIDEND",
+                        referenceId = txId.toString(),
+                        debitAccount = "3201 - أرباح ومسحوبات الشركاء / ${tx.partnerName}",
+                        creditAccount = "1101 - الصندوق الرئيسي",
+                        amount = tx.amount,
+                        currency = tx.currency,
+                        exchangeRate = BigDecimal.ONE,
+                        description = "توزيع أرباح / مسحوبات للشريك ${tx.partnerName}",
+                        createdBy = "المهندس سام"
+                    )
                 )
-            }
-        } else if (tx.transactionType == "CAPITAL_ADDITION") {
-            val partner = db.partnerDao().getPartnerById(tx.partnerId)
-            if (partner != null) {
-                db.partnerDao().updatePartner(
-                    partner.copy(capitalInvested = partner.capitalInvested + tx.amount)
+            } else if (tx.transactionType == "CAPITAL_ADDITION") {
+                if (partner != null) {
+                    db.partnerDao().updatePartner(
+                        partner.copy(capitalInvested = partner.capitalInvested + tx.amount.toDouble())
+                    )
+                }
+                db.journalEntryDao().insertEntry(
+                    JournalEntryEntity(
+                        entryNumber = "JE-CAP-${txId}-${System.currentTimeMillis() % 100000}",
+                        referenceType = "PARTNER_CAPITAL_ADDITION",
+                        referenceId = txId.toString(),
+                        debitAccount = "1101 - الصندوق الرئيسي",
+                        creditAccount = "3101 - رأس مال الشركاء / ${tx.partnerName}",
+                        amount = tx.amount,
+                        currency = tx.currency,
+                        exchangeRate = BigDecimal.ONE,
+                        description = "زيادة رأس مال للشريك ${tx.partnerName}",
+                        createdBy = "المهندس سام"
+                    )
                 )
             }
         }
@@ -2000,11 +2212,49 @@ class NetworkRepository(private val db: AppDatabase) {
     val assetCount: Flow<Int> = db.networkAssetDao().getAssetsCount()
 
     suspend fun saveAsset(asset: NetworkAssetEntity): Long = withContext(Dispatchers.IO) {
-        if (asset.id == 0L) {
-            db.networkAssetDao().insertAsset(asset)
-        } else {
-            db.networkAssetDao().updateAsset(asset)
-            asset.id
+        db.withTransaction {
+            val identity = db.networkIdentityDao().getNetworkIdentity() ?: NetworkIdentityEntity()
+            val sarRate = BigDecimal.valueOf(if (identity.sarToYerRate > 0) identity.sarToYerRate else 140.0)
+            val usdRate = BigDecimal.valueOf(if (identity.usdToYerRate > 0) identity.usdToYerRate else 530.0)
+
+            val rawOriginal = if (asset.originalCost > 0) asset.originalCost else asset.purchaseCost
+            val baseCost = com.example.util.CurrencyHelper.convertToYer(
+                BigDecimal.valueOf(rawOriginal),
+                asset.currency,
+                sarRate,
+                usdRate
+            ).toDouble()
+
+            val updatedAsset = asset.copy(
+                purchaseCost = baseCost,
+                originalCost = rawOriginal
+            )
+
+            val isNew = updatedAsset.id == 0L
+            val aId = if (isNew) {
+                db.networkAssetDao().insertAsset(updatedAsset)
+            } else {
+                db.networkAssetDao().updateAsset(updatedAsset)
+                updatedAsset.id
+            }
+
+            if (isNew && baseCost > 0) {
+                db.journalEntryDao().insertEntry(
+                    JournalEntryEntity(
+                        entryNumber = "JE-ASSET-${aId}-${System.currentTimeMillis() % 100000}",
+                        referenceType = "FIXED_ASSET_PURCHASE",
+                        referenceId = aId.toString(),
+                        debitAccount = "1501 - الأصول الثابتة / ${updatedAsset.category} - ${updatedAsset.assetName}",
+                        creditAccount = "1101 - الصندوق الرئيسي",
+                        amount = BigDecimal.valueOf(baseCost),
+                        currency = updatedAsset.currency.ifBlank { "USD" },
+                        exchangeRate = BigDecimal.ONE,
+                        description = "شراء أصل ثابت: ${updatedAsset.assetName}",
+                        createdBy = "المهندس سام"
+                    )
+                )
+            }
+            aId
         }
     }
 
@@ -2017,11 +2267,44 @@ class NetworkRepository(private val db: AppDatabase) {
     val totalInvoicesAmount: Flow<Double?> = db.purchaseInvoiceDao().getTotalInvoicesAmount()
 
     suspend fun saveInvoice(invoice: PurchaseInvoiceEntity): Long = withContext(Dispatchers.IO) {
-        if (invoice.id == 0L) {
-            db.purchaseInvoiceDao().insertInvoice(invoice)
-        } else {
-            db.purchaseInvoiceDao().updateInvoice(invoice)
-            invoice.id
+        db.withTransaction {
+            val identity = db.networkIdentityDao().getNetworkIdentity() ?: NetworkIdentityEntity()
+            val sarRate = BigDecimal.valueOf(if (identity.sarToYerRate > 0) identity.sarToYerRate else 140.0)
+            val usdRate = BigDecimal.valueOf(if (identity.usdToYerRate > 0) identity.usdToYerRate else 530.0)
+
+            val rawOriginal = if (invoice.originalAmount > BigDecimal.ZERO) invoice.originalAmount else invoice.totalAmount
+            val baseAmount = com.example.util.CurrencyHelper.convertToYer(rawOriginal, invoice.currency, sarRate, usdRate)
+
+            val updatedInvoice = invoice.copy(
+                totalAmount = baseAmount,
+                originalAmount = rawOriginal
+            )
+
+            val invId = if (updatedInvoice.id == 0L) {
+                db.purchaseInvoiceDao().insertInvoice(updatedInvoice)
+            } else {
+                db.purchaseInvoiceDao().updateInvoice(updatedInvoice)
+                updatedInvoice.id
+            }
+
+            // Post double-entry journal entry in base currency (YER)
+            val targetAcc = if (updatedInvoice.targetType == "ASSETS") "1501 - الأصول الثابتة" else "5201 - مصروفات تشغيلية"
+            db.journalEntryDao().insertEntry(
+                JournalEntryEntity(
+                    entryNumber = "JE-PURCHASE-${invId}-${System.currentTimeMillis() % 100000}",
+                    referenceType = "PURCHASE_INVOICE",
+                    referenceId = invId.toString(),
+                    debitAccount = "$targetAcc / ${updatedInvoice.supplierName}",
+                    creditAccount = "1101 - الصندوق الرئيسي",
+                    amount = baseAmount,
+                    currency = updatedInvoice.currency,
+                    exchangeRate = if (updatedInvoice.currency.uppercase() == "USD") usdRate else if (updatedInvoice.currency.uppercase() == "SAR") sarRate else BigDecimal.ONE,
+                    description = "فاتورة مشتريات #${updatedInvoice.invoiceNumber} - ${updatedInvoice.supplierName} (${updatedInvoice.itemsSummary})",
+                    createdBy = "المهندس سام"
+                )
+            )
+
+            invId
         }
     }
 
@@ -2034,9 +2317,29 @@ class NetworkRepository(private val db: AppDatabase) {
      * Prevents duplication by matching IP/Names/Numbers and updating existing entities or inserting new ones.
      */
     suspend fun restoreFromCloudData(cloudData: com.example.data.firebase.CloudPullData) = withContext(Dispatchers.IO) {
-        // 1. Restore Network Identity
-        cloudData.networkIdentity?.let { idEntity ->
-            db.networkIdentityDao().insertOrUpdate(idEntity.copy(id = 1L))
+        // 1. Restore Network Identity safely preserving non-zero exchange rates
+        cloudData.networkIdentity?.let { cloudIdentity ->
+            val existing = db.networkIdentityDao().getNetworkIdentity() ?: NetworkIdentityEntity()
+
+            val effectiveSar = if (cloudIdentity.sarToYerRate > 0) cloudIdentity.sarToYerRate else if (existing.sarToYerRate > 0) existing.sarToYerRate else 140.0
+            val effectiveUsd = if (cloudIdentity.usdToYerRate > 0) cloudIdentity.usdToYerRate else if (existing.usdToYerRate > 0) existing.usdToYerRate else 530.0
+            val effectiveUsdSar = if (cloudIdentity.usdToSarRate > 0) cloudIdentity.usdToSarRate else if (existing.usdToSarRate > 0) existing.usdToSarRate else 3.79
+
+            val mergedIdentity = cloudIdentity.copy(
+                id = 1L,
+                sarToYerRate = effectiveSar,
+                usdToYerRate = effectiveUsd,
+                usdToSarRate = effectiveUsdSar
+            )
+            db.networkIdentityDao().insertOrUpdate(mergedIdentity)
+
+            db.currencyRateDao().insertOrUpdateRates(
+                listOf(
+                    com.example.data.local.entity.CurrencyRateEntity("USD", BigDecimal.valueOf(effectiveUsd)),
+                    com.example.data.local.entity.CurrencyRateEntity("SAR", BigDecimal.valueOf(effectiveSar)),
+                    com.example.data.local.entity.CurrencyRateEntity("YER", BigDecimal.ONE)
+                )
+            )
         }
 
         // 2. Restore Devices

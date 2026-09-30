@@ -332,10 +332,10 @@ fun SmartInvoiceScannerDialog(
                         supplierName = finalSupp,
                         invoiceDateMillis = finalDateMillis,
                         targetType = targetType,
-                        totalAmount = totalCalculated,
+                        totalAmount = java.math.BigDecimal.valueOf(totalCalculated),
                         currency = currency,
-                        originalAmount = totalCalculated,
-                        paidAmount = totalCalculated,
+                        originalAmount = java.math.BigDecimal.valueOf(totalCalculated),
+                        paidAmount = java.math.BigDecimal.valueOf(totalCalculated),
                         paymentMethod = paymentMethod,
                         notes = notes
                     )
@@ -345,10 +345,10 @@ fun SmartInvoiceScannerDialog(
                         supplierName = finalSupp,
                         invoiceDateMillis = finalDateMillis,
                         targetType = targetType,
-                        totalAmount = totalCalculated,
+                        totalAmount = java.math.BigDecimal.valueOf(totalCalculated),
                         currency = currency,
-                        originalAmount = totalCalculated,
-                        paidAmount = totalCalculated,
+                        originalAmount = java.math.BigDecimal.valueOf(totalCalculated),
+                        paidAmount = java.math.BigDecimal.valueOf(totalCalculated),
                         paymentMethod = paymentMethod,
                         notes = notes
                     )

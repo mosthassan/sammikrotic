@@ -2,6 +2,7 @@ package com.example.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.math.BigDecimal
 
 /**
  * يمثل قيود اليومية المحاسبية المزدوجة (Double-Entry Journal Entries)
@@ -17,9 +18,9 @@ data class JournalEntryEntity(
     val referenceId: String = "",
     val debitAccount: String = "",
     val creditAccount: String = "",
-    val amount: Double = 0.0,
+    val amount: BigDecimal = BigDecimal.ZERO,
     val currency: String = "YER",
-    val exchangeRate: Double = 1.0,
+    val exchangeRate: BigDecimal = BigDecimal.ONE,
     val description: String = "",
     val createdBy: String = ""
 )

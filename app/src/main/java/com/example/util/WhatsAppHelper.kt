@@ -106,8 +106,8 @@ object WhatsAppHelper {
         notes: String = "",
         issuerName: String = "المهندس حسن"
     ): String {
-        val totalWholesale = (pkg.wholesalePrice * quantity).toInt()
-        val totalRetail = (pkg.retailPrice * quantity).toInt()
+        val totalWholesale = (pkg.wholesalePrice.toDouble() * quantity).toInt()
+        val totalRetail = (pkg.retailPrice.toDouble() * quantity).toInt()
         val totalProfit = (totalRetail - totalWholesale).coerceAtLeast(0)
         val dateStr = SimpleDateFormat("yyyy/MM/dd - HH:mm", Locale("ar")).format(Date())
         val paidNow = if (paymentMethod.contains("آجل")) 0 else totalWholesale

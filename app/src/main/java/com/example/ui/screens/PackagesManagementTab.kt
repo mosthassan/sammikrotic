@@ -126,7 +126,7 @@ fun PackagesManagementTab(
 
     val totalPackagesCount = packages.size
     val avgProfitMargin = if (packages.isNotEmpty()) {
-        packages.map { it.profitPerCard }.average()
+        packages.map { it.profitPerCard.toDouble() }.average()
     } else 0.0
 
     LazyColumn(
@@ -180,8 +180,8 @@ fun PackagesManagementTab(
                                 onClick = {
                                     val target = packages.firstOrNull() ?: CardPackageEntity(
                                         name = "كروت فئة 200 ريال",
-                                        wholesalePrice = 180.0,
-                                        retailPrice = 200.0,
+                                        wholesalePrice = java.math.BigDecimal("180.0"),
+                                        retailPrice = java.math.BigDecimal("200.0"),
                                         quotaMb = 1500,
                                         validityHours = 24
                                     )
@@ -199,8 +199,8 @@ fun PackagesManagementTab(
                                 onClick = {
                                     val target = packages.firstOrNull() ?: CardPackageEntity(
                                         name = "باقة جديدة",
-                                        wholesalePrice = 450.0,
-                                        retailPrice = 500.0,
+                                        wholesalePrice = java.math.BigDecimal("450.0"),
+                                        retailPrice = java.math.BigDecimal("500.0"),
                                         quotaMb = 4500,
                                         validityHours = 72
                                     )
@@ -1196,8 +1196,8 @@ fun AddEditPackageDialog(
                     val pkg = CardPackageEntity(
                         id = initialPackage?.id ?: 0L,
                         name = name.trim(),
-                        retailPrice = finalRetail,
-                        wholesalePrice = finalWholesale,
+                        retailPrice = java.math.BigDecimal.valueOf(finalRetail),
+                        wholesalePrice = java.math.BigDecimal.valueOf(finalWholesale),
                         quotaMb = quotaMb,
                         validityHours = validity,
                         speedLimit = speedLimit.trim().ifEmpty { "4M/2M" },
@@ -1239,9 +1239,9 @@ fun PackageSalesInvoiceDialog(
     var shareWhatsApp by remember { mutableStateOf(selectedRetailer?.phone?.isNotBlank() == true) }
 
     val quantity = quantityText.toIntOrNull() ?: 0
-    val totalWholesale = pkg.wholesalePrice * quantity
-    val totalRetail = pkg.retailPrice * quantity
-    val totalRetailerProfit = (pkg.retailPrice - pkg.wholesalePrice) * quantity
+    val totalWholesale = pkg.wholesalePrice.multiply(java.math.BigDecimal.valueOf(quantity.toLong()))
+    val totalRetail = pkg.retailPrice.multiply(java.math.BigDecimal.valueOf(quantity.toLong()))
+    val totalRetailerProfit = (pkg.retailPrice.subtract(pkg.wholesalePrice)).multiply(java.math.BigDecimal.valueOf(quantity.toLong()))
 
     AlertDialog(
         onDismissRequest = onDismiss,

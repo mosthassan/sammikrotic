@@ -101,7 +101,7 @@ fun CardSalesInvoiceDetailDialog(
     val linkedRetailer = remember(invoice, retailers) {
         retailers.find { it.id == invoice.retailerId || it.name.trim().equals(invoice.customerName.trim(), ignoreCase = true) }
     }
-    val totalBalanceOwed = linkedRetailer?.balanceOwed ?: invoice.remainingAmount
+    val totalBalanceOwed = linkedRetailer?.balanceOwed ?: invoice.remainingAmount.toDouble()
 
     // Prepare printable / shareable invoice text
     val invoiceShareText = remember(invoice, items, totalBalanceOwed) {
@@ -328,7 +328,7 @@ fun CardSalesInvoiceDetailDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("المبلغ المتبقي (آجل):", fontFamily = CairoFontFamily, fontSize = 11.sp, color = TextSecondaryDark)
-                                    Text("${invoice.remainingAmount.toInt()} ريال", fontFamily = CairoFontFamily, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (invoice.remainingAmount > 0) Color(0xFFEF4444) else ProfitEmerald)
+                                    Text("${invoice.remainingAmount.toInt()} ريال", fontFamily = CairoFontFamily, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (invoice.remainingAmount > java.math.BigDecimal.ZERO) Color(0xFFEF4444) else ProfitEmerald)
                                 }
                             }
                         }

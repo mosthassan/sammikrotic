@@ -140,16 +140,17 @@ class CardStudioViewModel : ViewModel() {
     fun selectCardPackage(pkg: CardPackageEntity) {
         _uiState.update { current ->
             val validityStr = if (pkg.validityHours >= 24) "${pkg.validityHours / 24} يوم" else "${pkg.validityHours} ساعة"
+            val priceVal = pkg.retailPrice.toDouble()
             val priceTheme = when {
-                pkg.retailPrice >= 4000 -> CardThemesLibrary.ROYAL_GOLD
-                pkg.retailPrice >= 1000 -> CardThemesLibrary.EMERALD_PRO
-                pkg.retailPrice >= 500 -> CardThemesLibrary.CYBER_NEON
+                priceVal >= 4000 -> CardThemesLibrary.ROYAL_GOLD
+                priceVal >= 1000 -> CardThemesLibrary.EMERALD_PRO
+                priceVal >= 500 -> CardThemesLibrary.CYBER_NEON
                 else -> CardThemesLibrary.TURBO_BLAZE
             }
 
             current.copy(
                 selectedPackage = pkg,
-                samplePrice = pkg.retailPrice,
+                samplePrice = priceVal,
                 sampleQuota = pkg.formattedQuota,
                 sampleValidity = validityStr,
                 sampleSpeed = pkg.speedLimit,
